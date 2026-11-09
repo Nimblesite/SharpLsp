@@ -10,11 +10,14 @@ import {
   CMD_CONTINUE,
   assertStopReason,
   assertStoppedAt,
+  methodOf,
   stackFrames,
   stepToFrame,
   type Frame,
 } from './debug-drive-kit';
+import { LaunchOptions, startDebuggee, type Debuggee } from './debug-suite-kit';
 import type { DebugFixture } from './debug-fixture-programs';
+import { deepEq, eq, requireAt } from './test-helpers';
 
 /** The result of one gesture: the stop it produced and the frame it landed in. */
 export interface Landing {
@@ -59,6 +62,22 @@ export async function continueToBreakpoint(
   return stepLandsAt(recorder, CMD_CONTINUE, fixture, anchor, method, why, 'breakpoint');
 }
 
+/** The `dapLine` of each anchor, sorted ascending — the order the workbench syncs in. */
+export function sortedDapLines(fixture: DebugFixture, ...anchors: readonly string[]): number[] {
+  return anchors
+    .map((anchor) => fixture.source.dapLine(anchor))
+    .sort((left, right) => left - right);
+}
+
+/** The lines of the fixture's three user walk statements, in call order. */
+export function walkLines(fixture: DebugFixture): number[] {
+  return [
+    fixture.source.dapLine('add-body'),
+    fixture.source.dapLine('accumulate-call'),
+    fixture.source.dapLine('main-accumulate'),
+  ];
+}
+
 /** The stack of the stop `landing` produced is exactly `depth` frames deep. */
 export async function assertLandingDepth(
   session: vscode.DebugSession,
@@ -75,4 +94,40 @@ export function assertAllStepStops(stops: readonly StopRecord[], why: string): v
     stops.every((stop) => stop.reason === 'step'),
     `${why}: reasons seen: ${stops.map((stop) => stop.reason).join(', ')}`,
   );
+}
+
+/** Launch the debuggee and wait for its first stop, failing with `why` if it never arrives. */
+export async function stopAfterLaunch(
+  debuggee: Debuggee,
+  options: LaunchOptions,
+  why: string,
+): Promise<{ session: vscode.DebugSession; stop: StopRecord }> {
+  const session = await startDebuggee(debuggee, options);
+  return { session, stop: requireAt(await debuggee.recorder.waitForStops(1), 0, why) };
+}
+
+/**
+ * The frame names `method` and is parked on the fixture's `anchor` statement
+ * line; each half of the claim fails with its own reason.
+ */
+export function assertParkedOn(
+  frame: Frame,
+  fixture: DebugFixture,
+  anchor: string,
+  method: string,
+  methodWhy: string,
+  lineWhy: string,
+): void {
+  eq(methodOf(frame), method, methodWhy);
+  eq(frame.line, fixture.source.dapLine(anchor), lineWhy);
+}
+
+/** `frames` projected through `project` equal `expected` exactly, in order. */
+export function assertProjectedFrames(
+  frames: readonly Frame[],
+  project: (frame: Frame) => unknown,
+  expected: readonly unknown[],
+  why: string,
+): void {
+  deepEq(frames.map(project), expected, why);
 }

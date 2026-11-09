@@ -21,6 +21,7 @@ import {
   methodOf,
   stackFrames,
   stepToFrame,
+  topFrame,
   trace,
   walk,
   exceptionInfoOf,
@@ -54,6 +55,18 @@ export async function continueToEnd(recorder: DapRecorder, why: string): Promise
 export async function continueToCompletion(recorder: DapRecorder, why: string): Promise<void> {
   await vscode.commands.executeCommand(CMD_CONTINUE);
   await assertRanToCompletion(recorder, 0, why);
+}
+
+/** The stop's top frame is parked on `anchor` inside `method` of the fixture. */
+export async function assertTopFrameAt(
+  session: vscode.DebugSession,
+  stop: StopRecord,
+  fixture: DebugFixture,
+  anchor: string,
+  method: string,
+  why: string,
+): Promise<void> {
+  assertStoppedAt(await topFrame(session, stop.threadId), fixture, anchor, method, why);
 }
 
 /**
@@ -184,7 +197,7 @@ export async function waitForSentField(
     command,
     (args) => {
       const got = read(args);
-      return got.length === want.length && want.every((value, at) => got[at] === value);
+      return sameSequence(got, want);
     },
     why,
   );
@@ -223,11 +236,16 @@ export async function waitForSyncedLines(
     'setBreakpoints',
     (args) => {
       const got = read(args);
-      return got.length === sorted.length && sorted.every((line, at) => got[at] === line);
+      return sameSequence(got, sorted);
     },
     why,
   );
   assert.deepStrictEqual(read(carried), sorted, why);
+}
+
+/** Two arrays are equal in length and, position by position, in value. */
+function sameSequence(left: readonly unknown[], right: readonly unknown[]): boolean {
+  return left.length === right.length && right.every((value, at) => left[at] === value);
 }
 
 /** Every response to each named DAP command succeeded, each row failing with its own reason. */
@@ -277,6 +295,28 @@ export function assertSessionUninterrupted(
 export function sourceBreakpointLines(): number[] {
   return vscode.debug.breakpoints.map((breakpoint) =>
     breakpoint instanceof vscode.SourceBreakpoint ? breakpoint.location.range.start.line : -1,
+  );
+}
+
+/** The workbench's SOURCE breakpoints' 0-based lines, sorted; non-source breakpoints ignored. */
+function armedSourceLines(): number[] {
+  return vscode.debug.breakpoints
+    .filter((breakpoint): breakpoint is vscode.SourceBreakpoint => {
+      return breakpoint instanceof vscode.SourceBreakpoint;
+    })
+    .map((breakpoint) => breakpoint.location.range.start.line)
+    .sort((left, right) => left - right);
+}
+
+/**
+ * The workbench holds source breakpoints on exactly `expected` 0-based lines —
+ * compared sorted — and on no other line.
+ */
+export function assertArmedSourceLines(expected: readonly number[], why: string): void {
+  assert.deepStrictEqual(
+    armedSourceLines(),
+    [...expected].sort((left, right) => left - right),
+    why,
   );
 }
 

@@ -20,15 +20,12 @@ import {
   CMD_STEP_INTO,
   CMD_STEP_OUT,
   CMD_STEP_OVER,
-  activeSession,
   assertStopReason,
-  assertStoppedAt,
   at,
   focusAnchor,
   methodOf,
   openFixture,
   stackFrames,
-  topFrame,
   trace,
   walk,
 } from './debug-drive-kit';
@@ -36,7 +33,6 @@ import {
   armBreakpoints,
   assertBreakpointsBound,
   assertCleanSession,
-  startDebuggee,
   useDebuggee,
   runToFirstStop,
   debugTest,
@@ -46,13 +42,18 @@ import {
   continueToCompletion,
   onlySourceBreakpoint,
   assertSourceBreakpointLines,
+  assertTopFrameAt,
   stepIntoAddThroughLoop,
 } from './debug-inspect-kit';
 import {
   assertAllStepStops,
   assertLandingDepth,
+  assertParkedOn,
+  assertProjectedFrames,
   continueToBreakpoint,
   stepLandsAt,
+  stopAfterLaunch,
+  walkLines,
 } from './debug-stepping-kit';
 
 /** The framework directory a Just-My-Code step must never surface. */
@@ -77,16 +78,17 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       eq(editor.document.languageId, 'csharp', 'the debuggee source opened as C#');
 
       // Interaction 2 — F5. The session must reach the breakpoint.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      const { session, stop: first } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the debuggee must stop at the armed breakpoint',
+      );
       eq(session.configuration['justMyCode'], true, 'justMyCode defaults on for a launch');
       eq(sessions.ours.length, 1, 'one gesture starts exactly one session');
-      const [first] = await recorder.waitForStops(1);
-      assert.ok(first, 'the debuggee must stop at the armed breakpoint');
       assertStopReason(first, 'breakpoint', 'a line breakpoint stop');
       neq(first.hitBreakpointIds.length, 0, 'a breakpoint stop must name the breakpoint it hit');
       assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the armed line');
-      const entry = await topFrame(activeSession(), first.threadId);
-      assertStoppedAt(entry, fixture, 'main-accumulate', 'Main', 'the first stop');
+      await assertTopFrameAt(session, first, fixture, 'main-accumulate', 'Main', 'the first stop');
 
       // Interaction 3 — F10 three times. The callee must never appear.
       const stepped = await walk(recorder, [CMD_STEP_OVER, CMD_STEP_OVER, CMD_STEP_OVER]);
@@ -100,8 +102,9 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         'F10 must advance ONE statement per press and stay in Main — landing inside ' +
           'Accumulate, Box..ctor or Inspect means `next` was serviced as `stepIn`',
       );
-      deepEq(
-        stepped.frames.map((frame) => methodOf(frame)),
+      assertProjectedFrames(
+        stepped.frames,
+        methodOf,
         ['Main', 'Main', 'Main'],
         'stepping OVER keeps the frame; a changed frame is a step INTO',
       );
@@ -133,10 +136,11 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
     async ({ fixture, recorder }) => {
       // Interaction 1 — stop on the call statement in Main.
       armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the debuggee must reach the breakpoint');
-      const session = activeSession();
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the debuggee must reach the breakpoint',
+      );
       const before = await stackFrames(session, stop.threadId);
       eq(methodOf(requireAt(before, 0, 'the stopped frame')), 'Main', 'the walk starts in Main');
 
@@ -157,14 +161,12 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         before.length + 1,
         'stepping INTO pushes exactly one frame; an unchanged depth means the adapter stepped over',
       );
-      eq(
-        methodOf(requireAt(inAccumulate, 1, 'the caller frame')),
+      assertParkedOn(
+        requireAt(inAccumulate, 1, 'the caller frame'),
+        fixture,
+        'main-accumulate',
         'Main',
         'the caller is still Main',
-      );
-      eq(
-        requireAt(inAccumulate, 1, 'the caller frame').line,
-        fixture.source.dapLine('main-accumulate'),
         'the caller frame must still be parked on the call statement',
       );
 
@@ -175,13 +177,10 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
         'Accumulate',
         'Main',
       ]);
-      deepEq(
-        deep.slice(0, 3).map((frame) => frame.line),
-        [
-          fixture.source.dapLine('add-body'),
-          fixture.source.dapLine('accumulate-call'),
-          fixture.source.dapLine('main-accumulate'),
-        ],
+      assertProjectedFrames(
+        deep.slice(0, 3),
+        (frame) => frame.line,
+        walkLines(fixture),
         'every frame must be parked on the statement that is executing in it',
       );
 
@@ -231,17 +230,13 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
     async ({ fixture, recorder }) => {
       // Interaction 1 — stop on a statement whose only call is Console.WriteLine.
       armBreakpoints(fixture, 'main-print');
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain, justMyCode: true });
-      eq(session.configuration['justMyCode'], true, 'the launch requested Just My Code');
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the debuggee must reach the print statement');
-      assertStoppedAt(
-        await topFrame(session, stop.threadId),
-        fixture,
-        'main-print',
-        'Main',
-        'the print statement',
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain, justMyCode: true },
+        'the debuggee must reach the print statement',
       );
+      eq(session.configuration['justMyCode'], true, 'the launch requested Just My Code');
+      await assertTopFrameAt(session, stop, fixture, 'main-print', 'Main', 'the print statement');
 
       // Interaction 2 — F11. With Just My Code on, this is a step OVER.
       const stepped = await stepLandsAt(
@@ -323,8 +318,9 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       // did not cause. Index `baseline` is the first stop after the gesture.
       const landed = requireAt(stops, baseline, 'the run-to-cursor stop');
       neq(landed.reason, 'exception', 'run to cursor must not be reported as an exception stop');
-      assertStoppedAt(
-        await topFrame(session, landed.threadId),
+      await assertTopFrameAt(
+        session,
+        landed,
         fixture,
         'inspect-return',
         'Inspect',
@@ -360,12 +356,15 @@ suite('Debug stepping — F10 / F11 / Shift+F11 over a live session', () => {
       );
 
       // Interaction 2 — launch; all three must bind in ONE setBreakpoints round-trip.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [first] = await recorder.waitForStops(1);
-      assert.ok(first, 'the debuggee must reach the first breakpoint');
+      const { session, stop: first } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the debuggee must reach the first breakpoint',
+      );
       assertBreakpointsBound(recorder, fixture, anchors, 'three armed lines');
-      assertStoppedAt(
-        await topFrame(session, first.threadId),
+      await assertTopFrameAt(
+        session,
+        first,
         fixture,
         'main-accumulate',
         'Main',

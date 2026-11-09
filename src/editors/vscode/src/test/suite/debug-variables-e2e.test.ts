@@ -11,26 +11,28 @@
 // "Local variables | variables | P1" says nothing about excluding `int?`, so the
 // nullable local is asserted like any other and this suite reports the gap.
 import * as assert from 'node:assert/strict';
-import * as vscode from 'vscode';
 import {
-  CMD_CONTINUE,
   evaluate,
   localsOf,
   scopesOf,
-  topFrame,
   variableNamed,
   variablesOf,
   type Variable,
 } from './debug-drive-kit';
-import {
-  assertCleanSession,
-  useDebuggee,
-  stopInFrame,
-  runToFirstFrame,
-  debugTest,
-} from './debug-suite-kit';
+import { assertCleanSession, useDebuggee, stopInFrame, debugTest } from './debug-suite-kit';
 import { deepEq, eq, neq, requireAt, assertContainsAll } from './test-helpers';
 import { assertValues } from './debug-inspect-kit';
+import {
+  assertExpandable,
+  assertExpandedValue,
+  assertLocalsInclude,
+  assertPausedQuietly,
+  continueToStops,
+  expandLocal,
+  runToLocals,
+  stopForLocals,
+  topFrameLocals,
+} from './debug-inspection-flow-kit';
 
 /** Assert a variable's rendered value CONTAINS `needle`, naming what it was. */
 function assertValueHas(variable: Variable, needle: string, why: string): void {
@@ -77,7 +79,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     debuggee,
     async ({ recorder }) => {
       // Interaction 1 — stop inside a two-argument method, after its local is set.
-      const { session, frame } = await stopInFrame(
+      const { locals } = await stopForLocals(
         debuggee(),
         'add-return',
         'Add',
@@ -85,12 +87,12 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       );
 
       // Interaction 2 — both arguments must be there, with their real values.
-      const locals = await localsOf(session, frame.id);
-      const names = locals.map((local) => local.name).sort();
-      assert.ok(
-        ['left', 'right', 'sum'].every((wanted) => names.includes(wanted)),
+      assertLocalsInclude(
+        locals,
+        ['left', 'right', 'sum'],
         '"Function arguments" and "Local variables" are separate P1 rows: `left`, `right` and ' +
-          `\`sum\` must all be inspectable. The frame offered: ${names.join(', ')}`,
+          '`sum` must all be inspectable.',
+        'The frame offered: ',
       );
       assertValues(locals, [
         ['left', '2', 'the first call passes the seed, 2'],
@@ -119,7 +121,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // Implements [DEBUG-FEATURES-VARIABLES] "`this` / instance members | P1".
   debugTest('an instance method exposes `this` and its members', debuggee, async () => {
     // Interaction 1 — stop inside an INSTANCE method.
-    const { session, frame } = await stopInFrame(
+    const { session, locals } = await stopForLocals(
       debuggee(),
       'box-describe-return',
       'Describe',
@@ -127,17 +129,16 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     );
 
     // Interaction 2 — `this` must be present and expandable.
-    const locals = await localsOf(session, frame.id);
-    const self = variableNamed(locals, 'this');
-    assert.ok(
-      self.reference > 0,
+    const { variable: self, children: members } = await expandLocal(
+      session,
+      locals,
+      'this',
       '"`this` / instance members" is P1: `this` must be EXPANDABLE. A reference of 0 renders ' +
         'the object as a leaf and the user can never reach its fields',
     );
     assertTyped(self, 'Box', 'the instance under inspection');
 
     // Interaction 3 — its members must carry the constructor's arguments.
-    const members = await variablesOf(session, self.reference);
     const memberNames = members.map((member) => member.name);
     assert.ok(
       ['Value', 'Label'].every((wanted) => memberNames.includes(wanted)),
@@ -159,29 +160,27 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
   // the `Nullable<T>` row of [DEBUG-ADAPTER-GAPS].
   debugTest('collections, dictionaries, arrays and nullables all expand', debuggee, async () => {
     // Interaction 1 — stop where every container is populated.
-    const { session, frame } = await stopInFrame(
+    const { session, locals } = await stopForLocals(
       debuggee(),
       'inspect-print',
       'Inspect',
       'the fully populated frame',
     );
-    const locals = await localsOf(session, frame.id);
-    const names = locals.map((local) => local.name).sort();
-    assert.ok(
-      ['box', 'letters', 'lookup', 'maybe', 'numbers', 'text'].every((w) => names.includes(w)),
-      `every local of Inspect must be listed; the panel offered: ${names.join(', ')}`,
+    assertLocalsInclude(
+      locals,
+      ['box', 'letters', 'lookup', 'maybe', 'numbers', 'text'],
+      'every local of Inspect must be listed;',
+      'the panel offered: ',
     );
 
     // Interaction 2 — a List<int> must expand to its three elements.
-    const numbers = variableNamed(locals, 'numbers');
-    assert.ok(numbers.reference > 0, 'a List<int> must be expandable');
-    const elements = await variablesOf(session, numbers.reference);
-    assert.ok(
-      elements.some((element) => element.value === '10'),
-      `the list's elements must be reachable; expansion produced: ${elements
-        .map((element) => `${element.name}=${element.value}`)
-        .join(', ')}`,
+    const { children: elements } = await expandLocal(
+      session,
+      locals,
+      'numbers',
+      'a List<int> must be expandable',
     );
+    assertExpandedValue(elements, '10', "the list's elements must be reachable", 'name=value');
     deepEq(
       ['10', '20', '30'].filter((value) => elements.some((element) => element.value === value)),
       ['10', '20', '30'],
@@ -190,9 +189,12 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     );
 
     // Interaction 3 — a char[] and a Dictionary must expand too.
-    const letters = variableNamed(locals, 'letters');
-    assert.ok(letters.reference > 0, 'a char[] must be expandable');
-    const chars = await variablesOf(session, letters.reference);
+    const { children: chars } = await expandLocal(
+      session,
+      locals,
+      'letters',
+      'a char[] must be expandable',
+    );
     assert.ok(
       chars.filter((entry) => entry.value.includes("'a'") || entry.value.includes('a')).length > 0,
       `the array elements must be reachable; expansion produced: ${chars
@@ -200,8 +202,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
         .join(', ')}`,
     );
     const lookup = variableNamed(locals, 'lookup');
-    assert.ok(
-      lookup.reference > 0,
+    assertExpandable(
+      lookup,
       '"Collection/array expansion" is P1 and a Dictionary is the collection users hit first; ' +
         `it rendered as '${lookup.value}' with no children`,
     );
@@ -277,7 +279,7 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     async ({ recorder }) => {
       // Interaction 1 — stop on the last statement of the method that declares
       // one of each interesting shape, so all of them are initialised.
-      const { session, frame } = await stopInFrame(
+      const { session, frame, locals } = await stopForLocals(
         debuggee(),
         'inspect-print',
         'Inspect',
@@ -299,7 +301,6 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
         { name: 'text', type: 'string', value: 'boxed=8' },
         { name: 'box', type: 'Box', value: '8' },
       ];
-      const locals = await localsOf(session, frame.id);
       for (const { name, type, value } of expected) {
         const variable = variableNamed(locals, name);
         neq(variable.value, '', name + ' must render a value, not an empty cell');
@@ -347,19 +348,18 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     debuggee,
     async () => {
       // Interaction 1 — stop where the object is fully constructed.
-      const { session, frame } = await runToFirstFrame(debuggee(), 'inspect-print');
-      const box = variableNamed(await localsOf(session, frame.id), 'box');
-      neq(
-        box.reference,
-        0,
+      const { session, frame, locals } = await runToLocals(debuggee(), 'inspect-print');
+      const { variable: box, children: members } = await expandLocal(
+        session,
+        locals,
+        'box',
         'an object with members must carry a non-zero variablesReference, or the panel shows no ' +
           'expansion arrow and its fields are unreachable',
       );
 
       // Interaction 2 — the members themselves.
-      const members = await variablesOf(session, box.reference);
-      const names = members.map((member) => member.name);
-      assertContainsAll(names, ['Value', 'Label'], 'names');
+      const memberNames = members.map((member) => member.name);
+      assertContainsAll(memberNames, ['Value', 'Label'], 'memberNames');
       assertValueHas(variableNamed(members, 'Value'), '8', 'the expanded Value member');
       assertValueHas(variableNamed(members, 'Label'), 'boxed', 'the expanded Label member');
       for (const member of members) {
@@ -382,12 +382,15 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
       );
       deepEq(
         (await variablesOf(session, box.reference)).map((member) => member.name),
-        names,
+        memberNames,
         'expanding the same object twice yields the same members',
       );
-      const collection = variableNamed(await localsOf(session, frame.id), 'numbers');
-      neq(collection.reference, 0, 'a collection must expand too');
-      const items = await variablesOf(session, collection.reference);
+      const { children: items } = await expandLocal(
+        session,
+        await localsOf(session, frame.id),
+        'numbers',
+        'a collection must expand too',
+      );
       assert.ok(
         items.length >= 3,
         'a three-element list must expose at least its three elements, or the user cannot see ' +
@@ -411,8 +414,11 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
     debuggee,
     async ({ recorder }) => {
       // Interaction 1 — stop inside the loop on its first pass.
-      const { session, frame: firstFrame } = await runToFirstFrame(debuggee(), 'accumulate-call');
-      const firstLocals = await localsOf(session, firstFrame.id);
+      const {
+        session,
+        frame: firstFrame,
+        locals: firstLocals,
+      } = await runToLocals(debuggee(), 'accumulate-call');
       assertValues(firstLocals, [
         ['running', '2', 'the accumulator starts at the seed'],
         ['index', '1', 'and the loop is on its first pass'],
@@ -421,11 +427,9 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
       // Interaction 2 — continue to the SECOND pass. Both the accumulator and
       // the loop variable must have moved on.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      const stops = await recorder.waitForStops(2);
+      const stops = await continueToStops(recorder, 2);
       const second = requireAt(stops, 1, 'the second loop stop');
-      const secondFrame = await topFrame(session, second.threadId);
-      const secondLocals = await localsOf(session, secondFrame.id);
+      const { frame: secondFrame, locals: secondLocals } = await topFrameLocals(session, second);
       assertValues(secondLocals, [
         [
           'index',
@@ -443,10 +447,8 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
 
       // Interaction 3 — one more pass, and the static field the loop writes must
       // change too, which is the same claim for a STATIC row.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      const third = requireAt(await recorder.waitForStops(3), 2, 'the third loop stop');
-      const thirdFrame = await topFrame(session, third.threadId);
-      const thirdLocals = await localsOf(session, thirdFrame.id);
+      const third = requireAt(await continueToStops(recorder, 3), 2, 'the third loop stop');
+      const { frame: thirdFrame, locals: thirdLocals } = await topFrameLocals(session, third);
       assertValues(thirdLocals, [
         ['index', '3', 'the third pass reports the third index'],
         ['running', '5', 'and the running total to date'],
@@ -456,8 +458,12 @@ suite('Debug variables — locals, arguments, this, statics and expansion', () =
         '8',
         'a watch over the CURRENT values agrees with the panel over the current values',
       );
-      eq(recorder.stops().length, 3, 'exactly three loop stops, one per pass');
-      deepEq(recorder.errors, [], 'with no adapter transport error');
+      assertPausedQuietly(
+        recorder,
+        3,
+        'exactly three loop stops, one per pass',
+        'with no adapter transport error',
+      );
     },
   );
 });

@@ -33,17 +33,19 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { deepEq, eq, requireAt } from './test-helpers';
-import { assertSentField, continueToCompletion, waitForSyncedLines } from './debug-inspect-kit';
-
-/** The 0-based lines the workbench currently holds source breakpoints on. */
-function armedLines(): number[] {
-  return vscode.debug.breakpoints
-    .filter((breakpoint): breakpoint is vscode.SourceBreakpoint => {
-      return breakpoint instanceof vscode.SourceBreakpoint;
-    })
-    .map((breakpoint) => breakpoint.location.range.start.line)
-    .sort((left, right) => left - right);
-}
+import {
+  assertArmedSourceLines,
+  assertSentField,
+  assertTopFrameAt,
+  continueToCompletion,
+  waitForSyncedLines,
+} from './debug-inspect-kit';
+import {
+  continueToBreakpoint,
+  sortedDapLines,
+  stepLandsAt,
+  stopAfterLaunch,
+} from './debug-stepping-kit';
 
 suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints', () => {
   const debuggee = useDebuggee('debug-bp-cs-', 'csharp');
@@ -62,14 +64,13 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
         'debug.allowBreakpointsEverywhere must stay at its default; with it on, F9 succeeds ' +
           'even when contributes.breakpoints omits csharp, and rule 3 goes untested',
       );
-      deepEq(armedLines(), [], 'no test may inherit a breakpoint from its neighbour');
+      assertArmedSourceLines([], 'no test may inherit a breakpoint from its neighbour');
 
       // Interaction 2 — put the caret on a statement and press F9.
       const editor = await focusAnchor(fixture, 'main-accumulate');
       eq(editor.document.languageId, 'csharp', 'F9 is being pressed in a C# document');
       await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-      deepEq(
-        armedLines(),
+      assertArmedSourceLines(
         [fixture.source.line('main-accumulate')],
         'F9 must create a breakpoint. VS Code gates every breakpoint UI entry point on ' +
           'canSetBreakpointsIn, which consults contributes.breakpoints; with no `csharp` entry ' +
@@ -83,18 +84,21 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       // Interaction 3 — F9 again on the same line must REMOVE it. A toggle that
       // only ever adds leaves the user unable to clear a breakpoint from the editor.
       await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-      deepEq(armedLines(), [], 'F9 on an existing breakpoint must toggle it off');
+      assertArmedSourceLines([], 'F9 on an existing breakpoint must toggle it off');
 
       // Interaction 4 — F9 once more, then launch and prove it really stops.
       await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-      deepEq(armedLines(), [fixture.source.line('main-accumulate')], 'the third F9 re-arms it');
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'a breakpoint set through the editor must stop the debuggee');
+      assertArmedSourceLines([fixture.source.line('main-accumulate')], 'the third F9 re-arms it');
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'a breakpoint set through the editor must stop the debuggee',
+      );
       assertStopReason(stop, 'breakpoint', 'an F9-set breakpoint');
       assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the F9 line');
-      assertStoppedAt(
-        await topFrame(session, stop.threadId),
+      await assertTopFrameAt(
+        session,
+        stop,
         fixture,
         'main-accumulate',
         'Main',
@@ -112,9 +116,11 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
     async ({ fixture, recorder }) => {
       // Interaction 1 — launch with a single breakpoint and stop on it.
       armBreakpoints(fixture, 'main-accumulate');
-      await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [first] = await recorder.waitForStops(1);
-      assert.ok(first, 'the debuggee must reach the only armed breakpoint');
+      await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the debuggee must reach the only armed breakpoint',
+      );
       const armedOnly = [fixture.source.dapLine('main-accumulate')];
       await waitForSyncedLines(
         recorder,
@@ -124,10 +130,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
 
       // Interaction 2 — add a SECOND breakpoint while the debuggee is paused.
       vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-done')]);
-      const bothLines = [
-        fixture.source.dapLine('main-accumulate'),
-        fixture.source.dapLine('main-done'),
-      ].sort((left, right) => left - right);
+      const bothLines = sortedDapLines(fixture, 'main-accumulate', 'main-done');
       const addReason =
         'a breakpoint added mid-session must be pushed to the live adapter, not queued for the ' +
         'next launch — otherwise the user sets a breakpoint and the debuggee runs straight past';
@@ -176,16 +179,19 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       );
 
       // Interaction 2 — launch. Only the ENABLED line may reach the adapter.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [first] = await recorder.waitForStops(1);
-      assert.ok(first, 'the enabled breakpoint must stop the debuggee');
+      const { session, stop: first } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the enabled breakpoint must stop the debuggee',
+      );
       const enabledOnly = [fixture.source.dapLine('main-accumulate')];
       const disabledReason =
         'a DISABLED breakpoint must not be sent to the adapter — the Breakpoints view shows it ' +
         'greyed out precisely because it is inert';
       await waitForSyncedLines(recorder, enabledOnly, disabledReason);
-      assertStoppedAt(
-        await topFrame(session, first.threadId),
+      await assertTopFrameAt(
+        session,
+        first,
         fixture,
         'main-accumulate',
         'Main',
@@ -195,10 +201,7 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       // Interaction 3 — enable it (remove + re-add, which is what the checkbox does).
       const disabled = vscode.debug.breakpoints.filter((breakpoint) => !breakpoint.enabled);
       eq(disabled.length, 1, 'exactly one breakpoint is disabled before the toggle');
-      const bothArmed = [
-        fixture.source.dapLine('main-accumulate'),
-        fixture.source.dapLine('main-inspect'),
-      ].sort((left, right) => left - right);
+      const bothArmed = sortedDapLines(fixture, 'main-accumulate', 'main-inspect');
       vscode.debug.removeBreakpoints(disabled);
       vscode.debug.addBreakpoints([breakpointAt(fixture, 'main-inspect')]);
       await waitForSyncedLines(
@@ -208,9 +211,13 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       );
 
       // Interaction 4 — continue: the newly enabled breakpoint must now stop.
-      const second = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStopReason(second.stop, 'breakpoint', 'the re-enabled breakpoint');
-      assertStoppedAt(second.frame, fixture, 'main-inspect', 'Main', 'the re-enabled breakpoint');
+      await continueToBreakpoint(
+        recorder,
+        fixture,
+        'main-inspect',
+        'Main',
+        'the re-enabled breakpoint',
+      );
       assertCleanSession(debuggee(), 'disable then enable');
     },
   );
@@ -227,10 +234,14 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       eq(vscode.debug.breakpoints.length, 1, 'one function breakpoint is armed');
       const armed = requireAt(vscode.debug.breakpoints, 0, 'the function breakpoint');
       assert.ok(armed instanceof vscode.FunctionBreakpoint, 'it is a FunctionBreakpoint');
-      deepEq(armedLines(), [], 'a function breakpoint is not a source breakpoint');
+      assertArmedSourceLines([], 'a function breakpoint is not a source breakpoint');
 
       // Interaction 2 — launch. The adapter must be asked, and must say yes.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'a function breakpoint must stop the debuggee on entry to the method',
+      );
       const requested = recorder.requests('setFunctionBreakpoints');
       assert.ok(
         requested.length >= 1,
@@ -255,18 +266,28 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
       );
 
       // Interaction 3 — the debuggee must stop on entry to Add, three frames deep.
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'a function breakpoint must stop the debuggee on entry to the method');
       assertStopReason(stop, 'function breakpoint', 'a function-breakpoint stop');
       const frame = await topFrame(session, stop.threadId);
       eq(methodOf(frame), 'Add', 'the stop must be inside the named method');
       assertStoppedAt(frame, fixture, 'add-body', 'Add', 'the function breakpoint');
 
       // Interaction 4 — continue twice: the loop calls Add three times in all.
-      const secondHit = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStoppedAt(secondHit.frame, fixture, 'add-body', 'Add', 'the second call to Add');
-      const thirdHit = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStoppedAt(thirdHit.frame, fixture, 'add-body', 'Add', 'the third call to Add');
+      await stepLandsAt(
+        recorder,
+        CMD_CONTINUE,
+        fixture,
+        'add-body',
+        'Add',
+        'the second call to Add',
+      );
+      await stepLandsAt(
+        recorder,
+        CMD_CONTINUE,
+        fixture,
+        'add-body',
+        'Add',
+        'the third call to Add',
+      );
       eq(recorder.stops().length, 3, 'Accumulate calls Add exactly three times, so three stops');
       assertCleanSession(debuggee(), 'a function breakpoint hit three times');
     },
@@ -294,14 +315,13 @@ suite('Debug breakpoints — F9, the Breakpoints view, and function breakpoints'
         3,
         'three of them are enabled and one is not',
       );
-      deepEq(
-        armedLines(),
+      assertArmedSourceLines(
         [
           fixture.source.line('main-accumulate'),
           fixture.source.line('accumulate-call'),
           fixture.source.line('add-body'),
           fixture.source.line('main-inspect'),
-        ].sort((left, right) => left - right),
+        ],
         'and the view holds them all, disabled included',
       );
 
