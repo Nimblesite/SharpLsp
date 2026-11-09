@@ -65,46 +65,27 @@ function assertCodeGone(
   );
 }
 
+/** A DiagTest/DiagTarget source whose `Foo` is `public <ret> Foo() { <body> }`. */
+function diagTargetMethod(ret: string, body: string): string {
+  return `namespace DiagTest
+{
+    public class DiagTarget
+    {
+        public ${ret} Foo() { ${body} }
+    }
+}`;
+}
+
 /** Clean starting content for the diagnostic target file. */
-const CLEAN_CONTENT = `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return 42; }
-    }
-}`;
+const CLEAN_CONTENT = diagTargetMethod('int', 'return 42;');
 
-const TYPE_ERROR_CS = `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "not an int"; }
-    }
-}`;
+const TYPE_ERROR_CS = diagTargetMethod('int', 'return "not an int";');
 
-const MISSING_TYPE_CS = `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public NonExistentType Foo() { return null; }
-    }
-}`;
+const MISSING_TYPE_CS = diagTargetMethod('NonExistentType', 'return null;');
 
-const BAD_RETURN_CS = `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "bad"; }
-    }
-}`;
+const BAD_RETURN_CS = diagTargetMethod('int', 'return "bad";');
 
-const BAD_AGAIN_CS = `namespace DiagTest
-{
-    public class DiagTarget
-    {
-        public int Foo() { return "bad again"; }
-    }
-}`;
+const BAD_AGAIN_CS = diagTargetMethod('int', 'return "bad again";');
 
 const WRONG_LOCAL_CS = `namespace DiagTest
 {
@@ -173,6 +154,43 @@ suite('Diagnostics / Problems Panel', () => {
     return { diagnostics, error };
   }
 
+  /** Assert the diagnostic carries exactly `code`, naming what it carried instead. */
+  function assertErrorCode(diagnostic: vscode.Diagnostic, code: string, why: string): void {
+    assert.strictEqual(codeOf(diagnostic), code, `${why}, got ${codeOf(diagnostic)}`);
+  }
+
+  /**
+   * Assert `error` is the compiler error `code` (`codeWhy`), well shaped and
+   * Error-severity (`severityWhy`), with its squiggle covering `needle`
+   * (`squiggleWhy`); return the squiggled source text.
+   */
+  function assertCompilerError(
+    error: vscode.Diagnostic,
+    code: string,
+    codeWhy: string,
+    severityWhy: string,
+    needle: string,
+    squiggleWhy: string,
+  ): string {
+    assertErrorCode(error, code, codeWhy);
+    assertDiagnosticShape(error, diagDoc);
+    assert.strictEqual(error.severity, vscode.DiagnosticSeverity.Error, severityWhy);
+    const squiggled = diagDoc.getText(error.range);
+    assert.ok(squiggled.includes(needle), `${squiggleWhy}: '${squiggled}'`);
+    return squiggled;
+  }
+
+  /** Assert the buffer holds `present` (`presentWhy`) and no longer holds `gone` (`goneWhy`). */
+  function assertBufferText(
+    present: string,
+    presentWhy: string,
+    gone: string,
+    goneWhy: string,
+  ): void {
+    assert.ok(diagDoc.getText().includes(present), presentWhy);
+    assert.ok(!diagDoc.getText().includes(gone), goneWhy);
+  }
+
   /** Assert every published diagnostic satisfies the shape invariant. */
   function assertAllShaped(diagnostics: readonly vscode.Diagnostic[]): void {
     for (const diagnostic of diagnostics) {
@@ -217,21 +235,13 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 2 - [DIAG-CATEGORIES-COMPILER]: a type error is CS0029.
     // Without the code the Problems panel cannot link to documentation, the
     // editor cannot offer the matching quick fix, and nothing can suppress it.
-    assert.strictEqual(codeOf(error), 'CS0029', `type mismatch is CS0029, got ${codeOf(error)}`);
-    assertDiagnosticShape(error, diagDoc);
-    assert.strictEqual(
-      error.severity,
-      vscode.DiagnosticSeverity.Error,
+    const squiggled = assertCompilerError(
+      error,
+      'CS0029',
+      'type mismatch is CS0029',
       '[DIAG-LSP-SEVERITY] maps a Roslyn Error to severity 1',
-    );
-
-    // Interaction 3 - the squiggle covers the OFFENDING EXPRESSION, not the
-    // whole method. A range that spans the declaration paints the entire body
-    // red for one bad return.
-    const squiggled = diagDoc.getText(error.range);
-    assert.ok(
-      squiggled.includes('"not an int"'),
-      `the squiggle covers the literal: '${squiggled}'`,
+      '"not an int"',
+      'the squiggle covers the literal',
     );
     assert.strictEqual(error.range.start.line, error.range.end.line, 'on one line');
     assert.ok(squiggled.length < diagDoc.lineAt(4).text.length, 'and not the whole line');
@@ -255,20 +265,13 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 2 - [DIAG-CATEGORIES-COMPILER]: an unresolved type is CS0246.
     // That exact code is what the AddImport code fix keys off, so a diagnostic
     // reported without it leaves Ctrl-. with nothing to offer.
-    assert.strictEqual(
-      codeOf(csError),
+    assertCompilerError(
+      csError,
       'CS0246',
-      `an unresolved type is CS0246, got ${codeOf(csError)}`,
-    );
-    assertDiagnosticShape(csError, diagDoc);
-    assert.strictEqual(csError.severity, vscode.DiagnosticSeverity.Error, 'and it is an error');
-
-    // Interaction 3 - the squiggle sits on the TYPE NAME, which is where the
-    // lightbulb has to appear for the import fix to be reachable.
-    const squiggled = diagDoc.getText(csError.range);
-    assert.ok(
-      squiggled.includes('NonExistentType'),
-      `the squiggle covers the unresolved name: '${squiggled}'`,
+      'an unresolved type is CS0246',
+      'and it is an error',
+      'NonExistentType',
+      'the squiggle covers the unresolved name',
     );
     assert.strictEqual(csError.range.start.line, 4, 'on the declaration line');
     assert.ok(csError.message.includes('NonExistentType'), 'and the message names it');
@@ -315,8 +318,12 @@ suite('Diagnostics / Problems Panel', () => {
 
     // Interaction 4 - the buffer really is the clean one, so this is a
     // statement about the analyser rather than about the fixture.
-    assert.ok(diagDoc.getText().includes('return 42'), 'the clean content is in the buffer');
-    assert.ok(!diagDoc.getText().includes('not an int'), 'with no leftover error');
+    assertBufferText(
+      'return 42',
+      'the clean content is in the buffer',
+      'not an int',
+      'with no leftover error',
+    );
   });
 
   // ── Edit Cycle ────────────────────────────────────────────────
@@ -340,19 +347,19 @@ suite('Diagnostics / Problems Panel', () => {
     // Interaction 2 - the error that WAS reported was the real one, so the
     // clearing below is about the fix and not about an analyser that never
     // looked ([DIAG-CATEGORIES-COMPILER]).
-    assert.strictEqual(
-      codeOf(before),
-      'CS0029',
-      `the type mismatch was CS0029, got ${codeOf(before)}`,
-    );
+    assertErrorCode(before, 'CS0029', 'the type mismatch was CS0029');
     assertDiagnosticShape(before, diagDoc);
 
     // Interaction 3 - the specific code is GONE, not merely outnumbered. A
     // stale squiggle on a line the user already fixed is the single most
     // corrosive diagnostics defect there is ([DIAG-CATEGORIES-LIVE]).
     assertCodeGone(cleared, 'CS0029', 'CS0029 must be gone');
-    assert.ok(diagDoc.getText().includes('return 42'), 'and the fix really is in the buffer');
-    assert.ok(!diagDoc.getText().includes('"bad"'), 'with the bad literal removed');
+    assertBufferText(
+      'return 42',
+      'and the fix really is in the buffer',
+      '"bad"',
+      'with the bad literal removed',
+    );
 
     // Interaction 4 - breaking it AGAIN reports again. A pipeline that clears
     // once and then goes quiet is worse than one that never cleared.

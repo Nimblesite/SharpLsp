@@ -14,6 +14,7 @@
  * Implements [DEBUG-FEATURES-LAUNCH-BUILD].
  */
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
@@ -125,6 +126,42 @@ export async function dispatchedBuildTask(
   const task = observed[previous];
   assert.ok(task !== undefined, `${command} dispatched no build task at all`);
   return shapeOf(task, command);
+}
+
+/**
+ * Write `fileName` with `content` into `dir`, open it, insert `insertText` at the
+ * top of the buffer, and save it, asserting the save does not reject (`saveWhy`).
+ * With `expectedLanguage`, the document's languageId is asserted first (`why`).
+ */
+export async function writeOpenEditSave(
+  dir: string,
+  fileName: string,
+  content: string,
+  insertText: string,
+  saveWhy: string,
+  expectedLanguage?: { id: string; why: string },
+): Promise<vscode.TextDocument> {
+  const filePath = path.join(dir, fileName);
+  fs.writeFileSync(filePath, content, 'utf8');
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+  if (expectedLanguage !== undefined) {
+    assert.strictEqual(doc.languageId, expectedLanguage.id, expectedLanguage.why);
+  }
+  const editor = await vscode.window.showTextDocument(doc);
+  await editor.edit((b) => {
+    b.insert(new vscode.Position(0, 0), insertText);
+  });
+  await assert.doesNotReject(async () => {
+    await doc.save();
+  }, saveWhy);
+  return doc;
+}
+
+/** Assert `vscode.commands.executeCommand(command)` resolves, naming `message` on failure. */
+export async function doesNotRejectCommand(command: string, message: string): Promise<void> {
+  await assert.doesNotReject(async () => {
+    await vscode.commands.executeCommand(command);
+  }, message);
 }
 
 // ── Fake OutputChannel ────────────────────────────────────────────

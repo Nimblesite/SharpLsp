@@ -3,6 +3,7 @@
 // every executeCommand request, the provider loaded through the real fetch
 // path, the inline row actions exactly as VS Code invokes them, and a
 // decoration provider that always cleans up after itself.
+import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import {
@@ -219,4 +220,44 @@ export function withDecorations<T>(
   } finally {
     decorations.dispose();
   }
+}
+
+/** Assert exactly one profiler start was recorded and that start targets `pid`. */
+export function assertProfilerStart(
+  requests: readonly RecordedRequest[],
+  pid: unknown,
+  countWhy: string,
+  pidWhy: string,
+): void {
+  const fired = profilerStarts(requests);
+  assert.strictEqual(fired.length, 1, countWhy);
+  assert.strictEqual(startPid(fired[0]!), pid, pidWhy);
+}
+
+/** Assert no `basilisk.profiler.start` was recorded at all, with `why` on failure. */
+export function assertNoProfilerStart(requests: readonly RecordedRequest[], why: string): void {
+  assert.strictEqual(profilerStarts(requests).length, 0, why);
+}
+
+/** Assert the decoration bound to `uri` resolves to the theme colour id `expected`. */
+export function assertDecorationColour(
+  decorations: ProcessDecorationProvider,
+  uri: vscode.Uri,
+  expected: string,
+  why: string,
+): void {
+  assert.strictEqual(decorations.provideFileDecoration(uri)?.color?.id, expected, why);
+}
+
+/** Assert `row` carries a resourceUri whose decoration colour id is `expected`. */
+export function assertRowDecorationColour(
+  decorations: ProcessDecorationProvider,
+  row: vscode.TreeItem,
+  expected: string,
+  uriWhy: string,
+  colourWhy: string,
+): void {
+  const uri = row.resourceUri;
+  assert.ok(uri, uriWhy);
+  assertDecorationColour(decorations, uri, expected, colourWhy);
 }
