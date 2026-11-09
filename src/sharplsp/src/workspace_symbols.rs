@@ -208,44 +208,37 @@ pub fn handle(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<WorkspaceSymbolsResponse> {
     let target = Path::new(&params.solution);
-    if !crate::workspace_targets::is_solution(target) {
+    let (projects, solution_folders) = if crate::workspace_targets::is_solution(target) {
+        let sln = read_solution(params, runtime, solution_sidecar)?;
+        info!(
+            "sharplsp/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
+            sln.projects.len(),
+            sln.folders.len(),
+            sln.file_count,
+            sln.path,
+            sln.format
+        );
+        (sln.projects, sln.folders)
+    } else {
         let projects = crate::workspace_targets::projects_of(target)
             .iter()
             .enumerate()
             .map(|(order, path)| standalone_project(path, order))
-            .filter_map(|project| {
-                build_project_node(&project, parsers, vfs, runtime, fsharp_sidecar).ok()
-            })
             .collect();
-        return Ok(WorkspaceSymbolsResponse {
-            projects,
-            solution_folders: Vec::new(),
-        });
-    }
-    let sln_data = read_solution(params, runtime, solution_sidecar)?;
-
-    info!(
-        "sharplsp/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
-        sln_data.projects.len(),
-        sln_data.folders.len(),
-        sln_data.file_count,
-        sln_data.path,
-        sln_data.format
-    );
-
-    let project_nodes: Vec<ProjectNode> = sln_data
-        .projects
+        (projects, Vec::new())
+    };
+    let projects = projects
         .iter()
-        .filter_map(|proj| {
-            let mut node = build_project_node(proj, parsers, vfs, runtime, fsharp_sidecar).ok()?;
-            node.parent_folder.clone_from(&proj.parent_folder);
+        .filter_map(|project| {
+            let mut node =
+                build_project_node(project, parsers, vfs, runtime, fsharp_sidecar).ok()?;
+            node.parent_folder.clone_from(&project.parent_folder);
             Some(node)
         })
         .collect();
-
     Ok(WorkspaceSymbolsResponse {
-        projects: project_nodes,
-        solution_folders: sln_data.folders,
+        projects,
+        solution_folders,
     })
 }
 
