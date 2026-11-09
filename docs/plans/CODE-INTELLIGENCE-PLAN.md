@@ -68,11 +68,13 @@ The five completed core items were verified against the latest published v0.32.1
 
 - [ ] E2E test: `prepareRename` range and placeholder for every code element category
 - [ ] E2E test: rename updates declarations and references across files
-- [ ] E2E test: rename after document edit uses latest VFS content
+- [x] E2E test: rename after document edit uses latest VFS content — `lsp-rename-edge.test.ts` and `fsharp-lsp-rename-edge.test.ts` prepare, apply, reverse and undo renames of unsaved C# and F# bindings, [RENAME-TESTS]
 - [ ] E2E test: invalid new names are rejected
 - [ ] E2E test: whitespace/comment/string/metadata positions are rejected
-- [ ] E2E test: cross-language C# <-> F# public symbol rename
+- [x] E2E test: cross-language C# <-> F# public symbol rename — `fsharp-lsp-cross-language-rename.test.ts` checks public types and properties in both directions, exact edits in both files, apply/reverse, rebuild and diagnostics, [RENAME-CROSSLANGUAGE]
 - [ ] E2E test: returned `WorkspaceEdit` has valid, non-overlapping LSP edits
+
+The unsaved C# case, three F# name variants and four cross-language type/property cases passed in the Linux `lsp` and `fsharp` jobs at `997a1734` on 2026-11-10. The code-element checklist above tracks the remaining category-wide coverage. [CI run](https://github.com/Nimblesite/SharpLsp/actions/runs/42712062747)
 
 ## Editor Navigation
 
