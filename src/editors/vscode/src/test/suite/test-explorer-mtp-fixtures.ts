@@ -34,38 +34,26 @@ import {
   type PackageRef,
 } from './dotnet-project-kit';
 import {
+  csClassNames,
+  fixtureByKey,
   fixtureNames,
+  type FixtureTests,
   csXunitSource,
   csNunitSource,
   csMstestSource,
   fsNunitSource,
+  type FixtureProject,
 } from './test-explorer-fixtures';
 
-/** One buildable MTP fixture project plus the ids it is expected to expose. */
-export interface MtpFixture {
-  /** Stable key: `<framework>-<language>`. */
-  readonly key: string;
-  readonly framework: 'xunit' | 'mstest' | 'nunit';
-  readonly language: 'fsharp' | 'csharp';
-  readonly packages: readonly PackageRef[];
-  readonly projectName: string;
-  readonly projectFileName: string;
-  readonly sourceFileName: string;
-  readonly source: string;
-  /** Id of the test that passes. */
-  readonly passing: string;
-  /** Id of the test that fails. */
-  readonly failing: string;
-  /** Id of the test that is skipped or ignored. */
-  readonly skipped: string;
-  /** Id of the data-driven test whose rows all pass. */
-  readonly parameterized: string;
-  /**
-   * Id of a data-driven test whose rows DISAGREE — one passes, one fails. Both
-   * rows report under this one id, so the merged outcome must be a failure.
-   * Only the xUnit fixtures carry one.
-   */
-  readonly mixedParameterized?: string;
+/**
+ * One buildable MTP fixture project plus the ids it is expected to expose.
+ *
+ * The project itself is the {@link FixtureProject} the VSTest matrix builds
+ * from the same sources; what MTP adds is the id shapes and failure text it
+ * reports. `mixedParameterized` widens from its base doc: here it is the id of
+ * a data-driven test whose rows disagree, merged to a failure.
+ */
+export interface MtpFixture extends FixtureProject {
   /**
    * Whether the framework reports a source location for its tests. NUnit does
    * not, and its rows must still appear in the tree.
@@ -73,11 +61,39 @@ export interface MtpFixture {
   readonly reportsLocation: boolean;
   /**
    * A distinctive fragment of the assertion text this framework writes for
-   * {@link failing}. Each one is different, and surfacing the framework's OWN
-   * text — rather than a generic "Test failed" — is what [TEST-RUN-TRX]
-   * requires of the report reader.
+   * {@link FixtureProject.failing}. Each one is different, and surfacing the
+   * framework's OWN text — rather than a generic "Test failed" — is what
+   * [TEST-RUN-TRX] requires of the report reader.
    */
   readonly failureText: string;
+}
+
+/** What each framework reports about a failing test: its location and its own assertion text. */
+type MtpShape = Pick<MtpFixture, 'reportsLocation' | 'failureText'>;
+
+/** xUnit writes `Assert.Equal() Failure` and does report a source location. */
+const XUNIT_SHAPE: MtpShape = { reportsLocation: true, failureText: 'Assert.Equal() Failure' };
+
+/** MSTest reports a location too, and phrases its own assertion failure. */
+const MSTEST_SHAPE: MtpShape = {
+  reportsLocation: true,
+  failureText: 'Assertion failed. Expected values to be equal.',
+};
+
+/** NUnit reports NO location and its message starts at the assertion call. */
+const NUNIT_SHAPE: MtpShape = { reportsLocation: false, failureText: 'Assert.That(' };
+
+/** One MTP fixture, its project names derived by {@link fixtureNames} with the `Mtp` flavour. */
+function mtpFixture(
+  framework: FixtureProject['framework'],
+  language: FixtureProject['language'],
+  packages: readonly PackageRef[],
+  source: string,
+  tests: FixtureTests,
+  shape: MtpShape,
+): MtpFixture {
+  const names = fixtureNames(framework, language, 'Mtp');
+  return { ...names, framework, language, packages, source, ...tests, ...shape };
 }
 
 const FS_XUNIT_SOURCE = [
@@ -131,88 +147,72 @@ const FS_MSTEST_SOURCE = [
  * carries none.
  */
 export const MTP_FIXTURES: readonly MtpFixture[] = [
-  {
-    ...fixtureNames('xunit', 'fsharp', 'Mtp'),
-    framework: 'xunit',
-    language: 'fsharp',
-    packages: MTP_XUNIT_PACKAGES,
-    source: FS_XUNIT_SOURCE,
-    passing: 'Fs.XunitMtp.Fixtures.adds two numbers with spaces',
-    failing: 'Fs.XunitMtp.Fixtures.fails on purpose',
-    skipped: 'Fs.XunitMtp.Fixtures.skipped on purpose',
-    parameterized: 'Fs.XunitMtp.Fixtures.adds theory rows',
-    reportsLocation: true,
-    failureText: 'Assert.Equal() Failure',
-  },
-  {
-    ...fixtureNames('xunit', 'csharp', 'Mtp'),
-    framework: 'xunit',
-    language: 'csharp',
-    packages: MTP_XUNIT_PACKAGES,
-    source: csXunitSource('namespace Cs.XunitMtp.Fixtures'),
-    passing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.XunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.XunitMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.XunitMtp.Fixtures.CalculatorTests.Adds_Theory',
-    mixedParameterized: 'Cs.XunitMtp.Fixtures.CalculatorTests.Mixed_Theory',
-    reportsLocation: true,
-    failureText: 'Assert.Equal() Failure',
-  },
-  {
-    ...fixtureNames('mstest', 'fsharp', 'Mtp'),
-    framework: 'mstest',
-    language: 'fsharp',
-    packages: MTP_MSTEST_PACKAGES,
-    source: FS_MSTEST_SOURCE,
-    passing: 'Fs.MstestMtp.Fixtures+CalculatorTests.AddsTwoNumbers',
-    failing: 'Fs.MstestMtp.Fixtures+CalculatorTests.FailsOnPurpose',
-    skipped: 'Fs.MstestMtp.Fixtures+CalculatorTests.SkippedOnPurpose',
-    parameterized: 'Fs.MstestMtp.Fixtures+CalculatorTests.AddsRow',
-    reportsLocation: true,
-    failureText: 'Assertion failed. Expected values to be equal.',
-  },
-  {
-    ...fixtureNames('mstest', 'csharp', 'Mtp'),
-    framework: 'mstest',
-    language: 'csharp',
-    packages: MTP_MSTEST_PACKAGES,
-    source: csMstestSource('namespace Cs.MstestMtp.Fixtures', '        [TestMethod]'),
-    passing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.MstestMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.MstestMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.MstestMtp.Fixtures.CalculatorTests.Adds_Row',
-    reportsLocation: true,
-    failureText: 'Assertion failed. Expected values to be equal.',
-  },
-  {
-    ...fixtureNames('nunit', 'fsharp', 'Mtp'),
-    framework: 'nunit',
-    language: 'fsharp',
-    packages: MTP_NUNIT_PACKAGES,
-    source: fsNunitSource(
+  mtpFixture(
+    'xunit',
+    'fsharp',
+    MTP_XUNIT_PACKAGES,
+    FS_XUNIT_SOURCE,
+    {
+      passing: 'Fs.XunitMtp.Fixtures.adds two numbers with spaces',
+      failing: 'Fs.XunitMtp.Fixtures.fails on purpose',
+      skipped: 'Fs.XunitMtp.Fixtures.skipped on purpose',
+      parameterized: 'Fs.XunitMtp.Fixtures.adds theory rows',
+    },
+    XUNIT_SHAPE,
+  ),
+  mtpFixture(
+    'xunit',
+    'csharp',
+    MTP_XUNIT_PACKAGES,
+    csXunitSource('namespace Cs.XunitMtp.Fixtures'),
+    csClassNames('Cs.XunitMtp.Fixtures', 'Adds_Theory', 'Mixed_Theory'),
+    XUNIT_SHAPE,
+  ),
+  mtpFixture(
+    'mstest',
+    'fsharp',
+    MTP_MSTEST_PACKAGES,
+    FS_MSTEST_SOURCE,
+    {
+      passing: 'Fs.MstestMtp.Fixtures+CalculatorTests.AddsTwoNumbers',
+      failing: 'Fs.MstestMtp.Fixtures+CalculatorTests.FailsOnPurpose',
+      skipped: 'Fs.MstestMtp.Fixtures+CalculatorTests.SkippedOnPurpose',
+      parameterized: 'Fs.MstestMtp.Fixtures+CalculatorTests.AddsRow',
+    },
+    MSTEST_SHAPE,
+  ),
+  mtpFixture(
+    'mstest',
+    'csharp',
+    MTP_MSTEST_PACKAGES,
+    csMstestSource('namespace Cs.MstestMtp.Fixtures', '        [TestMethod]'),
+    csClassNames('Cs.MstestMtp.Fixtures', 'Adds_Row'),
+    MSTEST_SHAPE,
+  ),
+  mtpFixture(
+    'nunit',
+    'fsharp',
+    MTP_NUNIT_PACKAGES,
+    fsNunitSource(
       'module Fs.NunitMtp.Fixtures',
       'let ``adds two numbers with spaces`` () = Assert.That(1 + 2, Is.EqualTo(3))',
     ),
-    passing: 'Fs.NunitMtp.Fixtures.adds two numbers with spaces',
-    failing: 'Fs.NunitMtp.Fixtures.fails on purpose',
-    skipped: 'Fs.NunitMtp.Fixtures.skipped on purpose',
-    parameterized: 'Fs.NunitMtp.Fixtures.adds case',
-    reportsLocation: false,
-    failureText: 'Assert.That(',
-  },
-  {
-    ...fixtureNames('nunit', 'csharp', 'Mtp'),
-    framework: 'nunit',
-    language: 'csharp',
-    packages: MTP_NUNIT_PACKAGES,
-    source: csNunitSource('namespace Cs.NunitMtp.Fixtures'),
-    passing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Adds_TwoNumbers',
-    failing: 'Cs.NunitMtp.Fixtures.CalculatorTests.Fails_OnPurpose',
-    skipped: 'Cs.NunitMtp.Fixtures.CalculatorTests.Skipped_OnPurpose',
-    parameterized: 'Cs.NunitMtp.Fixtures.CalculatorTests.Adds_Case',
-    reportsLocation: false,
-    failureText: 'Assert.That(',
-  },
+    {
+      passing: 'Fs.NunitMtp.Fixtures.adds two numbers with spaces',
+      failing: 'Fs.NunitMtp.Fixtures.fails on purpose',
+      skipped: 'Fs.NunitMtp.Fixtures.skipped on purpose',
+      parameterized: 'Fs.NunitMtp.Fixtures.adds case',
+    },
+    NUNIT_SHAPE,
+  ),
+  mtpFixture(
+    'nunit',
+    'csharp',
+    MTP_NUNIT_PACKAGES,
+    csNunitSource('namespace Cs.NunitMtp.Fixtures'),
+    csClassNames('Cs.NunitMtp.Fixtures', 'Adds_Case'),
+    NUNIT_SHAPE,
+  ),
 ];
 
 /** Every id one fixture must contribute to the tree. */
@@ -224,11 +224,9 @@ export function idsOf(fixture: MtpFixture): readonly string[] {
 /** Every id the whole MTP fixture solution must expose. */
 export const ALL_MTP_IDS: readonly string[] = MTP_FIXTURES.flatMap(idsOf);
 
-/** Look a fixture up by key, failing loudly on a typo. */
+/** Look an MTP fixture up by key, failing loudly on a typo. */
 export function mtpFixtureFor(key: string): MtpFixture {
-  const fixture = MTP_FIXTURES.find((candidate) => candidate.key === key);
-  if (fixture === undefined) throw new Error(`no MTP fixture named '${key}'`);
-  return fixture;
+  return fixtureByKey(MTP_FIXTURES, key, 'MTP fixture');
 }
 
 /** Write one fixture project and return its directory. */

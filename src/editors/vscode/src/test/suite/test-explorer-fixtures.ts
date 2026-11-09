@@ -28,8 +28,14 @@ import {
   type PackageRef,
 } from './dotnet-project-kit';
 
-/** One buildable fixture project plus the names it is expected to expose. */
-export interface FrameworkFixture {
+/**
+ * A buildable fixture project: where it is written and what it exposes.
+ *
+ * The VSTest matrix and the MTP matrix run the SAME projects; they differ only
+ * in the id a framework reports for a test. So the shape of the project lives
+ * here once, and each matrix adds what it observes on top.
+ */
+export interface FixtureProject {
   /** Stable key: `<framework>-<language>`. */
   readonly key: string;
   readonly framework: 'xunit' | 'nunit' | 'mstest';
@@ -40,21 +46,24 @@ export interface FrameworkFixture {
   readonly projectFileName: string;
   readonly sourceFileName: string;
   readonly source: string;
-  /** Fully-qualified name of the test that passes. */
+  /** Fully-qualified name (MTP: the listing's id) of the test that passes. */
   readonly passing: string;
-  /** Fully-qualified name of the test that fails, and its assertion text. */
+  /** Fully-qualified name (MTP: id) of the test that fails. */
   readonly failing: string;
-  /** Fully-qualified name of the test that is skipped/ignored. */
+  /** Fully-qualified name (MTP: id) of the test that is skipped/ignored. */
   readonly skipped: string;
-  /** Fully-qualified name of the data-driven test (every row passes). */
+  /** Fully-qualified name (MTP: id) of the data-driven test (every row passes). */
   readonly parameterized: string;
   /**
-   * Fully-qualified name of a data-driven test whose rows DISAGREE — one passes,
-   * one fails. Both rows report under this single name, so the merged outcome
-   * must be a failure. Only the xUnit fixtures carry one.
+   * Fully-qualified name (MTP: id) of a data-driven test whose rows DISAGREE —
+   * one passes, one fails. Both rows report under this single name, so the
+   * merged outcome must be a failure. Only the xUnit fixtures carry one.
    */
   readonly mixedParameterized?: string;
 }
+
+/** One buildable fixture project plus the names it is expected to expose. */
+export type FrameworkFixture = FixtureProject;
 
 /** The C# xUnit fixture: a pass, a failure, a skip, and two theories. */
 export function csXunitSource(namespace: string): string {
@@ -198,7 +207,7 @@ const FS_MSTEST_SOURCE = [
 ].join('\n');
 
 /** The names a framework × language fixture exposes, one per outcome. */
-type FixtureTests = Pick<
+export type FixtureTests = Pick<
   FrameworkFixture,
   'passing' | 'failing' | 'skipped' | 'parameterized' | 'mixedParameterized'
 >;
@@ -221,6 +230,29 @@ export function fixtureNames(
     projectName,
     projectFileName: `${projectName}.${ext}proj`,
     sourceFileName: `Tests.${ext}`,
+  };
+}
+
+/**
+ * The names a C# fixture's `CalculatorTests` class exposes, derived from the
+ * namespace that declares it.
+ *
+ * Every C# fixture declares the same class with the same four outcomes, so the
+ * namespace and the data-driven method's own name are all that differ; deriving
+ * the rest is what keeps six projects' expectations from drifting apart.
+ */
+export function csClassNames(
+  namespace: string,
+  parameterized: string,
+  mixed?: string,
+): FixtureTests {
+  const method = (name: string): string => `${namespace}.CalculatorTests.${name}`;
+  return {
+    passing: method('Adds_TwoNumbers'),
+    failing: method('Fails_OnPurpose'),
+    skipped: method('Skipped_OnPurpose'),
+    parameterized: method(parameterized),
+    ...(mixed === undefined ? {} : { mixedParameterized: method(mixed) }),
   };
 }
 
@@ -270,37 +302,21 @@ export const FRAMEWORK_FIXTURES: readonly FrameworkFixture[] = [
     'csharp',
     XUNIT_PACKAGES,
     csXunitSource('namespace Cs.Xunit.Fixtures'),
-    {
-      passing: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
-      failing: 'Cs.Xunit.Fixtures.CalculatorTests.Fails_OnPurpose',
-      skipped: 'Cs.Xunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
-      parameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Adds_Theory',
-      mixedParameterized: 'Cs.Xunit.Fixtures.CalculatorTests.Mixed_Theory',
-    },
+    csClassNames('Cs.Xunit.Fixtures', 'Adds_Theory', 'Mixed_Theory'),
   ),
   frameworkFixture(
     'nunit',
     'csharp',
     NUNIT_PACKAGES,
     csNunitSource('namespace Cs.Nunit.Fixtures'),
-    {
-      passing: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_TwoNumbers',
-      failing: 'Cs.Nunit.Fixtures.CalculatorTests.Fails_OnPurpose',
-      skipped: 'Cs.Nunit.Fixtures.CalculatorTests.Skipped_OnPurpose',
-      parameterized: 'Cs.Nunit.Fixtures.CalculatorTests.Adds_Case(2,2,4)',
-    },
+    csClassNames('Cs.Nunit.Fixtures', 'Adds_Case(2,2,4)'),
   ),
   frameworkFixture(
     'mstest',
     'csharp',
     MSTEST_PACKAGES,
     csMstestSource('namespace Cs.Mstest.Fixtures', '        [DataTestMethod]'),
-    {
-      passing: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_TwoNumbers',
-      failing: 'Cs.Mstest.Fixtures.CalculatorTests.Fails_OnPurpose',
-      skipped: 'Cs.Mstest.Fixtures.CalculatorTests.Skipped_OnPurpose',
-      parameterized: 'Cs.Mstest.Fixtures.CalculatorTests.Adds_Row',
-    },
+    csClassNames('Cs.Mstest.Fixtures', 'Adds_Row'),
   ),
 ];
 
@@ -398,11 +414,20 @@ export const DECORATING_ADAPTER_FIXTURE: FrameworkFixture = {
   mixedParameterized: 'Cs.XunitDecorated.Fixtures.CalculatorTests.Mixed_Theory',
 };
 
-/** Look a fixture up by key, failing loudly on a typo. */
-export function fixtureFor(key: string): FrameworkFixture {
-  const fixture = FRAMEWORK_FIXTURES.find((candidate) => candidate.key === key);
-  if (fixture === undefined) throw new Error(`no framework fixture named '${key}'`);
+/** The `key` entry of `fixtures`, failing loudly with `what` on a typo. */
+export function fixtureByKey<T extends { readonly key: string }>(
+  fixtures: readonly T[],
+  key: string,
+  what: string,
+): T {
+  const fixture = fixtures.find((candidate) => candidate.key === key);
+  if (fixture === undefined) throw new Error(`no ${what} named '${key}'`);
   return fixture;
+}
+
+/** Look a framework fixture up by key, failing loudly on a typo. */
+export function fixtureFor(key: string): FrameworkFixture {
+  return fixtureByKey(FRAMEWORK_FIXTURES, key, 'framework fixture');
 }
 
 /**

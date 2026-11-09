@@ -97,6 +97,38 @@ function assertFixtureTree(
   assertFqnShape(ids, why);
 }
 
+/** `ids` are exactly the fixture's own ids, compared as a set. */
+function assertSameIds(ids: readonly string[], why: string): void {
+  assert.deepStrictEqual(sorted(ids), sorted(EXPECTED), why);
+}
+
+/** The controller holds no test leaf and no root row at all. */
+function assertTreeEmpty(
+  controller: SharpLspTestController,
+  leafWhy: string,
+  rootWhy: string,
+): void {
+  assert.deepStrictEqual(collectLeafIds(controller.items), [], leafWhy);
+  assert.strictEqual(controller.items.size, 0, rootWhy);
+}
+
+/** The row `id` resolves to carries `id` in `field` — its id, or the FQN description. */
+function assertRowField(
+  controller: SharpLspTestController,
+  id: string,
+  field: 'id' | 'description',
+  why: string,
+): void {
+  assert.strictEqual(findItem(controller.items, id)?.[field], id, why);
+}
+
+/** How long `whenIdle()` took to resolve, in milliseconds. */
+async function measureIdle(controller: SharpLspTestController): Promise<number> {
+  const start = Date.now();
+  await controller.whenIdle();
+  return Date.now() - start;
+}
+
 /** EXACTLY `expected`: each name once, nothing else, stable between reads. Duplicates mean a racing sweep. */
 function assertTree(
   ctl: SharpLspTestController,
@@ -284,20 +316,15 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     try {
       api.testController.items.replace([]);
       api.explorerProvider.clear();
-      assert.deepStrictEqual(
-        collectLeafIds(api.testController.items),
-        [],
+      assertTreeEmpty(
+        api.testController,
         'empty before the reactive load',
+        'and the root collection is empty too',
       );
-      assert.strictEqual(api.testController.items.size, 0, 'and the root collection is empty too');
       assert.strictEqual(spy.stacks.length, 0, 'clearing the tree must not itself sweep');
       await api.explorerProvider.loadSolution(slnPath);
       const ids = await pollForIds(api.testController, (s) => EXPECTED.every((n) => s.includes(n)));
-      assert.deepStrictEqual(
-        sorted(ids),
-        sorted(EXPECTED),
-        'the poll observed the whole fixture, reactively',
-      );
+      assertSameIds(ids, 'the poll observed the whole fixture, reactively');
       assertFixtureTree(
         api.testController,
         solutionDir,
@@ -407,11 +434,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       );
       assertLeaf(api.testController, CS.parameterized, 'settled tree after a coalesced burst');
       assertLeaf(api.testController, CS.skipped, 'settled tree after a coalesced burst');
-      assert.strictEqual(
-        findItem(api.testController.items, CS.passing)?.id,
-        CS.passing,
-        'resolves by FQN id',
-      );
+      assertRowField(api.testController, CS.passing, 'id', 'resolves by FQN id');
       assertCacheUntouched(api.testController, cached, 'settled tree after a coalesced burst');
       assert.strictEqual(
         spy.stacks.length,
@@ -643,11 +666,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     await api.testController.discover();
     const recovered = await pollUntilDiscovered(api.testController, EXPECTED);
     assert.strictEqual(recovered.length, EXPECTED.length, 'recovery leaves nothing stale behind');
-    assert.deepStrictEqual(
-      sorted(recovered),
-      sorted(EXPECTED),
-      'and rediscovers exactly the fixture',
-    );
+    assertSameIds(recovered, 'and rediscovers exactly the fixture');
     assert.ok(recovered.includes(CS.skipped), 'including the skipped test the sweep lost');
     assert.strictEqual(new Set(recovered).size, recovered.length, 'without doubling what it kept');
     assertTree(api.testController, EXPECTED, 'tree after recovering from a missing target');
@@ -663,9 +682,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     api.explorerProvider.clear();
     await api.explorerProvider.loadSolution(slnPath);
     await drainDiscovery(() => undefined, api.testController);
-    const idleStart = Date.now();
-    await api.testController.whenIdle();
-    const idleMs = Date.now() - idleStart;
+    const idleMs = await measureIdle(api.testController);
     assert.ok(idleMs < 1_000, `a drained queue must settle at once, took ${idleMs}ms`);
     const settled = await pollUntilDiscovered(api.testController, EXPECTED);
     assertExactIdSet(
@@ -689,9 +706,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     );
     const sweepMs = Date.now() - sweepStart;
     assert.ok(sweepMs < 240_000, `a warm sweep must finish inside its window, took ${sweepMs}ms`);
-    const secondIdleStart = Date.now();
-    await api.testController.whenIdle();
-    const secondIdleMs = Date.now() - secondIdleStart;
+    const secondIdleMs = await measureIdle(api.testController);
     assert.ok(
       secondIdleMs < 1_000,
       `whenIdle() must resolve at once after its sweep, ${secondIdleMs}ms`,
@@ -704,11 +719,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       EXPECTED.length,
       'replaced, not appended',
     );
-    assert.strictEqual(
-      findItem(api.testController.items, CS.failing)?.description,
-      CS.failing,
-      'the FQN is kept',
-    );
+    assertRowField(api.testController, CS.failing, 'description', 'the FQN is kept');
     assertRows(api.testController, solutionDir, 'tree after an idempotent re-sweep');
     assertCacheUntouched(api.testController, cached, 'an idempotent re-sweep');
   });
@@ -783,11 +794,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
       vscode.commands.executeCommand('testing.refreshTests');
     await assert.doesNotReject(refresh, 'refresh must survive a view reveal');
     const refreshed = await pollUntilDiscovered(api.testController, EXPECTED);
-    assert.deepStrictEqual(
-      sorted(refreshed),
-      sorted(EXPECTED),
-      'refresh after a reveal repopulates the same set',
-    );
+    assertSameIds(refreshed, 'refresh after a reveal repopulates the same set');
     assert.ok(refreshed.includes(CS.skipped), 'a skipped test is still a discovered test');
     assert.strictEqual(
       refreshed.length,
@@ -803,12 +810,11 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     this.timeout(DOTNET_CLI_MS);
     await api.explorerProvider.loadSolution(slnPath);
     api.testController.items.replace([]);
-    assert.deepStrictEqual(
-      collectLeafIds(api.testController.items),
-      [],
+    assertTreeEmpty(
+      api.testController,
       'the race starts from an empty tree',
+      'and from an empty root collection',
     );
-    assert.strictEqual(api.testController.items.size, 0, 'and from an empty root collection');
     const cached = api.testController.cachedResults.size;
     // `discoverGeneration` makes the SUPERSEDED sweep drop its results instead of
     // writing them: without it the loser's `replace` races the winner's.
@@ -818,11 +824,7 @@ suite('Test Explorer e2e — reactive discovery, refresh and tree lifecycle', ()
     assert.deepStrictEqual(outcomes, [undefined, undefined], 'neither sweep returned a value');
     await drainDiscovery(() => undefined, api.testController);
     const ids = await pollUntilDiscovered(api.testController, EXPECTED);
-    assert.deepStrictEqual(
-      sorted(ids),
-      sorted(EXPECTED),
-      'the race leaves exactly one copy of the fixture',
-    );
+    assertSameIds(ids, 'the race leaves exactly one copy of the fixture');
     assert.strictEqual(ids.length, EXPECTED.length, 'a lost `replace` would have doubled this');
     assert.strictEqual(new Set(ids).size, ids.length, 'and would have duplicated these ids');
     assert.ok(ids.includes(CS_MIXED_THEORY), 'the mixed theory survives the race exactly once');
