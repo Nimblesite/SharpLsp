@@ -164,6 +164,16 @@ mod tests {
 
     use super::*;
 
+    /// Open `text` in `vfs` as version 1 of the document at `path`.
+    fn open_path(vfs: &Vfs, path: &std::path::Path, text: String) {
+        let uri: Uri = url::Url::from_file_path(path)
+            .unwrap()
+            .to_string()
+            .parse()
+            .unwrap();
+        vfs.open(uri, 1, text);
+    }
+
     /// NTFS folds case across Unicode, not only ASCII: `Ärger` and `ärger` name
     /// one directory. Canonicalizing cannot bridge the two spellings when the
     /// file is not on disk — deleted since it was opened, or never saved — so
@@ -177,12 +187,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let opened = tmp.path().join("Ärger").join("Übersicht.cs");
         let vfs = Vfs::new();
-        let uri: Uri = url::Url::from_file_path(&opened)
-            .unwrap()
-            .to_string()
-            .parse()
-            .unwrap();
-        vfs.open(uri, 1, "class InBuffer {}".to_string());
+        open_path(&vfs, &opened, "class InBuffer {}".to_string());
 
         let respelled = tmp.path().join("ärger").join("ÜBERSICHT.cs");
         assert_eq!(
@@ -209,12 +214,7 @@ mod tests {
         let canonical = std::fs::canonicalize(&file).unwrap();
 
         let vfs = Vfs::new();
-        let uri: Uri = url::Url::from_file_path(&canonical)
-            .unwrap()
-            .to_string()
-            .parse()
-            .unwrap();
-        vfs.open(uri, 1, "buffer text".to_string());
+        open_path(&vfs, &canonical, "buffer text".to_string());
 
         let indirect = dir.join("..").join("sub").join("Program.cs");
         let found = vfs.get_content_for_path_canonical(&indirect.to_string_lossy());
@@ -252,12 +252,11 @@ mod tests {
 
         // The editor opened the document through the alias …
         let vfs = Vfs::new();
-        let uri: Uri = url::Url::from_file_path(alias_dir.join("Program.cs"))
-            .unwrap()
-            .to_string()
-            .parse()
-            .unwrap();
-        vfs.open(uri, 1, "class InBuffer {}".to_string());
+        open_path(
+            &vfs,
+            &alias_dir.join("Program.cs"),
+            "class InBuffer {}".to_string(),
+        );
 
         // … while workspace symbols walks the project and finds the real one.
         let found = vfs.read_live_or_disk(&file.to_string_lossy()).unwrap();
