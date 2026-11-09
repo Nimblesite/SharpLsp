@@ -34,13 +34,18 @@ import {
   assertFoldAllHidesLines,
   assertFoldCycle,
   assertFoldingRanges,
+  assertNamesAll,
   assertOutlineEmpty,
+  assertOutlineKinds,
+  assertRegionDelimited,
   assertSelectionChain,
   assertSymbolKinds,
   assertSymbolShape,
   assertSymbolTree,
+  existingOutline,
   foldingRangesFor,
   outlineNamed,
+  selectionChainAt,
   selectionChainFor,
   selectionChainTexts,
   symbolNamed,
@@ -159,8 +164,7 @@ suite('LSP Integration — Document Symbols', () => {
     assert.ok(outer.range.contains(inner.range), 'and Outer contains Inner');
 
     // Interaction 3 — kinds and protocol invariants across the whole tree.
-    assertSymbolTree(symbols, doc);
-    assertSymbolKinds(symbols, doc, [
+    assertOutlineKinds(symbols, doc, [
       ['Outer', vscode.SymbolKind.Class],
       ['Inner', vscode.SymbolKind.Class],
       ['InnerMethod', vscode.SymbolKind.Method],
@@ -552,12 +556,12 @@ suite('LSP Integration — Selection Ranges', () => {
   test('selection ranges at class level expand to file', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — a caret on the class name yields a chain.
-    const position = new vscode.Position(1, 8);
-    const { doc, chain, depth } = await selectionChainFor(
+    const { doc, chain, depth } = await selectionChainAt(
       tmpDir(),
       'sel-class.cs',
       SEL_CLASS_CS,
-      position,
+      1,
+      8,
     );
 
     // Interaction 2 — the innermost level is the class NAME, and expanding
@@ -612,24 +616,12 @@ suite('LSP Integration — Fixture Files', () => {
   test('Calculator.cs returns symbols for class, methods, properties', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — every declaration in the committed fixture is named.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'Calculator.cs');
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
-    for (const required of [
-      'Calculator',
-      'Add',
-      'Subtract',
-      'Divide',
-      'ICalculator',
-      'Operation',
-    ]) {
-      assert.ok(names.includes(required), `Should find ${required}`);
-    }
+    const { doc, symbols, names } = await existingOutline(fixtureDir, 'Calculator.cs');
+    assertNamesAll(names, ['Calculator', 'Add', 'Subtract', 'Divide', 'ICalculator', 'Operation']);
 
     // Interaction 2 — every one of them obeys the protocol and carries the
     // kind its outline icon and Go-to-Symbol filter are drawn from.
-    assertSymbolTree(symbols, doc);
-    assertSymbolKinds(symbols, doc, [
+    assertOutlineKinds(symbols, doc, [
       ['Calculator', vscode.SymbolKind.Class],
       ['ICalculator', vscode.SymbolKind.Interface],
       ['Operation', vscode.SymbolKind.Enum],
@@ -667,14 +659,7 @@ suite('LSP Integration — Fixture Files', () => {
         range.end > range.start,
         `Region range must span >1 line: ${range.start}–${range.end}`,
       );
-      assert.ok(
-        doc.lineAt(range.start).text.includes('#region'),
-        `region range ${range.start}–${range.end} must start on a #region directive`,
-      );
-      assert.ok(
-        doc.lineAt(range.end).text.includes('#endregion'),
-        `region range ${range.start}–${range.end} must end on an #endregion directive`,
-      );
+      assertRegionDelimited(doc, range);
     }
 
     // Interaction 3 — the editor collapses on them and comes back.
@@ -712,12 +697,8 @@ suite('LSP Integration — Fixture Files', () => {
   test('Nested.cs returns nested class hierarchy', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — every nested declaration is named.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'Nested.cs');
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
-    for (const required of ['Outer', 'Inner', 'AnotherInner', 'InnerMethod', 'OuterMethod']) {
-      assert.ok(names.includes(required), `Should find ${required}`);
-    }
+    const { doc, symbols, names } = await existingOutline(fixtureDir, 'Nested.cs');
+    assertNamesAll(names, ['Outer', 'Inner', 'AnotherInner', 'InnerMethod', 'OuterMethod']);
 
     // Interaction 2 — the hierarchy is real: both inner classes are children
     // of Outer, and InnerMethod is a child of Inner rather than of Outer.

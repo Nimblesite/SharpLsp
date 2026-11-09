@@ -1,7 +1,7 @@
 // Protocol invariants every LSP reply must satisfy, whatever the fixture.
 //
 // Spec: LSP 3.17 `textDocument/documentSymbol`, `foldingRange`,
-// `selectionRange`, `completion`; [SHARPLSP-ARCHITECTURE-ROUTING],
+// `selectionRange`, `completion`, `textDocument/hover`; [SHARPLSP-ARCHITECTURE-ROUTING],
 // [SHARPLSP-FEATURES-NAVIGATION], [SHARPLSP-FEATURES-INTELLIGENCE],
 // [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-EDIT].
 //
@@ -18,6 +18,8 @@ import {
   flattenSymbolNames,
   openCSharpFile,
   openCSharpOutline,
+  openExistingFile,
+  waitForDocumentSymbols,
   waitForFoldingRanges,
   waitForSelectionRanges,
 } from './test-helpers';
@@ -36,6 +38,21 @@ export function assertSymbolKinds(
   for (const [name, kind] of expectations) {
     assertSymbolShape(symbolNamed(symbols, name), kind, document);
   }
+}
+
+/** Assert the flattened outline names every entry of `required`, reporting the missing name. */
+export function assertNamesAll(names: readonly string[], required: readonly string[]): void {
+  for (const name of required) assert.ok(names.includes(name), `Should find ${name}`);
+}
+
+/** Assert every named symbol carries its kind, then that the whole outline obeys LSP 3.17. */
+export function assertOutlineKinds(
+  symbols: readonly vscode.DocumentSymbol[],
+  document: vscode.TextDocument,
+  expectations: readonly (readonly [string, vscode.SymbolKind])[],
+): void {
+  assertSymbolTree(symbols, document);
+  assertSymbolKinds(symbols, document, expectations);
 }
 
 /** Create a C# buffer, await its folding ranges, and assert at least `min` well-formed ones. */
@@ -94,6 +111,17 @@ export async function selectionChainFor(
   const chain = ranges[0];
   assert.ok(chain, 'the chain must be readable');
   return { doc, chain, depth: assertSelectionChain(chain, caret, doc) };
+}
+
+/** Create a C# buffer with the caret at `line:character` and return its asserted chain. */
+export async function selectionChainAt(
+  tmpDir: string,
+  filename: string,
+  content: string,
+  line: number,
+  character: number,
+): Promise<{ doc: vscode.TextDocument; chain: vscode.SelectionRange; depth: number }> {
+  return selectionChainFor(tmpDir, filename, content, new vscode.Position(line, character));
 }
 
 /** The text of every level of a selection chain, innermost first. */
@@ -278,6 +306,21 @@ export function assertSymbolShapesAndTree(
   assertSymbolTree(symbols, document);
 }
 
+/** Open a committed fixture and return its outline with the flattened symbol names. */
+export async function existingOutline(
+  directory: string,
+  filename: string,
+): Promise<{
+  uri: vscode.Uri;
+  doc: vscode.TextDocument;
+  symbols: vscode.DocumentSymbol[];
+  names: string[];
+}> {
+  const { uri, doc } = await openExistingFile(directory, filename);
+  const symbols = await waitForDocumentSymbols(uri);
+  return { uri, doc, symbols, names: flattenSymbolNames(symbols) };
+}
+
 /**
  * Every invariant a `foldingRange` reply must satisfy.
  *
@@ -301,6 +344,22 @@ export function assertFoldingRanges(
     assert.ok(!seen.has(key), `${where} is reported twice`);
     seen.add(key);
   }
+}
+
+/** Assert a `#region` range opens on the region directive and closes on the endregion one. */
+export function assertRegionDelimited(
+  document: vscode.TextDocument,
+  range: vscode.FoldingRange,
+): void {
+  const where = `region range ${String(range.start)}–${String(range.end)}`;
+  assert.ok(
+    document.lineAt(range.start).text.includes('#region'),
+    `${where} must start on a #region directive`,
+  );
+  assert.ok(
+    document.lineAt(range.end).text.includes('#endregion'),
+    `${where} must end on an #endregion directive`,
+  );
 }
 
 /**

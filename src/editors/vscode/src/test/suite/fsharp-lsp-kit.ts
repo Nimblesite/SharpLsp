@@ -8,8 +8,16 @@
 // [SHARPLSP-FEATURES-CODE-LENS], [SHARPLSP-FEATURES-FSHARP].
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { assertContainsAll, pollUntilResult } from './test-helpers';
-import { hoverText, openFSharpFixture, pollHover, positionOf } from './fsharp-helpers';
+import { assertContainsAll, pollProvider, pollUntilResult } from './test-helpers';
+import {
+  hoverText,
+  normalizeLocation,
+  openFSharpFixture,
+  pollDefinition,
+  pollHover,
+  pollReferences,
+  positionOf,
+} from './fsharp-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
 
 /** An F# fixture opened under the LSP budget, with the caret aimed at a token. */
@@ -44,6 +52,62 @@ export async function assertFixtureHover(
   const text = hoverText(await pollHover(at.uri, at.position));
   assert.match(text, pattern, why);
   return text;
+}
+
+/** Poll the definition provider at `position` and assert the answer lands in `file`. */
+export async function assertDefinitionLandsIn(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  file: string,
+  why: string,
+): Promise<vscode.Location[]> {
+  const locations = await pollDefinition(uri, position);
+  assert.ok(
+    locations.some((location) => location.uri.fsPath.endsWith(file)),
+    why,
+  );
+  return locations;
+}
+
+/** Poll references at `at.position` until `min` exist, then assert the count; `label` heads it. */
+export async function assertReferences(
+  at: FSharpAt,
+  min: number,
+  label: string,
+): Promise<vscode.Location[]> {
+  const locations = await pollReferences(at.uri, at.position, min);
+  assert.ok(locations.length >= min, `${label}, got ${locations.length}`);
+  return locations;
+}
+
+/** Poll the type-definition provider at `position` until it answers, as plain locations. */
+export async function pollTypeDefinitions(
+  uri: vscode.Uri,
+  position: vscode.Position,
+): Promise<vscode.Location[]> {
+  const found = await pollProvider<vscode.Location | vscode.LocationLink>(
+    'vscode.executeTypeDefinitionProvider',
+    [uri, position],
+    (locations) => locations.length > 0,
+    LSP_RESPONSE_MS,
+    2_000,
+  );
+  return found.map(normalizeLocation);
+}
+
+/** Poll document highlights at `position` until at least `min` occurrences are marked. */
+export async function pollHighlights(
+  uri: vscode.Uri,
+  position: vscode.Position,
+  min: number,
+): Promise<vscode.DocumentHighlight[]> {
+  return pollProvider<vscode.DocumentHighlight>(
+    'vscode.executeDocumentHighlights',
+    [uri, position],
+    (items) => items.length >= min,
+    LSP_RESPONSE_MS,
+    2_000,
+  );
 }
 
 /** Run the completion provider at `uri:position` until `predicate` holds. */
