@@ -6,6 +6,7 @@
 //! back into LSP types.
 
 pub(crate) mod completion;
+pub(crate) mod hover;
 pub(crate) mod rename;
 
 use rename::SidecarRenameIdentityResult;
@@ -16,92 +17,15 @@ use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{
     DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, Location, MarkupContent, MarkupKind,
-    Position, Range, ReferenceParams, TextDocumentPositionParams, Uri,
+    GotoDefinitionResponse, Location, Position, Range, ReferenceParams, TextDocumentPositionParams,
+    Uri,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::nav_cache::is_empty_nav_result;
-use crate::paths::{path_to_lsp_uri, uri_to_path};
+use crate::paths::path_to_lsp_uri;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
-
-/// Handle `textDocument/hover` via the language sidecar, with caching. [HOVER-ROUTING]
-pub fn handle_hover(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
-        warn!("Hover: no sidecar available");
-        return Ok(serde_json::Value::Null);
-    };
-    let params: HoverParams = serde_json::from_value(req.params)?;
-    let uri = &params.text_document_position_params.text_document.uri;
-    let position = params.text_document_position_params.position;
-    let version = vfs.get_version(uri).unwrap_or(0);
-    let method = "textDocument/hover";
-
-    if let Some(cached) = nav_cache.get(
-        uri.as_str(),
-        version,
-        position.line,
-        position.character,
-        method,
-    ) {
-        info!("Hover cache hit");
-        return Ok(cached.clone());
-    }
-
-    let file_path = uri_to_path(uri.as_str())?;
-    info!(
-        file = %file_path,
-        line = position.line,
-        character = position.character,
-        "Hover request dispatching to sidecar"
-    );
-
-    let request = SidecarPositionReq {
-        file_path,
-        line: position.line,
-        character: position.character,
-    };
-    let Some(result) =
-        request_sidecar::<Option<SidecarHoverResult>, _>(runtime, sidecar, method, &request)?
-    else {
-        return Ok(serde_json::Value::Null);
-    };
-    let has_content = result.is_some();
-    let hover = result.map(|r| {
-        let range = build_hover_range(&r);
-        Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: r.contents,
-            }),
-            range,
-        }
-    });
-
-    if has_content {
-        info!(file = uri.as_str(), "Hover: sidecar returned content");
-    } else {
-        info!(file = uri.as_str(), "Hover: sidecar returned null");
-    }
-
-    let value = serde_json::to_value(hover)?;
-    nav_cache.insert(
-        uri.as_str(),
-        version,
-        position.line,
-        position.character,
-        method,
-        value.clone(),
-    );
-    Ok(value)
-}
 
 /// Handle `textDocument/definition` — tries primary sidecar, falls back to
 /// the other for cross-language navigation (C# ↔ F#).
@@ -551,21 +475,6 @@ pub(crate) fn sidecar_location_to_lsp(loc: &SidecarLocationResult) -> Option<Loc
     })
 }
 
-/// Build an LSP `Range` from optional sidecar hover coordinates.
-fn build_hover_range(result: &SidecarHoverResult) -> Option<Range> {
-    match (
-        result.start_line,
-        result.start_character,
-        result.end_line,
-        result.end_character,
-    ) {
-        (Some(sl), Some(sc), Some(el), Some(ec)) => {
-            Some(Range::new(Position::new(sl, sc), Position::new(el, ec)))
-        }
-        _ => None,
-    }
-}
-
 // ── Sidecar wire types (MessagePack) ──────────────────────────────
 
 /// Notify the sidecar that a document's text has changed.
@@ -606,22 +515,6 @@ pub(crate) struct SidecarDidChangeReq {
     pub(crate) file_path: String,
     /// Full replacement text of the document.
     pub(crate) new_text: String,
-}
-
-/// Sidecar hover response with optional range coordinates.
-#[derive(Default, serde::Deserialize)]
-#[serde(default)]
-struct SidecarHoverResult {
-    /// Markdown-formatted hover content.
-    contents: String,
-    /// Optional start line of the hovered symbol.
-    start_line: Option<u32>,
-    /// Optional start character of the hovered symbol.
-    start_character: Option<u32>,
-    /// Optional end line of the hovered symbol.
-    end_line: Option<u32>,
-    /// Optional end character of the hovered symbol.
-    end_character: Option<u32>,
 }
 
 /// A single location result from the sidecar (definition, references, etc.).

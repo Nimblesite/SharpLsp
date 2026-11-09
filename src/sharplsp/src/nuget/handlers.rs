@@ -4,14 +4,15 @@
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
-use lsp_server::{Message, Notification, Request};
+use lsp_server::{Message, Request};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::sidecar::manager::SidecarManager;
 
+use super::restore_job::spawn_restore;
 use super::{
     cli, consolidate, edit, lanes, parse, restore::RestoreOutcome, search, targets, types, unused,
     update,
@@ -417,112 +418,5 @@ fn pick_install_element(target: &types::NuGetTarget) -> edit::PackageElement {
         edit::PackageElement::ReferenceNoVersion
     } else {
         edit::PackageElement::Reference
-    }
-}
-
-// ── Background restore + notifications ─────────────────────────
-
-/// Spawn a background `dotnet restore` and send progress notifications.
-fn spawn_restore(
-    runtime: &tokio::runtime::Runtime,
-    sender: Sender<Message>,
-    target: &types::NuGetTarget,
-    modified_files: Vec<String>,
-) {
-    let target_id = target.id.clone();
-    let target_dir = crate::paths::directory_of(&target.path);
-    let lane = lanes::lane(&target.path);
-
-    // Notify "started" synchronously so the UI sees it immediately.
-    send_restore_progress(&sender, &target_id, types::RestorePhase::Started, None);
-
-    drop(runtime.spawn(async move {
-        send_restore_progress(
-            &sender,
-            &target_id,
-            types::RestorePhase::Restoring,
-            Some(format!("Restoring {}", modified_files.join(", "))),
-        );
-
-        let (Some(dir), Ok(lane)) = (target_dir, lane) else {
-            send_restore_progress(
-                &sender,
-                &target_id,
-                types::RestorePhase::Failed,
-                Some("cannot determine restore directory".into()),
-            );
-            return;
-        };
-        let _restoring = lane.lock().await;
-
-        let mut command = tokio::process::Command::new("dotnet");
-        let _ = command.arg("restore").current_dir(&dir);
-        crate::utils::hide_console_window_tokio(&mut command);
-        let output = command.output().await;
-
-        match output {
-            Ok(o) if o.status.success() => {
-                info!("nuget restore succeeded for {target_id}");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Succeeded,
-                    Some("Restore succeeded".into()),
-                );
-            }
-            Ok(o) => {
-                // MSBuild reports failures on stdout too. [NUGET-REQUESTS]
-                let diagnostic = [o.stdout, o.stderr]
-                    .into_iter()
-                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                    .filter(|message| !message.trim().is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                error!(target_id, exit_code = ?o.status.code(), "NuGet restore failed");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Failed,
-                    Some(diagnostic),
-                );
-            }
-            Err(err) => {
-                error!("nuget restore spawn failed for {target_id}: {err}");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Failed,
-                    Some(format!("spawn failed: {err}")),
-                );
-            }
-        }
-    }));
-}
-
-/// Send a `sharplsp/nuget/restoreProgress` notification to the client.
-fn send_restore_progress(
-    sender: &Sender<Message>,
-    target_id: &str,
-    phase: types::RestorePhase,
-    message: Option<String>,
-) {
-    let params = types::RestoreProgressParams {
-        target_id: target_id.to_string(),
-        phase,
-        message,
-    };
-    let params_value = match serde_json::to_value(&params) {
-        Ok(v) => v,
-        Err(err) => {
-            error!("failed to serialize RestoreProgressParams: {err}");
-            return;
-        }
-    };
-    let notif = Notification {
-        method: "sharplsp/nuget/restoreProgress".to_string(),
-        params: params_value,
-    };
-    if let Err(err) = sender.send(Message::Notification(notif)) {
-        error!("failed to send restoreProgress notification: {err}");
     }
 }
