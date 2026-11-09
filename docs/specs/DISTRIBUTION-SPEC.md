@@ -715,6 +715,22 @@ Every rule below binds the upstream server option and the dev extension alike.
 5. **Licence.** The ported code is this repository's MIT code, which both
    upstream licences can take in.
 
+### [DIST-ZED-LABELS] Completion and Symbol Labels
+
+Zed shows a completion or a workspace symbol as the label the extension returns
+for it. A completion shows its name in the theme highlight of its kind
+(`function` for methods and functions, `type` for types and modules, `property`
+for fields, properties and events, `constant` for enum members and constants,
+`variable`, `constructor`, `keyword`), followed by the server's detail: its
+`labelDetails` detail or description, else its `detail`, in the `comment`
+highlight. A blank detail shows nothing. A symbol shows its kind as a word in
+the `keyword` highlight (`class`, `module`, `method`, `property`, `member`, …),
+then its name in its kind's highlight; a kind .NET never answers keeps Zed's
+default. Both filter on the name alone.
+
+The spans are literal text, never code parsed by a grammar: one server answers
+C#, F# and Razor buffers, so no single grammar reads every label.
+
 ## [DIST-SECRETS] Publishing Credentials
 
 The VS Code Marketplace publishes **passwordless via Microsoft Entra ID OIDC** (workload identity federation) — there is **no** long-lived Marketplace PAT. The `release.yml` `publish-marketplace` job runs in the `release` GitHub Environment so its OIDC subject is the deterministic `repo:Nimblesite/SharpLsp:environment:release`, which one Entra federated credential trusts. Open VSX has **no** OIDC/trusted-publishing path (verified 2026), so it still requires a long-lived access token.

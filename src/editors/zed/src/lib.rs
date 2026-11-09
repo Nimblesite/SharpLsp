@@ -3,6 +3,7 @@
 mod archive;
 #[cfg(test)]
 mod fake_host;
+mod labels;
 mod server;
 mod zed_host;
 
@@ -53,6 +54,22 @@ impl zed::Extension for SharpLspExtension {
         worktree: &zed::Worktree,
     ) -> zed::Result<Option<zed::serde_json::Value>> {
         Ok(settings_layer(lsp_settings(worktree)))
+    }
+
+    fn label_for_completion(
+        &self,
+        _id: &zed::LanguageServerId,
+        completion: zed::lsp::Completion,
+    ) -> Option<zed::CodeLabel> {
+        Some(labels::completion_label(&completion))
+    }
+
+    fn label_for_symbol(
+        &self,
+        _id: &zed::LanguageServerId,
+        symbol: zed::lsp::Symbol,
+    ) -> Option<zed::CodeLabel> {
+        labels::symbol_label(&symbol)
     }
 }
 

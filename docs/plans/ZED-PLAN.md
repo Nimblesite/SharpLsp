@@ -117,8 +117,8 @@ Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 ### Phase 3: Symbol Integration
 
-- [ ] Custom symbol labels via `labels_for_symbols()`
-- [ ] Custom completion labels via `labels_for_completions()`
+- [x] Custom symbol labels via `labels_for_symbols()` — `src/editors/zed/src/labels.rs` `symbol_label`, [DIST-ZED-LABELS]
+- [x] Custom completion labels via `labels_for_completions()` — `labels.rs` `completion_label`, [DIST-ZED-LABELS]
 - [ ] Enhanced outline display for .NET symbol kinds
 
 ### Phase 4: Zed Custom Panel (Blocked on Zed API)
