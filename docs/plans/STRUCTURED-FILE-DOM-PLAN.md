@@ -14,7 +14,7 @@ Deviations from the original design below (all functionally equivalent):
 - `updatePackageVersion` is folded into `addPackage` (upsert), so there are two methods: `project/addPackage`, `project/removePackage`.
 - `.fsproj` edits route to the **C# sidecar** rather than a mirrored F# handler: `MSBuildLocator` (MSBL001) forbids a shared `Microsoft.Build` reference in the F#/Common projects, and `ProjectRootElement` is language-agnostic (the issue itself notes "it's not F#-specific").
 
-**⏳ Not yet done (separate violations, out of scope for #4):** a `reorderCompileItems` request and the Phase 5 CI grep-guard. V3 is gone: `generateReorderEdit` had no caller and was deleted, so no code reorders `<Compile>` items. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
+**⏳ Not yet done (separate violations, out of scope for #4):** a `reorderCompileItems` request. V3 is gone: `generateReorderEdit` had no caller and was deleted, so no code reorders `<Compile>` items. V2 (`addCompileItem` + `scaffolding.ts`) landed with GitHub #493 / [SE-ADD-FILE-REQUEST]: the sidecar edit is `CompileItemEditor.cs` behind `project/addCompileItem`, the host routes it via `sharplsp/project/addCompileItem` (`src/sharplsp/src/project_edit.rs`), and `scaffolding.ts` auto-adds through it (see Phase 3).
 
 ## Goal
 
@@ -154,13 +154,13 @@ project.Save(path);                                   // trivia-preserving write
 
 ### Phase 5 — Enforce the CLAUDE.md rule
 
-- [ ] Add a lint/CI check that greps the codebase for banned patterns in source (not src/sharplsp/tests/fixtures):
+- [x] Add a lint/CI check that greps the codebase for banned patterns in source (not src/sharplsp/tests/fixtures) — `tools/ci/structured-file-writes.mjs` (+ `.test.mjs`), run by `make _lint-vsix` (`_check-structured-writes`). JSON is left out: `JSON.stringify` is a DOM write. The vague `String.Join` pattern is left out too: the deleted V3 was its only instance:
   - `fs.writeFileSync(.*\.(csproj|fsproj|props|targets|sln|vsixmanifest|json)`
   - `File.WriteAllText(.*\.(csproj|fsproj|props|targets))`
   - `std::fs::write(.*\.(csproj|fsproj|props|targets))`
   - `String.Join.*lines` on `*proj` content
-- [ ] Fail CI if any of these appear outside a well-known allowlist (e.g. tests that write fixture files into `tmp`).
-- [ ] Document in `docs/specs/SHARPLSP-SPEC.md` that structured file edits go through the sidecar.
+- [x] Fail CI if any of these appear outside a well-known allowlist (e.g. tests that write fixture files into `tmp`) — tests, fixtures and the website are outside the gated pathspec.
+- [x] Document in `docs/specs/SHARPLSP-SPEC.md` that structured file edits go through the sidecar — [SHARPLSP-ARCHITECTURE-STRUCTURED-EDITS].
 
 ## Acceptance Criteria
 
@@ -170,7 +170,7 @@ project.Save(path);                                   // trivia-preserving write
 - [x] Scaffolding a new `.cs` into a project whose comments contain `</ItemGroup>` works correctly.
 - [ ] F# file-order reordering preserves comments, CRLF, conditions, and child elements.
 - [ ] Existing `src/sharplsp/tests/nuget_e2e.rs` scenarios still pass.
-- [ ] CI has a grep-based guard that blocks re-introduction.
+- [x] CI has a grep-based guard that blocks re-introduction.
 
 ## Non-Goals
 

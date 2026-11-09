@@ -81,6 +81,12 @@ Unix socket relocation uses UTF-8 byte length and a 103-byte ceiling, fitting ma
 
 Code implementing this section cites `[SHARPLSP-ARCHITECTURE-PATHS]`.
 
+### [SHARPLSP-ARCHITECTURE-STRUCTURED-EDITS] Structured File Edits
+
+Every edit to an MSBuild project, props or targets file goes through the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement` with formatting preserved: package references in `PackageEditor`, compile items in `CompileItemEditor`, for `.csproj` and `.fsproj` alike. The Rust host and the editors only route the request ([NUGET-BROWSER-SPEC](NUGET-BROWSER-SPEC.md), [SE-ADD-FILE-REQUEST]). Comments, conditions, child elements, attribute order and line endings survive every edit.
+
+Production source MUST NOT write a project, props, targets, solution or extension manifest as one string: no string concatenation, `.replace()`, regex or line splicing. `make _lint-vsix` runs `tools/ci/structured-file-writes.mjs`, which fails on a whole-file write of such a file outside tests and fixtures.
+
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 
 Communication between the Rust host and .NET sidecars uses a custom binary RPC protocol:

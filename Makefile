@@ -855,13 +855,14 @@ _lint-zed:
 	cargo fmt --manifest-path $(ZED_DIR)/Cargo.toml --check
 	cargo clippy --manifest-path $(ZED_DIR)/Cargo.toml --all-targets -- -D warnings
 
-_lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations
+_lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations _check-structured-writes
 	# The profiler contributions ([PROFILER-SHARED-LIBRARY-VSCODE]) and the tutorial's types
 	# ([TUTORIAL-MODEL]) are generated; the test checks both committed models on this
 	# platform, here where the extension's dependencies are installed.
 	node --test tools/vsix/model-generators.test.mjs
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
-		tools/ci/spec-citations.test.mjs tools/ci/test-host-download.test.mjs tools/vsix/signals-bundle.test.mjs
+		tools/ci/spec-citations.test.mjs tools/ci/test-host-download.test.mjs tools/vsix/signals-bundle.test.mjs \
+		tools/ci/structured-file-writes.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
@@ -876,6 +877,11 @@ _check-sdk-pin:
 # ([DIST-CI-SPEC-CITATIONS]).
 _check-spec-citations: _fetch-lspkit
 	node tools/ci/spec-citations.mjs
+
+# Production source never writes a project, solution or manifest as one string
+# ([SHARPLSP-ARCHITECTURE-STRUCTURED-EDITS]).
+_check-structured-writes:
+	node tools/ci/structured-file-writes.mjs
 
 # Dash-form MSBuild switches only: Git Bash (MSYS) mangles slash-form switches
 # like `/p:...` on Windows (strips the `/`, MSBuild then reads it as a project
