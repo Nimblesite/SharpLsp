@@ -5,7 +5,13 @@ const {
     createMessageConnection,
 } = require("../../src/editors/vscode/node_modules/vscode-jsonrpc/lib/node/main.js");
 const { spawn, spawnSync, execFileSync } = require("node:child_process");
-const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
+const {
+    mkdtempSync,
+    mkdirSync,
+    readFileSync,
+    writeFileSync,
+    rmSync,
+} = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join, dirname, resolve, isAbsolute } = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -33,6 +39,20 @@ function requireBundle() {
         csharp: join(bundleDir, "sidecar-csharp/SharpLsp.Sidecar.CSharp"),
         fsharp: join(bundleDir, "sidecar-fsharp/SharpLsp.Sidecar.FSharp"),
     };
+}
+
+function requireExtensionManifest() {
+    const extension = process.env.SHARPLSP_RELEASE_VSIX;
+    assert.ok(
+        extension && isAbsolute(extension),
+        "SHARPLSP_RELEASE_VSIX must identify the extracted official extension",
+    );
+    const file = join(extension, "package.json");
+    const manifest = JSON.parse(readFileSync(file, "utf8"));
+    assert.strictEqual(manifest.publisher, "nimblesite");
+    assert.strictEqual(manifest.name, "sharplsp");
+    assert.strictEqual(manifest.version, "0.33.0");
+    return manifest;
 }
 
 // Creates write files, restore+build the entry project (dotnet only).
@@ -169,6 +189,7 @@ async function withReleaseHost(
 module.exports = {
     withReleaseHost,
     requireBundle,
+    requireExtensionManifest,
     skipUnlessEnabled: (reason) =>
         process.env.RUN_RELEASE_REGRESSIONS === "1" ? false : reason,
 };

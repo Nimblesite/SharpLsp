@@ -15,6 +15,8 @@ The user set a hard stop of 03:00 Australia/Melbourne on 2026-11-11, equivalent 
 
 Archive SHA-256 `4d8e760fb71ccd9bf11e68ea7b0de4d33ba2e2141f223be3681caea0c53729da`. Published 2026-11-10T06:06:01Z. Live probes and raw results are retained under `target/codex1-release-v0330/`. Fixture builds compile only test input projects.
 
+VSIX startup logs show that explicit binary settings are bypassed by bundled resolution, tracked on #45. The VSIX host, both apphosts and both main engine assemblies hash identically to the verified standalone archive, preserving the released-payload provenance of the runtime checks.
+
 ## [RELEASE-VERIFICATION-RESULTS]
 
 The initial snapshot contains 149 open issues. Issue #566 was subsequently added for release-specific reproduction. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
@@ -154,7 +156,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#48](https://github.com/Nimblesite/SharpLsp/issues/48) Windows code signing — current position — Pending release verification.
 - [x] [#47](https://github.com/Nimblesite/SharpLsp/issues/47) Sign + notarize the macOS binaries — Official host and both engines pass signature integrity checks but carry ad-hoc signatures with no Developer ID authority. Three enabled regressions fail the signing requirement and default to skips. Evidence posted, issue open.
 - [ ] [#46](https://github.com/Nimblesite/SharpLsp/issues/46) Add Zed LSP-initialize version enforcement — Pending release verification.
-- [ ] [#45](https://github.com/Nimblesite/SharpLsp/issues/45) Enforce the expected version during resolution — Pending release verification.
+- [x] [#45](https://github.com/Nimblesite/SharpLsp/issues/45) Enforce the expected version during resolution — Published VSIX starts despite each explicit older host/F#/C# setting, silently selecting its bundled current binaries. Matching control passes, three mismatches fail the hard-error requirement. Enabled E2E regression fails and defaults to a skip. Evidence posted, issue open.
 - [ ] [#43](https://github.com/Nimblesite/SharpLsp/issues/43) Shipwright deployment-contract hardening checklist — Pending release verification.
 - [ ] [#33](https://github.com/Nimblesite/SharpLsp/issues/33) feat: update Shipwright repo fixtures for Forge after all deployment issues are resolved — Pending release verification.
 - [x] [#23](https://github.com/Nimblesite/SharpLsp/issues/23) Rename: F# active patterns — Failed or partial, evidence posted, skipped regression preserved, issue open.

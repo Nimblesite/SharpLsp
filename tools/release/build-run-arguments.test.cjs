@@ -1,24 +1,10 @@
 // [SE-ACTIONS-ARGS] #271 Published extension must expose build/run/test argument configuration.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
-const { join, isAbsolute } = require("node:path");
-const { skipUnlessEnabled } = require("./release-host.cjs");
-
-function manifest() {
-    const extension = process.env.SHARPLSP_RELEASE_VSIX;
-    assert.ok(
-        extension && isAbsolute(extension),
-        "SHARPLSP_RELEASE_VSIX must identify the extracted official extension",
-    );
-    const result = JSON.parse(
-        readFileSync(join(extension, "package.json"), "utf8"),
-    );
-    assert.equal(result.publisher, "nimblesite");
-    assert.equal(result.name, "sharplsp");
-    assert.equal(result.version, "0.33.0");
-    return result;
-}
+const {
+    requireExtensionManifest: manifest,
+    skipUnlessEnabled,
+} = require("./release-host.cjs");
 
 for (const command of [
     "sharplsp.configureBuildArgs",
