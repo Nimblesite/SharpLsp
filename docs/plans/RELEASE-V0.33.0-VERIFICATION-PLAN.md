@@ -104,8 +104,8 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [x] [#390](https://github.com/Nimblesite/SharpLsp/issues/390) Diagnostics never carry DiagnosticTag.Unnecessary: unused opens and dead code are not greyed out — Passed live release test, evidence posted, issue closed.
 - [x] [#389](https://github.com/Nimblesite/SharpLsp/issues/389) F# inlay hints: fully qualified types, parameter names on operators, and hints stacked before the function — Passed live release test, evidence posted, issue closed.
 - [x] [#388](https://github.com/Nimblesite/SharpLsp/issues/388) F# hover on a .NET type shows its signature but none of its XML documentation — Failed or partial, evidence posted, skipped regression preserved, issue open.
-- [ ] [#387](https://github.com/Nimblesite/SharpLsp/issues/387) F#: Go to Definition on Checkout.checkout finds nothing until Checkout.fs has been opened — Pending release verification.
-- [ ] [#386](https://github.com/Nimblesite/SharpLsp/issues/386) Sidecar restart never reopens the workspace: after a crash, the replacement answers every request empty — Pending release verification.
+- [x] [#387](https://github.com/Nimblesite/SharpLsp/issues/387) F#: Go to Definition on Checkout.checkout finds nothing until Checkout.fs has been opened — Passed live release test, evidence posted, issue closed.
+- [x] [#386](https://github.com/Nimblesite/SharpLsp/issues/386) Sidecar restart never reopens the workspace: after a crash, the replacement answers every request empty — Passed live release test, evidence posted, issue closed.
 - [ ] [#367](https://github.com/Nimblesite/SharpLsp/issues/367) Flaky: Windows realrepo-netfx-fsharp GlobTests hang to the 600 s timeout — Pending release verification.
 - [ ] [#363](https://github.com/Nimblesite/SharpLsp/issues/363) Flaky on Windows: CPU snapshot test asserts samples after a fixed 2 s sleep — Pending release verification.
 - [ ] [#355](https://github.com/Nimblesite/SharpLsp/issues/355) Profiler: Show Reference Graph started during an auto-capture never returns, and the suspect list resets — Pending release verification.

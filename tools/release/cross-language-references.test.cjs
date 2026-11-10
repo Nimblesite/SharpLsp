@@ -65,37 +65,29 @@ test(
                     ready?.contents?.value.includes("Greeter"),
                     "compiler resolves the C# type",
                 );
-                const all = await request("textDocument/references", {
-                    textDocument: document,
-                    position,
-                    context: { includeDeclaration: true },
-                });
-                const actualAll = (all ?? []).map((l) => ({
-                    uri: l.uri,
-                    line: l.range.start.line,
-                    character: l.range.start.character,
-                }));
-                assert.deepStrictEqual(
-                    actualAll,
-                    expectedAll.map((e) => ({ ...e, uri: uri(e.uri) })),
-                    "must be exactly the four expected locations",
-                );
-
-                const noDecl = await request("textDocument/references", {
-                    textDocument: document,
-                    position,
-                    context: { includeDeclaration: false },
-                });
-                const actualNoDecl = (noDecl ?? []).map((l) => ({
-                    uri: l.uri,
-                    line: l.range.start.line,
-                    character: l.range.start.character,
-                }));
-                assert.deepStrictEqual(
-                    actualNoDecl,
-                    expectedNoDecl.map((e) => ({ ...e, uri: uri(e.uri) })),
-                    "must exclude the declaration, leaving three locations",
-                );
+                for (const [includeDeclaration, expected] of [
+                    [true, expectedAll],
+                    [false, expectedNoDecl],
+                ]) {
+                    const found = await request("textDocument/references", {
+                        textDocument: document,
+                        position,
+                        context: { includeDeclaration },
+                    });
+                    const actual = (found ?? []).map((location) => ({
+                        uri: location.uri,
+                        line: location.range.start.line,
+                        character: location.range.start.character,
+                    }));
+                    assert.deepStrictEqual(
+                        actual,
+                        expected.map((location) => ({
+                            ...location,
+                            uri: uri(location.uri),
+                        })),
+                        `complete reference set, includeDeclaration=${includeDeclaration}`,
+                    );
+                }
             },
         );
     },
