@@ -118,7 +118,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#324](https://github.com/Nimblesite/SharpLsp/issues/324) BUG: website dependency audit blocks release on unpatched braces stack exhaustion — Pending release verification.
 - [ ] [#318](https://github.com/Nimblesite/SharpLsp/issues/318) Upstream our netcoredbg patches to Samsung/netcoredbg (hot reload over DAP, symbol-less exception stepping) — Pending release verification.
 - [ ] [#314](https://github.com/Nimblesite/SharpLsp/issues/314) F#: a project-wide query right after an unsaved edit re-checks every in-memory reader — Pending release verification.
-- [ ] [#310](https://github.com/Nimblesite/SharpLsp/issues/310) CI runs vsce 4 on Node 20 (EOL), below its declared engine node >= 22 — Pending release verification.
+- [x] [#310](https://github.com/Nimblesite/SharpLsp/issues/310) CI runs vsce 4 on Node 20 (EOL), below its declared engine node >= 22 — Actual successful v0.33.0 release jobs on macOS/Windows/Linux and both publishers show Node24.22.2, all19 tagged setup steps select24, vsce4.1 requires22+, and installed module cache key includes node24. Evidence posted, issue closed.
 - [ ] [#308](https://github.com/Nimblesite/SharpLsp/issues/308) [DIST-CI-ARTIFACT-TESTS] is specified but not implemented: Rust and Zed test jobs still compile — Pending release verification.
 - [ ] [#305](https://github.com/Nimblesite/SharpLsp/issues/305) Cross-validate the SDK version predicate against a reference semver implementation — Pending release verification.
 - [ ] [#304](https://github.com/Nimblesite/SharpLsp/issues/304) Test-host workspace shapes: the folder editor always starts, and recursive globs skip the multi-root one — Pending release verification.
