@@ -10,7 +10,7 @@ Performance targets and benchmarking.
 
 GitHub #563. Opening a solution currently blocks until every project is restored and
 evaluated (30-110 s for TestFixtures.sln from the repo folder), and the Solution
-Explorer shows one spinner until all of it ends ([SE-LOAD-FEEDBACK]). A load MUST be
+Explorer shows one spinner until all of it ends ([SE-LOADING-FEEDBACK]). A load MUST be
 progressive: each project appears and becomes usable the moment it is loaded, and the
 user never waits on projects they are not looking at.
 
@@ -27,7 +27,7 @@ user never waits on projects they are not looking at.
       notification: project loaded, failed, restoring), and the host forwards it
 - [ ] Solution Explorer adds each project node as its load completes. A project
       still loading shows its own spinner; the tree never sits behind one solution-wide
-      spinner. Update [SE-LOAD-FEEDBACK] in SOLUTION-EXPLORER-SPEC.md first
+      spinner. Update [SE-LOADING-FEEDBACK] in SOLUTION-EXPLORER-SPEC.md first
 - [ ] Features (hover, definition, diagnostics) answer for a loaded project while
       other projects are still loading; a request for a not-yet-loaded project says so
       instead of hanging
