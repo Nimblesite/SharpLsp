@@ -123,7 +123,7 @@ pub(in crate::e2e_modules) fn owned_apphosts(
     client: &LspClient,
     executable_uri: &str,
 ) -> Vec<sysinfo::Pid> {
-    let system = sysinfo::System::new_all();
+    let system = sysinfo::System::new_all().expect("read the process table");
     let parent = sysinfo::Pid::from_u32(client.child.id());
     system
         .processes()
@@ -170,7 +170,7 @@ fn crash_owned_fsharp(client: &LspClient) -> sysinfo::Pid {
 
 /// Revalidate parent ownership immediately before terminating this test's actual apphost.
 pub(in crate::e2e_modules) fn crash_owned_pid(client: &LspClient, pid: sysinfo::Pid) {
-    let system = sysinfo::System::new_all();
+    let system = sysinfo::System::new_all().expect("read the process table");
     let process = system.process(pid).expect("owned compiler remains alive");
     assert_eq!(
         process.parent(),
