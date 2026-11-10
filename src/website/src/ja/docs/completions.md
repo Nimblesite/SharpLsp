@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: コード補完
-description: "SharpLsp の C# と F# のコード補完：C# は Roslyn、F# は F# Compiler Service。識別子を置き換える編集と、足りない using を追加するインポート補完。"
+description: "SharpLsp の C# と F# のコード補完：C# は Roslyn、F# は F# Compiler Service。置換編集と、足りない using や open を追加するインポート補完に対応。"
 lang: ja
 eleventyNavigation:
   key: コード補完（日本語）
@@ -24,18 +24,13 @@ C# の補完には Roslyn の `CompletionService` を使用します。メンバ
 
 ## F# の補完
 
-F# の補完には FCS の `GetDeclarationListInfo` を使用します。メンバーとスコープ内のシンボルの補完に対応しており、確定した項目は現在のトークンを正しく置き換えます。
-
-FSAC と同等にするため、次の 2 つの課題が残っています。
-
-- 開かれていない名前空間のシンボルは、まだ一覧に追加されません。
-- `completionItem/resolve` は実装されていますが、まだ `open` 宣言を挿入しません。
+F# の補完には FCS の `GetDeclarationListInfo` を使用します。開かれていない名前空間の候補も含まれます。インポート補完を確定すると、必要な `open` が追加され、現在のトークンが置き換えられます。項目はその名前空間を示すため、同名の型を区別できます。
 
 ## 補完のトリガー
 
 SharpLsp は、両方の言語でメンバーアクセス時に補完を自動的にトリガーする文字として `.` を通知します。エディターから補完を明示的に要求することもできます。たとえば VS Code では `Ctrl+Space` を使用します。
 
-`(` や `,` などの文字は補完ではなくシグネチャーヘルプに属し、別途通知されます。
+`(` や `,` などの文字は補完ではなくシグネチャヘルプに属し、別途通知されます。
 
 ## LSP ケイパビリティ
 

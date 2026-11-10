@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: Code Completions
-description: "C# and F# code completion in SharpLsp: Roslyn for C#, the F# Compiler Service for F#, with replacement edits and import completions that add the missing using."
+description: "C# and F# code completion in SharpLsp: Roslyn for C#, the F# Compiler Service for F#, with replacement edits and import completions that add a missing using or open."
 eleventyNavigation:
   key: Code Completions
   order: 4
@@ -23,12 +23,7 @@ Each item includes a text edit, so accepting a completion replaces the current i
 
 ## F# Completion
 
-F# completion uses FCS `GetDeclarationListInfo`. Member and in-scope symbol completion are supported, and accepted items replace the current token correctly.
-
-Two FSAC-parity gaps remain:
-
-- Symbols from unopened namespaces are not yet added to the list.
-- `completionItem/resolve` is implemented, but it does not yet insert an `open` declaration.
+F# completion uses FCS `GetDeclarationListInfo`, including candidates from unopened namespaces. Accepting an import completion adds the required `open` and replaces the current token. The item names its namespace so you can distinguish types with the same name.
 
 ## Triggering Completion
 

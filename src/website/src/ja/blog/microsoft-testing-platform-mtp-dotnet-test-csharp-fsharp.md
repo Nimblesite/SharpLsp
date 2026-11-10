@@ -21,7 +21,7 @@ excerpt: "xUnit v3 4.0 は Microsoft.Testing.Platform 専用です。VSTest 専�
 
 そのため、VSTest にしか対応しないエディターの Test Explorer では、新しい xUnit v3 プロジェクトの**ツリーが空**になります。テストは存在し、`dotnet test` では実行できます。それでもエディターには表示されません。
 
-SharpLsp の Test Explorer は両方に対応しました。この機能は現在 `main` にあり、次のリリースに含まれます。**C# と F# の xUnit v3、MSTest、NUnit** の MTP テストモジュールを検出、実行、デバッグし、コードカバレッジを収集します。VSTest プロジェクトとの並行利用は、両者を含むマルチルートワークスペースでも動作します。この記事では次を説明します。
+SharpLsp の Test Explorer は両方に対応しました。この機能は現在のリリースで利用できます。**C# と F# の xUnit v3、MSTest、NUnit** の MTP テストモジュールを検出、実行、デバッグし、コードカバレッジを収集します。VSTest プロジェクトとの並行利用は、両者を含むマルチルートワークスペースでも動作します。この記事では次を説明します。
 
 - Microsoft.Testing.Platform での `dotnet test` の仕組み
 - C# または F# プロジェクトのオプトイン方法
@@ -200,4 +200,4 @@ Windows と Linux の CI で、VSTest のスイートと並んで専用のジョ
 
 ## 試してみる
 
-MTP 対応は SharpLsp 0.21.0 の次のリリースで提供予定です。[リリースページ](https://github.com/Nimblesite/SharpLsp/releases)を確認するか、現在の `main` から VS Code 拡張機能をビルドしてください。Microsoft.Testing.Platform を使う xUnit v3、MSTest、NUnit プロジェクトを含むソリューションを開き、Testing ビューを表示します。ツリーが空、結果が違う、デバッガーが接続されないなどの問題があれば、[issue を作成してください](https://github.com/Nimblesite/SharpLsp/issues)。この機能もそこから始まりました。
+MTP 対応は現在のリリースで利用できます。[リリースページ](https://github.com/Nimblesite/SharpLsp/releases)から最新の VS Code 拡張機能をインストールしてください。Microsoft.Testing.Platform を使う xUnit v3、MSTest、NUnit プロジェクトを含むソリューションを開き、Testing ビューを表示します。ツリーが空、結果が違う、デバッガーが接続されないなどの問題があれば、[issue を作成してください](https://github.com/Nimblesite/SharpLsp/issues)。この機能もそこから始まりました。

@@ -16,7 +16,7 @@ F# is a **first-class citizen** in SharpLsp. The Rust LSP host routes F# semanti
 
 | Feature | Status | Current behavior |
 |---|---|---|
-| Completion | Partial | Members and in-scope symbols work; unopened-namespace suggestions and auto-`open` insertion are pending |
+| Completion | Supported | Members, in-scope symbols and unopened-namespace suggestions, with auto-`open` insertion |
 | Hover | Supported | FCS signature and XML documentation from the live buffer |
 | Signature help | Supported | Overloads and active-parameter selection |
 | Definition, type definition, declaration | Supported | Source and metadata navigation |
@@ -42,7 +42,7 @@ F# is a **first-class citizen** in SharpLsp. The Rust LSP host routes F# semanti
 
 ### Completion
 
-FCS `GetDeclarationListInfo` supplies completion candidates. Member completion after `.` and symbols already in scope work today. SharpLsp does not yet provide FSAC's external-autocomplete entity index, so it cannot offer every symbol from an unopened namespace or add the corresponding `open` on resolve.
+FCS `GetDeclarationListInfo` supplies members, in-scope symbols and candidates from unopened namespaces. Accepting an import completion inserts the corresponding `open`. See [Code Completions](/docs/completions/).
 
 ### Hover and Signature Help
 
@@ -72,7 +72,7 @@ The F# sidecar currently exposes these actions when their context is valid:
 
 | Trigger or context | Action |
 |---|---|
-| `FS0039` unresolved name | Add a resolving `open` declaration when FCS supplies a namespace |
+| `FS0039` unresolved name | Add a resolving `open`, qualify the use, or add an applicable `open type` |
 | `FS1182` unused value | Prefix the binding with `_` |
 | `FS0020` ignored result | Add `|> ignore` |
 | `FS0025` incomplete match | Add a wildcard arm |
@@ -131,7 +131,6 @@ SharpLsp prefers standard LSP methods for completion, hover, navigation, symbols
 
 The main remaining F# gaps are:
 
-- unopened-namespace completion and auto-`open`;
 - host-routed Fantomas formatting;
 - FSharpLint diagnostics;
 - full `.fsx` semantic parity and FSAC documentation endpoints;
