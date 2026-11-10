@@ -59,7 +59,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#479](https://github.com/Nimblesite/SharpLsp/issues/479) Reference graph type picker closes before a selection in an existing workspace — Pending release verification.
 - [ ] [#477](https://github.com/Nimblesite/SharpLsp/issues/477) CPU attribution regression compares different sampling and Stopwatch windows — Pending release verification.
 - [ ] [#476](https://github.com/Nimblesite/SharpLsp/issues/476) CPU snapshot can retain only the previous workload after a live phase change — Pending release verification.
-- [ ] [#475](https://github.com/Nimblesite/SharpLsp/issues/475) Cancelled diagnostic requests leave obsolete compiler work blocking fresh results — Pending release verification.
+- [x] [#475](https://github.com/Nimblesite/SharpLsp/issues/475) Cancelled diagnostic requests leave obsolete compiler work blocking fresh results — Passed official Linux FCS native held-read cancellation and macOS Roslyn analyzer token cancellation, same-process recovery/repair/close, exactly one terminal through EOF and clean shutdown. Evidence posted, issue closed.
 - [ ] [#474](https://github.com/Nimblesite/SharpLsp/issues/474) Completed SDK restores can leave workspace opening waiting on output pipes — Pending release verification.
 - [ ] [#473](https://github.com/Nimblesite/SharpLsp/issues/473) Imported package references can skip workspace restore — Pending release verification.
 - [ ] [#472](https://github.com/Nimblesite/SharpLsp/issues/472) Resolve compiler apphost aliases in recovery fixtures — Pending release verification.
