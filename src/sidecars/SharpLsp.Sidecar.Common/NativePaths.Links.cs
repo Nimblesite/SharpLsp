@@ -68,27 +68,44 @@ public static partial class NativePaths
     /// </summary>
     public static string WithLinksResolved(string path)
     {
-        return
-            ResolvedSegments.TryGetValue(path, out var known)
-            && known.Expires > Environment.TickCount64
-            ? known.Path
-            : Probe(path);
+        return Resolve(path).Path;
     }
 
     /// <summary>
     /// Observes each disk probe, so tests can count that lookups hit the memo instead of the
-    /// disk (GitHub #358). Null outside those tests.
+    /// disk (GitHub #358) and that a missing path is asked about once. Null outside those tests.
     /// </summary>
     internal static Action<string>? Probed { get; set; }
 
-    private static string Probe(string path)
+    /// <summary>A resolved path, and whether its entry is known to be missing.</summary>
+    private readonly record struct Resolved(string Path, bool Missing);
+
+    /// <summary><paramref name="path"/> resolved: a memoized entry exists, any other is probed.</summary>
+    private static Resolved Resolve(string path)
     {
-        Probed?.Invoke(path);
+        return
+            ResolvedSegments.TryGetValue(path, out var known)
+            && known.Expires > Environment.TickCount64
+            ? new(known.Path, Missing: false)
+            : Probe(path);
+    }
+
+    /// <summary>
+    /// Asks the disk about <paramref name="path"/>. An existing entry other than a file link is
+    /// memoized; a missing one never is, as a link may be created there before expiry.
+    /// </summary>
+    private static Resolved Probe(string path)
+    {
         var fullPath = NormalizeFullPath(path);
         try
         {
             var (resolved, fileLink) = ResolveLastSegment(fullPath);
-            return fileLink ? resolved : Remember(path, resolved);
+            return resolved.Missing || fileLink
+                ? resolved
+                : resolved with
+                {
+                    Path = Remember(path, resolved.Path),
+                };
         }
         catch (Exception error)
             when (error
@@ -98,53 +115,55 @@ public static partial class NativePaths
                         or NotSupportedException
             )
         {
-            return fullPath;
+            return new(fullPath, Missing: false);
         }
     }
 
     /// <summary>
     /// <paramref name="fullPath"/> under its resolved parent, its last segment followed when
-    /// that segment is a link, and whether it was a file link.
+    /// that segment is a link, and whether it was a file link. Nothing exists beneath a missing
+    /// parent, so a missing path costs one probe however many of its segments are missing.
     /// </summary>
-    private static (string Path, bool FileLink) ResolveLastSegment(string fullPath)
+    private static (Resolved Entry, bool FileLink) ResolveLastSegment(string fullPath)
     {
         var trimmed = Path.TrimEndingDirectorySeparator(fullPath);
         var parent = Path.GetDirectoryName(trimmed);
         if (parent is null)
         {
-            return (trimmed, false);
+            return (new(trimmed, Missing: false), false);
         }
 
-        var current = Path.Combine(WithLinksResolved(parent), Path.GetFileName(trimmed));
-        return LinkTarget(current) is ({ } target, var fileLink)
-            ? (StripVerbatim(target), fileLink)
-            : (current, false);
+        var (resolvedParent, parentMissing) = Resolve(parent);
+        var current = Path.Combine(resolvedParent, Path.GetFileName(trimmed));
+        return parentMissing ? (new(current, Missing: true), false) : Entry(current);
     }
 
     /// <summary>
-    /// Where <paramref name="current"/> finally leads when it is a link, and whether it links a
-    /// file; null for a plain or missing entry.
+    /// The entry at <paramref name="current"/> from one attribute read: followed when it is a
+    /// link, missing when there is none or its link leads nowhere, and whether it links a file.
     /// </summary>
-    private static (string Target, bool FileLink)? LinkTarget(string current)
+    private static (Resolved Entry, bool FileLink) Entry(string current)
     {
+        Probed?.Invoke(current);
         FileSystemInfo entry = new FileInfo(current);
         var attributes = entry.Attributes;
-        if (attributes == (FileAttributes)(-1) || !attributes.HasFlag(FileAttributes.ReparsePoint))
+        var missing = attributes == (FileAttributes)(-1);
+        if (missing || !attributes.HasFlag(FileAttributes.ReparsePoint))
         {
-            return null;
+            return (new(current, missing), false);
         }
 
         var directory = attributes.HasFlag(FileAttributes.Directory);
         entry = directory ? new DirectoryInfo(current) : entry;
-        return entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName is { } target
-            ? (target, !directory)
-            : null;
+        return entry.ResolveLinkTarget(returnFinalTarget: true) is { } target
+            ? (new(StripVerbatim(target.FullName), !target.Exists), !directory)
+            : (new(current, Missing: false), false);
     }
 
-    /// <summary>Memoize existing absolute paths; a missing entry can become a link before expiry.</summary>
+    /// <summary>Memoize an absolute path; a relative one depends on the working directory.</summary>
     private static string Remember(string path, string resolved)
     {
-        if (!Path.IsPathFullyQualified(path) || !Path.Exists(path))
+        if (!Path.IsPathFullyQualified(path))
         {
             return resolved;
         }
