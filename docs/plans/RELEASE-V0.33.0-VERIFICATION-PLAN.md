@@ -47,7 +47,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#504](https://github.com/Nimblesite/SharpLsp/issues/504) F# code lens on a cold solution blocks every F# request for ~13 s — Pending release verification.
 - [ ] [#496](https://github.com/Nimblesite/SharpLsp/issues/496) Windows: exception panel loses the exception message when netcoredbg reports <unknown module> — Pending release verification.
 - [ ] [#493](https://github.com/Nimblesite/SharpLsp/issues/493) [Feature]: Add code files automatically linked `.fsproj` — Pending release verification.
-- [ ] [#491](https://github.com/Nimblesite/SharpLsp/issues/491) Solution replacement can discard current unsaved diagnostic inputs — Pending release verification.
+- [x] [#491](https://github.com/Nimblesite/SharpLsp/issues/491) Solution replacement can discard current unsaved diagnostic inputs — Linux FCS native-read proof passes workspace/document/lens replacement, unsaved overlays and explicit retirement. C#4 switchbacks and both-language all-owner crash replay pass. Evidence posted, issue closed.
 - [ ] [#490](https://github.com/Nimblesite/SharpLsp/issues/490) Native watcher overflow drops rescan signals and leaves closed compiler diagnostics stale — Pending release verification.
 - [ ] [#489](https://github.com/Nimblesite/SharpLsp/issues/489) Windows F# diagnostic refresh can collide with project-file edits (EBUSY) — Pending release verification.
 - [ ] [#486](https://github.com/Nimblesite/SharpLsp/issues/486) Preserved project timestamps hide changes to the target framework set — Pending release verification.
