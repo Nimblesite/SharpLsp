@@ -4,6 +4,8 @@
 
 Verify every open issue that may have been fixed, including fixes predating v0.32.1. Only live behavior from official published v0.33.0 host, bundled engines and editor packages can justify closing a runtime bug. Post passing or failing evidence to each issue. Preserve every confirmed failing scenario as an explicitly skipped regression test. Platform-specific and infrastructure issues require matching evidence before closure.
 
+The user set a hard stop of 03:00 Australia/Melbourne on 2026-11-11, equivalent to 2026-11-10 16:00 UTC. Stop starting new probes before that cutoff and finish cleanup and reporting by then.
+
 ## [RELEASE-VERIFICATION-PROVENANCE]
 
 - [x] Download official macOS arm64 archive for v0.33.0.
@@ -55,7 +57,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#486](https://github.com/Nimblesite/SharpLsp/issues/486) Preserved project timestamps hide changes to the target framework set — Pending release verification.
 - [ ] [#485](https://github.com/Nimblesite/SharpLsp/issues/485) Preserved project timestamps hide package changes and compiler errors — Pending release verification.
 - [ ] [#484](https://github.com/Nimblesite/SharpLsp/issues/484) C# sidecar still exposes the forbidden eager bulk diagnostic route — Pending release verification.
-- [ ] [#483](https://github.com/Nimblesite/SharpLsp/issues/483) Restore can falsely succeed for invalid imported MSBuild inputs — Pending release verification.
+- [x] [#483](https://github.com/Nimblesite/SharpLsp/issues/483) Restore can falsely succeed for invalid imported MSBuild inputs — Both published engines reject missing/malformed imports twice with assets retained, recover in the same process, honor imported constants, preserve project bytes/timestamps and pass six SDK builds. Evidence posted, issue closed.
 - [ ] [#482](https://github.com/Nimblesite/SharpLsp/issues/482) Imported MSBuild package changes leave stale F# and C# diagnostics — Pending release verification.
 - [ ] [#481](https://github.com/Nimblesite/SharpLsp/issues/481) F# diagnostics ignore assemblies in NuGet fallback package folders — Pending release verification.
 - [ ] [#479](https://github.com/Nimblesite/SharpLsp/issues/479) Reference graph type picker closes before a selection in an existing workspace — Pending release verification.
