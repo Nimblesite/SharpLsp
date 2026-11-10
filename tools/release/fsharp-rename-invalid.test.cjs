@@ -6,14 +6,18 @@ const { withReleaseHost, skipUnlessEnabled } = require("./release-host.cjs");
 
 for (const scenario of cases) {
     test(
-        `#${scenario.issue} rejects invalid F# rename names`,
+        `#${scenario.issue} ${scenario.caseId ?? scenario.oldName} rejects invalid F# rename names`,
         { skip: skipUnlessEnabled(`#${scenario.issue} accepts bad!`) },
         async () => {
             const files = Object.fromEntries(
                 scenario.files.map((file) => [file.name, file.text]),
             );
             files["Probe.fsproj"] =
-                '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><Compile Include="Library.fs" /><Compile Include="Consumer.fs" /></ItemGroup></Project>';
+                '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup>' +
+                scenario.files
+                    .map((file) => `<Compile Include="${file.name}" />`)
+                    .join("") +
+                "</ItemGroup></Project>";
             await withReleaseHost(
                 {
                     prefix: `sharplsp-${scenario.issue}-`,
@@ -26,7 +30,9 @@ for (const scenario of cases) {
                     const document = { uri: uri(scenario.target.file) };
                     const position = {
                         line: scenario.target.line,
-                        character: scenario.target.character + 1,
+                        character:
+                            scenario.target.character +
+                            Math.min(1, scenario.oldName.length - 1),
                     };
                     const prepare = await request(
                         "textDocument/prepareRename",

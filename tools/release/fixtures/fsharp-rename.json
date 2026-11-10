@@ -152,5 +152,690 @@
             }
         ],
         "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 9,
+        "caseId": "9-fsharp-class",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Counter() =\n    member _.Tick() = 1\n\nlet c = Counter()\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet c2 = Counter()\nlet n = c2.Tick()\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 5
+        },
+        "oldName": "Counter",
+        "newName": "Tally",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Library.fs",
+                "line": 5,
+                "character": 8
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 9
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 9,
+        "caseId": "9-fsharp-interface",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype IShape =\n    abstract Area: int\n\nlet describe (s: IShape) = s.Area\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\ntype Square() =\n    interface IShape with\n        member _.Area = 4\n\nlet pick (s: IShape) = s.Area\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 5
+        },
+        "oldName": "IShape",
+        "newName": "IGeometry",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Library.fs",
+                "line": 5,
+                "character": 17
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 5,
+                "character": 14
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 8,
+                "character": 13
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 12,
+        "caseId": "12-fsharp-function",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet add a b = a + b\n\nlet three = add 1 2\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet seven = add 3 4\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 4
+        },
+        "oldName": "add",
+        "newName": "sum",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 4
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 12
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 12
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 12,
+        "caseId": "12-fsharp-local-function",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet outer x =\n    let double y = y * 2\n    double x\n\nlet four = outer 2\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet six = outer 3\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 3,
+            "character": 8
+        },
+        "oldName": "double",
+        "newName": "twice",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 8
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 4
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 12,
+        "caseId": "12-fsharp-member",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Meter() =\n    member _.Scale factor = factor * 2\n\nlet m = Meter()\nlet big = m.Scale(10)\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet m2 = Meter()\nlet v = m2.Scale(4)\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 3,
+            "character": 13
+        },
+        "oldName": "Scale",
+        "newName": "Multiply",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 13
+            },
+            {
+                "file": "Library.fs",
+                "line": 6,
+                "character": 12
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 5,
+                "character": 11
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 13,
+        "caseId": "13-fsharp-constructor",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Box(size: int) =\n    member _.Size = size\n\nlet unit = Box(1)\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet b = Box(3)\nlet s = b.Size\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 5
+        },
+        "oldName": "Box",
+        "newName": "Crate",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Library.fs",
+                "line": 5,
+                "character": 11
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 8
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 14,
+        "caseId": "14-fsharp-property",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Temp() =\n    member val Degrees = 0 with get, set\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet t = Temp()\nlet d = t.Degrees\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 3,
+            "character": 15
+        },
+        "oldName": "Degrees",
+        "newName": "Celsius",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 15
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 5,
+                "character": 10
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 15,
+        "caseId": "15-fsharp-mutable-value",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet mutable count = 0\n\nlet bump () = count <- count + 1\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet check () = count\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 12
+        },
+        "oldName": "count",
+        "newName": "total",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 12
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 14
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 23
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 15
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 16,
+        "caseId": "16-fsharp-let-local",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet f () =\n    let q = 5\n    q + q\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet v = f ()\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 4,
+            "character": 8
+        },
+        "oldName": "q",
+        "newName": "quint",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 8
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 4
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 8
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 16,
+        "caseId": "16-fsharp-pattern-binding",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet unwrap opt =\n    match opt with\n    | Some value -> value\n    | None -> 0\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet a = unwrap (Some 1)\nlet b = unwrap None\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 4,
+            "character": 11
+        },
+        "oldName": "value",
+        "newName": "inner",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 11
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 20
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 17,
+        "caseId": "17-fsharp-parameter",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet clamp lo hi v =\n    if v < lo then lo\n    elif v > hi then hi\n    else v\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet c = clamp 0 10 5\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 16
+        },
+        "oldName": "v",
+        "newName": "value",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 16
+            },
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 7
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 9
+            },
+            {
+                "file": "Library.fs",
+                "line": 5,
+                "character": 9
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 17,
+        "caseId": "17-fsharp-lambda-parameter",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet inc = (fun n -> n + 1)\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet two = inc 1\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 15
+        },
+        "oldName": "n",
+        "newName": "delta",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 15
+            },
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 20
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 18,
+        "caseId": "18-fsharp-module",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Store.fs",
+                "text": "module Store\n\nlet stock = 3\n\nlet restock amount = stock + amount\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Buyer\n\nopen Store\n\nlet total = Store.stock + Store.restock 1\n"
+            }
+        ],
+        "target": {
+            "file": "Store.fs",
+            "line": 0,
+            "character": 7
+        },
+        "oldName": "Store",
+        "newName": "Warehouse",
+        "expected": [
+            {
+                "file": "Store.fs",
+                "line": 0,
+                "character": 7
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 12
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 26
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 18,
+        "caseId": "18-fsharp-namespace",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "namespace Widgets\n\ntype Cog = { Teeth: int }\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Buyer\n\nopen Widgets\n\nlet c = { Widgets.Cog.Teeth = 4 }\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 0,
+            "character": 10
+        },
+        "oldName": "Widgets",
+        "newName": "Gadgets",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 0,
+                "character": 10
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 10
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 20,
+        "caseId": "20-fsharp-type-abbreviation",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype NameList = string list\n\nlet count (xs: NameList) = xs.Length\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet names: NameList = [ \"a\" ]\nlet n = count names\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 5
+        },
+        "oldName": "NameList",
+        "newName": "Handles",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 15
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 11
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 10,
+        "caseId": "10-fsharp-enum",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Tone =\n    | Red = 0\n    | Green = 1\n\nlet initial = Tone.Green\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\nopen Library\nlet red = Tone.Red\nlet green = Tone.Green\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 5
+        },
+        "oldName": "Tone",
+        "newName": "Hue",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 5
+            },
+            {
+                "file": "Library.fs",
+                "line": 6,
+                "character": 14
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 2,
+                "character": 10
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 3,
+                "character": 12
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 11,
+        "caseId": "11-fsharp-enum-case",
+        "language": "fsharp",
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Tone =\n    | Red = 0\n    | Green = 1\n\nlet initial = Tone.Green\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\nopen Library\nlet red = Tone.Red\nlet green = Tone.Green\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 4,
+            "character": 6
+        },
+        "oldName": "Green",
+        "newName": "Emerald",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 6
+            },
+            {
+                "file": "Library.fs",
+                "line": 6,
+                "character": 19
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 3,
+                "character": 17
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
     }
 ]

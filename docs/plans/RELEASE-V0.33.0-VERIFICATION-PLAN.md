@@ -37,7 +37,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#521](https://github.com/Nimblesite/SharpLsp/issues/521) Test output (ITestOutputHelper, TestContext, captured console) is never shown in Test Results — Pending release verification.
 - [ ] [#519](https://github.com/Nimblesite/SharpLsp/issues/519) F# task {} logical await stack drops to the leaf frame on a slow Linux runner — Pending release verification.
 - [ ] [#518](https://github.com/Nimblesite/SharpLsp/issues/518) Diagnostic policy F# workspace assertion counts a C# warning from another suite's open document (Windows) — Pending release verification.
-- [ ] [#517](https://github.com/Nimblesite/SharpLsp/issues/517) Owner adoption through a symlinked spelling makes the user's next C# build recompile (Linux) — Inconclusive, owning-project hover unavailable in macOS host probe. Linux incremental-build proof pending.
+- [ ] [#517](https://github.com/Nimblesite/SharpLsp/issues/517) Owner adoption through a symlinked spelling makes the user's next C# build recompile (Linux) — Inconclusive on official macOS and Linux releases. Owner hover remains null, so incremental adoption cannot be proved. Evidence posted and skipped regression preserved.
 - [ ] [#513](https://github.com/Nimblesite/SharpLsp/issues/513) F# solution-wide queries pay a cold full check: warm projects in the background after load — Pending release verification.
 - [ ] [#511](https://github.com/Nimblesite/SharpLsp/issues/511) DAP handshake test checks for the disconnect's answer before it can arrive — Pending release verification.
 - [ ] [#510](https://github.com/Nimblesite/SharpLsp/issues/510) Problems checks in the diagnostic suites race the editor's own pull — Pending release verification.
@@ -156,18 +156,18 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [x] [#23](https://github.com/Nimblesite/SharpLsp/issues/23) Rename: F# active patterns — Failed or partial, evidence posted, skipped regression preserved, issue open.
 - [x] [#22](https://github.com/Nimblesite/SharpLsp/issues/22) Rename: F# discriminated union cases — Failed or partial, evidence posted, skipped regression preserved, issue open.
 - [x] [#21](https://github.com/Nimblesite/SharpLsp/issues/21) Rename: F# record fields — Failed or partial, evidence posted, skipped regression preserved, issue open.
-- [ ] [#20](https://github.com/Nimblesite/SharpLsp/issues/20) Rename: aliases and type abbreviations — Pending release verification.
-- [ ] [#19](https://github.com/Nimblesite/SharpLsp/issues/19) Rename: generic type parameters — Pending release verification.
-- [ ] [#18](https://github.com/Nimblesite/SharpLsp/issues/18) Rename: namespaces and modules — Pending release verification.
-- [ ] [#17](https://github.com/Nimblesite/SharpLsp/issues/17) Rename: parameters and lambda parameters — Pending release verification.
-- [ ] [#16](https://github.com/Nimblesite/SharpLsp/issues/16) Rename: local variables and pattern/deconstruction bindings — Pending release verification.
-- [ ] [#15](https://github.com/Nimblesite/SharpLsp/issues/15) Rename: fields and events — Pending release verification.
-- [ ] [#14](https://github.com/Nimblesite/SharpLsp/issues/14) Rename: properties and indexers — Pending release verification.
-- [ ] [#13](https://github.com/Nimblesite/SharpLsp/issues/13) Rename: constructors through containing type rename — Pending release verification.
-- [ ] [#12](https://github.com/Nimblesite/SharpLsp/issues/12) Rename: methods, functions, local functions, and operators — Pending release verification.
-- [x] [#11](https://github.com/Nimblesite/SharpLsp/issues/11) Rename: enum members — Passed live release test, evidence posted, issue closed.
-- [x] [#10](https://github.com/Nimblesite/SharpLsp/issues/10) Rename: enums — Passed live release test, evidence posted, issue closed.
-- [ ] [#9](https://github.com/Nimblesite/SharpLsp/issues/9) Rename: classes, structs, interfaces, records, and delegates — Pending release verification.
+- [x] [#20](https://github.com/Nimblesite/SharpLsp/issues/20) Rename: aliases and type abbreviations — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#19](https://github.com/Nimblesite/SharpLsp/issues/19) Rename: generic type parameters — F# and C# generic-parameter live tests passed, including semantic negative control. Evidence posted, issue closed.
+- [x] [#18](https://github.com/Nimblesite/SharpLsp/issues/18) Rename: namespaces and modules — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#17](https://github.com/Nimblesite/SharpLsp/issues/17) Rename: parameters and lambda parameters — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#16](https://github.com/Nimblesite/SharpLsp/issues/16) Rename: local variables and pattern/deconstruction bindings — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#15](https://github.com/Nimblesite/SharpLsp/issues/15) Rename: fields and events — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#14](https://github.com/Nimblesite/SharpLsp/issues/14) Rename: properties and indexers — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#13](https://github.com/Nimblesite/SharpLsp/issues/13) Rename: constructors through containing type rename — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#12](https://github.com/Nimblesite/SharpLsp/issues/12) Rename: methods, functions, local functions, and operators — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#11](https://github.com/Nimblesite/SharpLsp/issues/11) Rename: enum members — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#10](https://github.com/Nimblesite/SharpLsp/issues/10) Rename: enums — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
+- [x] [#9](https://github.com/Nimblesite/SharpLsp/issues/9) Rename: classes, structs, interfaces, records, and delegates — Valid preparation/edits pass for enumerated cases. F# bad! rejection fails and generated edits fail compilation. Evidence posted, skipped regression preserved, issue open.
 
 ## [RELEASE-VERIFICATION-REMAINING]
 
