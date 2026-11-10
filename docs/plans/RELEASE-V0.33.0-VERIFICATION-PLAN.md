@@ -140,7 +140,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#202](https://github.com/Nimblesite/SharpLsp/issues/202) Flaky: profiler heap-dump test races the target's first allocations — Pending release verification.
 - [ ] [#198](https://github.com/Nimblesite/SharpLsp/issues/198) [Feature]: DataProvider Migrations UI — Pending release verification.
 - [ ] [#196](https://github.com/Nimblesite/SharpLsp/issues/196) Flaky e2e: profiler object-graph test fails when the baseline heap dump has no StringBuilder instances — Pending release verification.
-- [ ] [#176](https://github.com/Nimblesite/SharpLsp/issues/176) [Feature]: MacOS support — Pending release verification.
+- [x] [#176](https://github.com/Nimblesite/SharpLsp/issues/176) [Feature]: MacOS support — Published darwin-arm64 VSIX manifest and actual macOS VS Code semantic, testing and debugger matrices pass. Apple Silicon availability proven, Intel support not claimed. Evidence posted, issue closed.
 - [ ] [#170](https://github.com/Nimblesite/SharpLsp/issues/170) NuGet: packages-root prefix strip lacks a separator boundary; parse.rs scrapes MSBuild XML line-wise — Pending release verification.
 - [ ] [#168](https://github.com/Nimblesite/SharpLsp/issues/168) Profiler: default output paths are CWD-relative and ProfilerConfig.output_directory is dead — Pending release verification.
 - [ ] [#166](https://github.com/Nimblesite/SharpLsp/issues/166) MSBuildInstanceSelector: exact Roslyn version equality — SDK servicing skew falls back to a known-broken registration — Pending release verification.
