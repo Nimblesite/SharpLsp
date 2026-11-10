@@ -1,5 +1,5 @@
 // Shared helper: spawns only the downloaded bundle host with both
-// bundled engines against an isolated temp fixture. Offers { request, open, uri, pid } to tests.
+// bundled engines against an isolated temp fixture. Offers { request, open, change, uri, pid } to tests.
 const assert = require("node:assert");
 const {
     createMessageConnection,
@@ -77,7 +77,7 @@ function buildFixture(prefix, files, entry, expectedCompilerError) {
 }
 
 // Spawns the bundle host + both bundled engines, wires a 90s-bounded request channel,
-// and always disposes the child and fixture. Returns { request, open, uri, pid }.
+// and always disposes the child and fixture. Returns { request, open, change, uri, pid }.
 async function withReleaseHost(
     {
         prefix,
@@ -133,6 +133,11 @@ async function withReleaseHost(
                 text,
             },
         });
+    const change = (name, version, text) =>
+        connection.sendNotification("textDocument/didChange", {
+            textDocument: { uri: uri(name), version },
+            contentChanges: [{ text }],
+        });
     try {
         connection.onRequest("workspace/configuration", (params) =>
             params.items.map(() => null),
@@ -145,7 +150,7 @@ async function withReleaseHost(
             capabilities,
         });
         await connection.sendNotification("initialized", {});
-        await run({ request, open, uri, pid: child.pid });
+        await run({ request, open, change, uri, pid: child.pid });
     } finally {
         try {
             await request("shutdown", null);

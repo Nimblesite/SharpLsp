@@ -17,7 +17,7 @@ Archive SHA-256 `4d8e760fb71ccd9bf11e68ea7b0de4d33ba2e2141f223be3681caea0c53729d
 
 The initial snapshot contains 149 open issues. Issue #566 was subsequently added for release-specific reproduction. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
 
-Confirmed failures have enabled regression tests that fail on the official release and default to explicit skips. Tests live in `tools/release/`. Run them with `RUN_RELEASE_REGRESSIONS=1 SHARPLSP_RELEASE_BUNDLE=/absolute/path/to/extracted/bundle node --test --test-concurrency=1 tools/release/*.test.cjs`.
+Confirmed failures have enabled regression tests that fail on the official release and default to explicit skips. Tests live in `tools/release/`. Run them with `RUN_RELEASE_REGRESSIONS=1 SHARPLSP_RELEASE_BUNDLE=/absolute/path/to/extracted/bundle SHARPLSP_RELEASE_VSIX=/absolute/path/to/extracted/extension node --test --test-concurrency=1 tools/release/*.test.cjs`.
 
 - [ ] [#566](https://github.com/Nimblesite/SharpLsp/issues/566) F# sidecar high memory during editing — Pending release-specific reproduction. Exact engine identity and retained-growth timeline requested from reporter.
 
@@ -122,13 +122,13 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#304](https://github.com/Nimblesite/SharpLsp/issues/304) Test-host workspace shapes: the folder editor always starts, and recursive globs skip the multi-root one — Pending release verification.
 - [ ] [#303](https://github.com/Nimblesite/SharpLsp/issues/303) A test run can leave the committed workspace fixture's settings.json dirty — Pending release verification.
 - [ ] [#293](https://github.com/Nimblesite/SharpLsp/issues/293) NuGetBrowserPanel.waitForInitialLoad() resolves on a load that never ran — Pending release verification.
-- [ ] [#271](https://github.com/Nimblesite/SharpLsp/issues/271) [SE-ACTIONS-ARGS] Build/Run extra arguments are specified but entirely unimplemented — Pending release verification.
+- [x] [#271](https://github.com/Nimblesite/SharpLsp/issues/271) [SE-ACTIONS-ARGS] Build/Run extra arguments are specified but entirely unimplemented — Published VSIX lacks2 configure commands and3 argument settings. Real command invocation returns not found,5 enabled manifest regressions fail and default to skips. Evidence posted, issue open.
 - [ ] [#270](https://github.com/Nimblesite/SharpLsp/issues/270) nuget.update installs whatever version is latest today, and a test drives it into a checked-in fixture — Pending release verification.
 - [ ] [#243](https://github.com/Nimblesite/SharpLsp/issues/243) PR #242: nine branch-added assertions that cannot pass against any implementation — Pending release verification.
 - [x] [#238](https://github.com/Nimblesite/SharpLsp/issues/238) [Bug]: .editorconfig severity overrides are read once at load and never refreshed — Editorconfig/props/targets/SDK switching pass. New globalconfig remains stale against SDK oracle. Evidence posted, skipped regression preserved, issue open.
 - [x] [#237](https://github.com/Nimblesite/SharpLsp/issues/237) LSP host serializes all requests: one slow sidecar call blocks the entire server for up to 2 minutes — Official release FCS held-read blocks warm C# hover and both-language document symbols for19.8s. Three enabled regressions fail the2s independent-response assertion, skipped by default. Evidence posted, issue open.
 - [ ] [#235](https://github.com/Nimblesite/SharpLsp/issues/235) Release: publish the two sidecar dotnet tool packages to NuGet — Pending release verification.
-- [ ] [#221](https://github.com/Nimblesite/SharpLsp/issues/221) F# completion can never offer the auto-open hint C# offers — Pending release verification.
+- [x] [#221](https://github.com/Nimblesite/SharpLsp/issues/221) F# completion can never offer the auto-open hint C# offers — Hint works, but101 fresh-edit samples after SDK entity update miss budget at154ms p50/242ms p95. Isolated editing control passes84/173ms. Evidence posted, skipped benchmark preserved, issue open.
 - [ ] [#210](https://github.com/Nimblesite/SharpLsp/issues/210) Editor integrations: Rider is at 4.09% line coverage, Zed capped at 85% by its WASM-host shell — Pending release verification.
 - [ ] [#207](https://github.com/Nimblesite/SharpLsp/issues/207) FluentValidation real-repo diagnostics test: timeout budget is 5 minutes short, and the 18-error baseline is a brittle pin — Pending release verification.
 - [ ] [#205](https://github.com/Nimblesite/SharpLsp/issues/205) F# sidecar coverage gate has zero headroom and under-reports inlined functions — Pending release verification.
@@ -148,7 +148,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#151](https://github.com/Nimblesite/SharpLsp/issues/151) Deterministic sidecar IPC endpoint collides across hosts on the same workspace — Published macOS/Linux concurrent hosts pass4 unique endpoints, independent unsaved semantics, peer-shutdown cleanup and fresh surviving edits. Windows named-pipe case remains unverified. Partial evidence posted, issue open.
 - [x] [#150](https://github.com/Nimblesite/SharpLsp/issues/150) Sidecar listener failure is invisible: exit 0, no stderr, error only in temp log — Real EADDRINUSE failures in both released engines on macOS/Linux exit1 with one typed fatal/log hint and written logs. Released host reports reaped status/log path and recovers. Evidence posted, issue closed.
 - [ ] [#123](https://github.com/Nimblesite/SharpLsp/issues/123) NuGet browser: finish post-install sidecar workspace reload + prerelease/restore polish — Pending release verification.
-- [ ] [#122](https://github.com/Nimblesite/SharpLsp/issues/122) F#: completion auto-`open` insertion (FSAC parity) needs an unopened-symbol entity index — Pending release verification.
+- [x] [#122](https://github.com/Nimblesite/SharpLsp/issues/122) F#: completion auto-`open` insertion (FSAC parity) needs an unopened-symbol entity index — Published F# alone offers framework/project-local hints, resolves exact opens, compiles accepted protocol edits and handles in-scope/invalid/stale controls. Evidence posted, issue closed. Performance remains on #221.
 - [ ] [#48](https://github.com/Nimblesite/SharpLsp/issues/48) Windows code signing — current position — Pending release verification.
 - [ ] [#47](https://github.com/Nimblesite/SharpLsp/issues/47) Sign + notarize the macOS binaries — Pending release verification.
 - [ ] [#46](https://github.com/Nimblesite/SharpLsp/issues/46) Add Zed LSP-initialize version enforcement — Pending release verification.
