@@ -68,9 +68,15 @@ function buildFixture(prefix, files, entry) {
 
 // Spawns the bundle host + both bundled engines, wires a 90s-bounded request channel,
 // and always disposes the child and fixture. Returns { request, open, uri }.
-async function withReleaseHost({ prefix, files, entry }, run) {
+async function withReleaseHost({ prefix, files, entry, prepare }, run) {
     const { host, csharp, fsharp } = requireBundle();
     const root = buildFixture(prefix, files, entry);
+    try {
+        await prepare?.(root);
+    } catch (error) {
+        rmSync(root, { recursive: true, force: true });
+        throw error;
+    }
     const child = spawn(host, [], {
         cwd: root,
         env: {
@@ -93,13 +99,13 @@ async function withReleaseHost({ prefix, files, entry }, run) {
     const request = (method, params) =>
         Promise.race([connection.sendRequest(method, params), deadline]);
     const uri = (name) => pathToFileURL(join(root, name)).href;
-    const open = (name, languageId) =>
+    const open = (name, languageId, text = files[name]) =>
         connection.sendNotification("textDocument/didOpen", {
             textDocument: {
                 uri: uri(name),
                 languageId,
                 version: 1,
-                text: files[name],
+                text,
             },
         });
     try {
