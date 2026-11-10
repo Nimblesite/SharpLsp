@@ -116,10 +116,20 @@ function logMethods(
   };
 }
 
+/**
+ * A channel's non-writing operations. `show` takes both of `OutputChannel.show`'s
+ * forms in one signature, so an implementation satisfies `OutputChannel` without
+ * naming the deprecated `show(column, preserveFocus)` member.
+ */
+export interface ChannelLifecycle {
+  clear(): void;
+  show(column?: ViewColumn | boolean, preserveFocus?: boolean): void;
+  hide(): void;
+  dispose(): void;
+}
+
 /** Forward the non-writing operations unchanged. */
-function lifecycleMethods(
-  inner: LogOutputChannel,
-): Pick<OutputChannel, 'clear' | 'show' | 'hide' | 'dispose'> {
+function lifecycleMethods(inner: LogOutputChannel): ChannelLifecycle {
   return {
     clear: (): void => {
       inner.clear();

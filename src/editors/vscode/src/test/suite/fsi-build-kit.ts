@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SharpLspBuildTaskProvider } from '../../build.js';
+import type { ChannelLifecycle } from '../../output-filter.js';
 import { pollUntilResult } from './test-helpers.js';
 import { DOTNET_CLI_MS } from './test-timeouts';
 import type { ObservedTask, TaskRecorder } from './run-task-recorder.js';
@@ -185,7 +186,22 @@ export function recordingChannel(name: string): RecordingChannel {
   const appendedLines: string[] = [];
   const replaced: string[] = [];
   const logged: string[] = [];
+  const lifecycle: ChannelLifecycle = {
+    clear(): void {
+      channel.cleared += 1;
+    },
+    show(): void {
+      channel.shown += 1;
+    },
+    hide(): void {
+      channel.hidden += 1;
+    },
+    dispose(): void {
+      channel.disposed += 1;
+    },
+  };
   const channel: RecordingChannel = {
+    ...lifecycle,
     name,
     appended,
     appendedLines,
@@ -220,18 +236,6 @@ export function recordingChannel(name: string): RecordingChannel {
     },
     error(error: string | Error): void {
       logged.push(`error:${typeof error === 'string' ? error : error.message}`);
-    },
-    clear(): void {
-      channel.cleared += 1;
-    },
-    show(): void {
-      channel.shown += 1;
-    },
-    hide(): void {
-      channel.hidden += 1;
-    },
-    dispose(): void {
-      channel.disposed += 1;
     },
   };
   return channel;
