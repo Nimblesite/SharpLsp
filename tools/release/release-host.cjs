@@ -199,6 +199,7 @@ async function withReleaseHost(
 }
 
 module.exports = {
+    buildFixture,
     withReleaseHost,
     requireBundle,
     requireExtensionManifest,

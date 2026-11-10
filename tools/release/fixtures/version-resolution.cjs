@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
+const { publishedExtension } = require("./release-editor.cjs");
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function poll(action, accepts) {
@@ -88,16 +89,6 @@ async function activate(extension, result) {
     if (result.name === "positive") await assertMatching(api, document, result);
     else await assertMismatch(api, result);
     result.passed = true;
-}
-
-function publishedExtension() {
-    const extension = vscode.extensions.getExtension("nimblesite.sharplsp");
-    assert.equal(extension.packageJSON.version, "0.33.0");
-    assert.equal(
-        fs.realpathSync(extension.extensionPath),
-        fs.realpathSync(process.env.SHARPLSP_RELEASE_VSIX),
-    );
-    return extension;
 }
 
 function captureErrors(extension, result) {

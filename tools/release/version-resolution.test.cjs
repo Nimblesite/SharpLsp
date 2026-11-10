@@ -2,9 +2,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const { join, isAbsolute } = require("node:path");
+const { join } = require("node:path");
 const { tmpdir } = require("node:os");
 const { spawn, execFileSync } = require("node:child_process");
+const { requiredPath } = require("./fixtures/release-editor.cjs");
 const {
     requireBundle,
     requireExtensionManifest,
@@ -22,15 +23,6 @@ const harnessManifest = {
     engines: { vscode: "^1.140.0" },
     main: "test.cjs",
 };
-
-function requiredPath(name) {
-    const value = process.env[name];
-    assert.ok(
-        value && isAbsolute(value) && fs.existsSync(value),
-        `${name} must name an existing absolute path`,
-    );
-    return value;
-}
 
 function assertOlderVersion(name, binary) {
     const banner = execFileSync(binary, ["--version"], {
@@ -79,10 +71,15 @@ function settingsFor(name, current, older) {
 function createHarness(directory) {
     const harness = join(directory, "harness");
     fs.mkdirSync(harness);
-    fs.copyFileSync(
-        join(__dirname, "fixtures/version-resolution.cjs"),
-        join(harness, "test.cjs"),
-    );
+    for (const [source, destination] of [
+        ["version-resolution.cjs", "test.cjs"],
+        ["release-editor.cjs", "release-editor.cjs"],
+    ]) {
+        fs.copyFileSync(
+            join(__dirname, "fixtures", source),
+            join(harness, destination),
+        );
+    }
     fs.writeFileSync(
         join(harness, "package.json"),
         JSON.stringify(harnessManifest),
