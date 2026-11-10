@@ -192,6 +192,6 @@ The #530 Node regression launches an actual POSIX editor and additionally requir
 
 - [x] Prepare the 03:00 Melbourne cutoff handoff. There are 81 recorded issue dispositions and 70 unchecked issues, including partial platform/type verification.
 - [x] Push every owned verification/test change. The final standalone regression run reports 47 explicit skips and zero failures. Four editor-only regressions are retained separately.
-- [x] Archive raw evidence and clean inactive owned outputs. The final cleanup removes 485.8 MB of profiles/build outputs, preserves their logs and retains two active editor profiles. Published assets and successful profiler artifacts remain available for verification. Disk space is 32 GiB free.
+- [x] Archive raw evidence and clean inactive owned outputs. The final cleanup removes 485.8 MB of inactive editor profiles and preserves their logs. Two Linux fixture build-output directories retain open file handles and are preserved. Published assets and successful profiler artifacts remain available for verification. Disk space is 32 GiB free.
 - [x] Confirm owned released engines, fixture processes, Pis and containers have exited. VS Code processes are preserved.
 - [ ] Resume the unchecked cases, especially matching Windows/Linux UI runs and the original C# graph topology on #355. Issues #355, #479 and #536 retain partial evidence and remain open. The reproduced #530 timeout remains open with its skipped regression.
