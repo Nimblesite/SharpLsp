@@ -73,7 +73,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#463](https://github.com/Nimblesite/SharpLsp/issues/463) Closed diagnostics outside the selected solution directory do not refresh — Pending release verification.
 - [ ] [#462](https://github.com/Nimblesite/SharpLsp/issues/462) External F# projects stay unloaded after selecting a C#-only solution — Pending release verification.
 - [ ] [#461](https://github.com/Nimblesite/SharpLsp/issues/461) Honor Linux-only chunks in full VS Code test runs — Pending release verification.
-- [ ] [#459](https://github.com/Nimblesite/SharpLsp/issues/459) Honor auto_restore_on_open before compiler workspace creation — Pending release verification.
+- [x] [#459](https://github.com/Nimblesite/SharpLsp/issues/459) Honor auto_restore_on_open before compiler workspace creation — Both languages pass default/opt-out/live opt-in for missing assets and cache files, marker/SDK oracles and package hover. Owner/file-based boundaries retained. Evidence posted, issue closed.
 - [ ] [#458](https://github.com/Nimblesite/SharpLsp/issues/458) Report missing project-level compiler failures in workspace diagnostics — Pending release verification.
 - [x] [#452](https://github.com/Nimblesite/SharpLsp/issues/452) Implement promised diagnostic severity and per-file limits — Official VSIX passes16 policy steps across pulls/Problems. Invalid settings rejected and3 legacy restore-publication arms converge. Evidence posted, issue closed.
 - [ ] [#449](https://github.com/Nimblesite/SharpLsp/issues/449) Background diagnostics force-kill a healthy sidecar during shutdown — Pending release verification.
