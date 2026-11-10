@@ -141,10 +141,10 @@ public static partial class NativePaths
             : null;
     }
 
-    /// <summary>Memoize a fully qualified <paramref name="path"/>; a relative one depends on the working directory.</summary>
+    /// <summary>Memoize existing absolute paths; a missing entry can become a link before expiry.</summary>
     private static string Remember(string path, string resolved)
     {
-        if (!Path.IsPathFullyQualified(path))
+        if (!Path.IsPathFullyQualified(path) || !Path.Exists(path))
         {
             return resolved;
         }

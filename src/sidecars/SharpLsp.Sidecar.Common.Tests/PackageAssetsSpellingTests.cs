@@ -32,6 +32,8 @@ public sealed class PackageAssetsSpellingTests : IDisposable
     public async Task A_second_spelling_of_a_restored_project_is_the_one_its_restore_recorded()
     {
         var app = await RestoredProjectAsync("App");
+        // [DEBUG-FEATURES-LAUNCH-BUILD] A path queried before it exists must not hide a new link.
+        Assert.Equal(_link, NativePaths.WithLinksResolved(_link));
         _ = Directory.CreateSymbolicLink(_link, _root);
         var linked = NativePaths.Join(_link, "App", "App.csproj");
 
