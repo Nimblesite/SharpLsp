@@ -90,7 +90,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#437](https://github.com/Nimblesite/SharpLsp/issues/437) Shared profiler UI with Osprey: interactive flame graph, palettes, debugger links — Pending release verification.
 - [ ] [#435](https://github.com/Nimblesite/SharpLsp/issues/435) Test Explorer hides VSTest compiler diagnostics after build failures — Pending release verification.
 - [x] [#434](https://github.com/Nimblesite/SharpLsp/issues/434) C# local hover omits inferred types and nullable flow context — Passed live release test, evidence posted, issue closed.
-- [ ] [#433](https://github.com/Nimblesite/SharpLsp/issues/433) NuGet restore failures lose MSBuild diagnostics written to stdout — Pending release verification.
+- [x] [#433](https://github.com/Nimblesite/SharpLsp/issues/433) NuGet restore failures lose MSBuild diagnostics written to stdout — Published host passes6 real props install/uninstall operations, stdout-only MSB1003 and complete mixed-stream failures, ordered targeted progress and responsive subsequent operations. Evidence posted, issue closed.
 - [ ] [#431](https://github.com/Nimblesite/SharpLsp/issues/431) Track unpatched Undertow build-tool advisory in Rider dependency graph — Pending release verification.
 - [ ] [#430](https://github.com/Nimblesite/SharpLsp/issues/430) Just My Code and exception caller projection misclassify symbol-bearing sibling libraries — Pending release verification.
 - [ ] [#429](https://github.com/Nimblesite/SharpLsp/issues/429) Test Explorer must default test builds to Debug with shared configuration — Pending release verification.
