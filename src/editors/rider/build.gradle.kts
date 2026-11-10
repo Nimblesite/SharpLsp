@@ -5,7 +5,7 @@ plugins {
     kotlin("jvm") version "2.4.21"
     // 2.14 is the current stable intellij-platform Gradle plugin release;
     // 2.2 was rejected by the platform with an "outdated" warning.
-    id("org.jetbrains.intellij.platform") version "2.19.0"
+    id("org.jetbrains.intellij.platform") version "2.20.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
     // coverage-thresholds.json. [DIST-CI-RIDER]
     id("org.jetbrains.kotlinx.kover") version "0.9.11"
