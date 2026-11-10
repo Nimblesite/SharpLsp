@@ -15,34 +15,33 @@ import {
   useRenameFixtures,
 } from './csharp-rename-test-kit';
 import { replaceDocumentText, type OpenFixture } from './refactor-test-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+import { underLspBudget } from './fsharp-refactor-test-kit';
 
 const EDGE_ONLY = ['edge'] as const;
+
+/** A rename case that lives in the C# edge fixture and touches only that file. */
+function edgeCase(label: string, snippet: string, oldName: string, newName: string): RenameCase {
+  return { label, fixture: 'edge', snippet, oldName, newName, editCount: 2, files: EDGE_ONLY };
+}
 
 interface Outcome<T> {
   readonly value?: T;
   readonly error?: unknown;
 }
 
-const PARTIAL_TYPE: RenameCase = {
-  label: 'partial type declarations',
-  fixture: 'edge',
-  snippet: 'public partial class PartialRenameTarget',
-  oldName: 'PartialRenameTarget',
-  newName: 'RenamedPartialTarget',
-  editCount: 2,
-  files: EDGE_ONLY,
-};
+const PARTIAL_TYPE: RenameCase = edgeCase(
+  'partial type declarations',
+  'public partial class PartialRenameTarget',
+  'PartialRenameTarget',
+  'RenamedPartialTarget',
+);
 
-const PARTIAL_MEMBER: RenameCase = {
-  label: 'partial member declaration and cross-part read',
-  fixture: 'edge',
-  snippet: 'public int PartialMember',
-  oldName: 'PartialMember',
-  newName: 'RenamedPartialMember',
-  editCount: 2,
-  files: EDGE_ONLY,
-};
+const PARTIAL_MEMBER: RenameCase = edgeCase(
+  'partial member declaration and cross-part read',
+  'public int PartialMember',
+  'PartialMember',
+  'RenamedPartialMember',
+);
 
 const CASE_ONLY: RenameCase = {
   ...PARTIAL_MEMBER,
@@ -64,15 +63,12 @@ const ESCAPED_KEYWORD: RenameCase = {
 
 const POSITIVE_CASES = [PARTIAL_TYPE, PARTIAL_MEMBER, CASE_ONLY, UNICODE, ESCAPED_KEYWORD];
 const INVALID_NAMES = ['', ' ', '123member', 'two words', 'bad-name', '.', 'class'] as const;
-const OVERLAY_CASE: RenameCase = {
-  label: 'unsaved overlay local',
-  fixture: 'edge',
-  snippet: 'var overlayLocal',
-  oldName: 'overlayLocal',
-  newName: 'renamedOverlayLocal',
-  editCount: 2,
-  files: EDGE_ONLY,
-};
+const OVERLAY_CASE: RenameCase = edgeCase(
+  'unsaved overlay local',
+  'var overlayLocal',
+  'overlayLocal',
+  'renamedOverlayLocal',
+);
 
 const OVERLAY_SOURCE = `namespace SharpLsp.TestFixtures.RenameCoverage;
 
@@ -130,40 +126,55 @@ async function assertNoRenameAt(
 }
 
 async function assertInvalidName(fixtures: RenameFixtureSet, invalidName: string): Promise<void> {
-  const fixture = fixtures.edge;
-  const position = positionOf(fixture.document, 'public int PartialMember', 'PartialMember');
-  const prepared = await prepareAt(fixture.uri, position);
-  assert.strictEqual(prepared?.placeholder, 'PartialMember');
+  const position = await preparedPartialMember(fixtures);
   assertRejectedOrEmpty(
-    await capture(rawRenameAt(fixture.uri, position, invalidName)),
+    await capture(rawRenameAt(fixtures.edge.uri, position, invalidName)),
     'raw invalid name',
   );
   assertRejectedOrEmpty(
-    await capture(providerRename(fixture.uri, position, invalidName)),
+    await capture(providerRename(fixtures.edge.uri, position, invalidName)),
     'provider invalid name',
   );
   assertCleanBaselines(fixtures);
 }
 
-async function assertSameNameIsNoOp(fixtures: RenameFixtureSet): Promise<void> {
+/** The edge fixture's `PartialMember` declaration and its caret position. */
+function partialMemberAt(fixtures: RenameFixtureSet): {
+  readonly fixture: OpenFixture;
+  readonly position: vscode.Position;
+} {
   const fixture = fixtures.edge;
-  const position = positionOf(fixture.document, 'public int PartialMember', 'PartialMember');
+  return {
+    fixture,
+    position: positionOf(fixture.document, 'public int PartialMember', 'PartialMember'),
+  };
+}
+
+/** `PartialMember` prepares under its own name; returns the caret it prepares at. */
+async function preparedPartialMember(fixtures: RenameFixtureSet): Promise<vscode.Position> {
+  const { fixture, position } = partialMemberAt(fixtures);
   const prepared = await prepareAt(fixture.uri, position);
   assert.strictEqual(prepared?.placeholder, 'PartialMember');
-  assert.strictEqual(await rawRenameAt(fixture.uri, position, 'PartialMember'), null);
-  assertNoResultOrEmpty(await capture(providerRename(fixture.uri, position, 'PartialMember')));
+  return position;
+}
+
+async function assertSameNameIsNoOp(fixtures: RenameFixtureSet): Promise<void> {
+  const position = await preparedPartialMember(fixtures);
+  assert.strictEqual(await rawRenameAt(fixtures.edge.uri, position, 'PartialMember'), null);
+  assertNoResultOrEmpty(
+    await capture(providerRename(fixtures.edge.uri, position, 'PartialMember')),
+  );
   assertCleanBaselines(fixtures);
 }
 
 async function assertConflictRejected(fixtures: RenameFixtureSet): Promise<void> {
-  const fixture = fixtures.edge;
-  const position = positionOf(fixture.document, 'public int PartialMember', 'PartialMember');
+  const { position } = partialMemberAt(fixtures);
   assertRejectedOrEmpty(
-    await capture(rawRenameAt(fixture.uri, position, 'UsePartialMember')),
+    await capture(rawRenameAt(fixtures.edge.uri, position, 'UsePartialMember')),
     'conflicting member rename',
   );
   assertRejectedOrEmpty(
-    await capture(providerRename(fixture.uri, position, 'UsePartialMember')),
+    await capture(providerRename(fixtures.edge.uri, position, 'UsePartialMember')),
     'conflicting provider rename',
   );
   assertCleanBaselines(fixtures);
@@ -204,33 +215,52 @@ async function assertTriviaPositions(fixtures: RenameFixtureSet): Promise<void> 
 }
 
 async function assertMetadataRejected(fixtures: RenameFixtureSet): Promise<void> {
-  const position = positionOf(fixtures.edge.document, 'Console.ReadLine()', 'Console');
-  await assertNoRenameAt(fixtures.edge, position, 'metadata symbol');
-  assertCleanBaselines(fixtures);
+  await assertNoRenameToken(fixtures, 'edge', 'Console.ReadLine()', 'Console', 'metadata symbol');
 }
 
 async function assertIndexerRejected(fixtures: RenameFixtureSet): Promise<void> {
-  const position = positionOf(fixtures.symbols.document, 'this[int indexParameter]', 'this');
-  await assertNoRenameAt(fixtures.symbols, position, 'indexer keyword');
+  await assertNoRenameToken(
+    fixtures,
+    'symbols',
+    'this[int indexParameter]',
+    'this',
+    'indexer keyword',
+  );
+}
+
+/** No rename is possible at `token` inside `snippet`, and no fixture text changed. */
+async function assertNoRenameToken(
+  fixtures: RenameFixtureSet,
+  key: 'edge' | 'symbols',
+  snippet: string,
+  token: string,
+  label: string,
+): Promise<void> {
+  const fixture = fixtureOf(fixtures, key);
+  await assertNoRenameAt(fixture, positionOf(fixture.document, snippet, token), label);
   assertCleanBaselines(fixtures);
 }
 
 async function assertOperatorRejected(fixtures: RenameFixtureSet): Promise<void> {
-  const document = fixtures.symbols.document;
-  const keyword = positionOf(document, 'operator +', 'operator');
-  const punctuation = positionOf(document, 'operator +', '+');
-  await assertNoRenameAt(fixtures.symbols, keyword, 'operator keyword');
-  await assertNoRenameAt(fixtures.symbols, punctuation, 'operator punctuation');
-  assertCleanBaselines(fixtures);
+  await assertNoRenameToken(fixtures, 'symbols', 'operator +', 'operator', 'operator keyword');
+  await assertNoRenameToken(fixtures, 'symbols', 'operator +', '+', 'operator punctuation');
 }
 
 async function assertConversionRejected(fixtures: RenameFixtureSet): Promise<void> {
-  const document = fixtures.symbols.document;
-  const keyword = positionOf(document, 'explicit operator int', 'operator');
-  const targetType = positionOf(document, 'explicit operator int', 'int');
-  await assertNoRenameAt(fixtures.symbols, keyword, 'conversion operator keyword');
-  await assertNoRenameAt(fixtures.symbols, targetType, 'conversion target type');
-  assertCleanBaselines(fixtures);
+  await assertNoRenameToken(
+    fixtures,
+    'symbols',
+    'explicit operator int',
+    'operator',
+    'conversion operator keyword',
+  );
+  await assertNoRenameToken(
+    fixtures,
+    'symbols',
+    'explicit operator int',
+    'int',
+    'conversion target type',
+  );
 }
 
 async function assertOutOfRangeRejected(fixtures: RenameFixtureSet): Promise<void> {
@@ -241,12 +271,11 @@ async function assertOutOfRangeRejected(fixtures: RenameFixtureSet): Promise<voi
 }
 
 function registerPositiveTests(getFixtures: () => RenameFixtureSet): void {
-  for (const renameCase of POSITIVE_CASES) {
-    test(`${renameCase.label}: exact edits, apply, reverse, and revert`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await exerciseRename(getFixtures(), renameCase);
-    });
-  }
+  for (const renameCase of POSITIVE_CASES)
+    test(
+      `${renameCase.label}: exact edits, apply, reverse, and revert`,
+      underLspBudget(() => exerciseRename(getFixtures(), renameCase)),
+    );
 }
 
 function registerBoundaryTests(getFixtures: () => RenameFixtureSet): void {
@@ -265,38 +294,37 @@ function registerBoundaryTests(getFixtures: () => RenameFixtureSet): void {
     ],
   ];
   for (const [label, operation] of cases)
-    test(label, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await operation(getFixtures());
-    });
+    test(
+      label,
+      underLspBudget(() => operation(getFixtures())),
+    );
 }
 
 function registerInvalidNameTests(getFixtures: () => RenameFixtureSet): void {
-  for (const invalidName of INVALID_NAMES) {
-    test(`invalid new name ${JSON.stringify(invalidName)} is rejected without edits`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await assertInvalidName(getFixtures(), invalidName);
-    });
-  }
-  test('renaming to the current name is an exact no-op', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertSameNameIsNoOp(getFixtures());
-  });
-  test('conflicting member names are rejected without corrupting the project', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertConflictRejected(getFixtures());
-  });
+  for (const invalidName of INVALID_NAMES)
+    test(
+      `invalid new name ${JSON.stringify(invalidName)} is rejected without edits`,
+      underLspBudget(() => assertInvalidName(getFixtures(), invalidName)),
+    );
+  test(
+    'renaming to the current name is an exact no-op',
+    underLspBudget(() => assertSameNameIsNoOp(getFixtures())),
+  );
+  test(
+    'conflicting member names are rejected without corrupting the project',
+    underLspBudget(() => assertConflictRejected(getFixtures())),
+  );
 }
 
 function registerOverlayTests(getFixtures: () => RenameFixtureSet): void {
-  test('out-of-range positions reject instead of crashing or editing', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertOutOfRangeRejected(getFixtures());
-  });
-  test('unsaved overlay symbols prepare, rename, reverse, and revert through the real LSP', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertUnsavedOverlay(getFixtures());
-  });
+  test(
+    'out-of-range positions reject instead of crashing or editing',
+    underLspBudget(() => assertOutOfRangeRejected(getFixtures())),
+  );
+  test(
+    'unsaved overlay symbols prepare, rename, reverse, and revert through the real LSP',
+    underLspBudget(() => assertUnsavedOverlay(getFixtures())),
+  );
 }
 
 suite('C# real LSP - rename boundaries, rejection, and overlays [RENAME-TESTS]', () => {

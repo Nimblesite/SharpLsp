@@ -34,11 +34,7 @@ internal static class RazorStructure
                 .Select(span => (Start: span.Start.Line, End: span.End.Line - 1))
                 .Distinct()
                 .Order()
-                .Select(fold => new FoldingRangeResult
-                {
-                    StartLine = fold.Start,
-                    EndLine = fold.End,
-                }),
+                .Select(fold => new FoldingRangeResult(StartLine: fold.Start, EndLine: fold.End)),
         ];
     }
 
@@ -137,18 +133,18 @@ internal static class RazorStructure
     {
         var span = lines.GetLinePositionSpan(item.Span);
         var name = lines.GetLinePositionSpan(item.NameSpan);
-        return new DocumentSymbolResult
-        {
-            Name = item.Name,
-            Kind = item.Kind,
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-            SelectionStartLine = name.Start.Line,
-            SelectionStartCharacter = name.Start.Character,
-            SelectionEndLine = name.End.Line,
-            SelectionEndCharacter = name.End.Character,
-        };
+        return new DocumentSymbolResult(
+            Name: item.Name,
+            Kind: item.Kind,
+            StartLine: span.Start.Line,
+            StartCharacter: span.Start.Character,
+            EndLine: span.End.Line,
+            EndCharacter: span.End.Character,
+            SelectionStartLine: name.Start.Line,
+            SelectionStartCharacter: name.Start.Character,
+            SelectionEndLine: name.End.Line,
+            SelectionEndCharacter: name.End.Character,
+            Children: []
+        );
     }
 }

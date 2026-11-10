@@ -39,7 +39,18 @@ import {
   debugTest,
 } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
-import { assertValues } from './debug-inspect-kit';
+import {
+  assertSourceBreakpointLines,
+  assertValues,
+  continueToCompletion,
+} from './debug-inspect-kit';
+import { assertAdvertises } from './debug-dap-kit';
+import {
+  assertAllStepStops,
+  assertLandingDepth,
+  continueToBreakpoint,
+  stepLandsAt,
+} from './debug-stepping-kit';
 
 suite('Debug stepping — breakpoints inside steps, and stepping off the end', () => {
   const debuggee = useDebuggee('debug-stepedge-cs-', 'csharp');
@@ -59,20 +70,16 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       );
 
       // Interaction 2 — F10 OVER the call. The breakpoint two frames down must win.
-      const interrupted = await stepToFrame(recorder, CMD_STEP_OVER);
-      assertStopReason(
-        interrupted.stop,
-        'breakpoint',
-        'a breakpoint reached during a step must be reported as a BREAKPOINT stop, not a step',
-      );
-      assertStoppedAt(
-        interrupted.frame,
+      const interrupted = await stepLandsAt(
+        recorder,
+        CMD_STEP_OVER,
         fixture,
         'add-body',
         'Add',
         'a step over must not suppress breakpoints in the code it steps over. Swallowing them ' +
           'means a user who sets a breakpoint in a helper can never reach it from a caller they ' +
           'are stepping through',
+        'breakpoint',
       );
       const frames = await stackFrames(session, interrupted.stop.threadId);
       deepEq(
@@ -83,15 +90,24 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
 
       // Interaction 3 — the pending step must be CANCELLED, not resumed. Continue
       // twice: the remaining two calls to Add must each stop.
-      const secondHit = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStoppedAt(secondHit.frame, fixture, 'add-body', 'Add', 'the second call to Add');
-      const thirdHit = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStoppedAt(thirdHit.frame, fixture, 'add-body', 'Add', 'the third call to Add');
+      await continueToBreakpoint(
+        recorder,
+        fixture,
+        'add-body',
+        'Add',
+        'the second call to Add must stop as a breakpoint hit, not a resumed step',
+      );
+      await continueToBreakpoint(
+        recorder,
+        fixture,
+        'add-body',
+        'Add',
+        'the third call to Add must stop as a breakpoint hit too',
+      );
       eq(recorder.stops().length, 4, 'one call-site stop plus three breakpoint hits inside Add');
 
       // Interaction 4 — the last continue runs the program out.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a step interrupted by a breakpoint');
+      await continueToCompletion(recorder, 'a step interrupted by a breakpoint');
       await recorder.waitForOutput('done plain 45');
       eq(recorder.stops().length, 4, 'no fifth stop: the interrupted step must not resume later');
       assertCleanSession(debuggee(), 'a breakpoint inside a stepped-over call');
@@ -110,31 +126,32 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       eq(methodOf(requireAt(deep, 0, 'the stopped frame')), 'Add', 'the walk starts in Add');
 
       // Interaction 2 — F10 on `return`: the frame must pop.
-      const returned = await stepToFrame(recorder, CMD_STEP_OVER);
-      assertStopReason(returned.stop, 'step', 'a step off the end of a method');
+      const returned = await stepLandsAt(
+        recorder,
+        CMD_STEP_OVER,
+        fixture,
+        'accumulate-call',
+        'Accumulate',
+        'the caller must be parked on the call statement it is completing',
+        'step',
+      );
       eq(
         methodOf(returned.frame),
         'Accumulate',
         'stepping over the LAST statement of a method executes the return, so the debuggee must ' +
           `come to rest in the CALLER; it came to rest in '${returned.frame.name}'`,
       );
-      assertStoppedAt(
-        returned.frame,
-        fixture,
-        'accumulate-call',
-        'Accumulate',
-        'the caller must be parked on the call statement it is completing',
-      );
-      eq(
-        (await stackFrames(session, returned.stop.threadId)).length,
+      await assertLandingDepth(
+        session,
+        returned,
         deep.length - 1,
         'exactly one frame must have been popped',
       );
 
       // Interaction 3 — the loop must continue normally afterwards.
-      const nextStop = await stepToFrame(recorder, CMD_STEP_OVER);
-      assertStoppedAt(
-        nextStop.frame,
+      await stepLandsAt(
+        recorder,
+        CMD_STEP_OVER,
         fixture,
         'accumulate-loop',
         'Accumulate',
@@ -142,8 +159,14 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       );
 
       // Interaction 4 — continue: the next breakpoint hit is Add's return again.
-      const again = await stepToFrame(recorder, CMD_CONTINUE);
-      assertStoppedAt(again.frame, fixture, 'add-return', 'Add', 'the second call to Add');
+      await stepLandsAt(
+        recorder,
+        CMD_CONTINUE,
+        fixture,
+        'add-return',
+        'Add',
+        'the second call to Add',
+      );
       assertCleanSession(debuggee(), 'stepping off the end of a method');
     },
   );
@@ -202,12 +225,19 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
 
       // Interaction 2 - F11 INTO the callee. One frame deeper, in the user's own
       // helper, with the arguments the caller passed.
-      const into = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStopReason(into.stop, 'step', 'a step into a called method');
-      assertStoppedAt(into.frame, fixture, 'add-body', 'Add', 'a step into');
+      const into = await stepLandsAt(
+        recorder,
+        CMD_STEP_INTO,
+        fixture,
+        'add-body',
+        'Add',
+        'a step into',
+        'step',
+      );
       const inside = await stackFrames(session, into.stop.threadId);
-      eq(
-        inside.length,
+      await assertLandingDepth(
+        session,
+        into,
         before.length + 1,
         'a step INTO pushes exactly ONE frame; more means it entered runtime machinery, ' +
           'which is what justMyCode exists to prevent',
@@ -229,8 +259,9 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       assertStopReason(out.stop, 'step', 'a step out of a called method');
       eq(methodOf(out.frame), 'Accumulate', 'a step out returns to the CALLER');
       assertFrameSource(out.frame, fixture, 'a step out of a helper');
-      eq(
-        (await stackFrames(session, out.stop.threadId)).length,
+      await assertLandingDepth(
+        session,
+        out,
         before.length,
         'popping exactly the frame the step into pushed, and no more',
       );
@@ -267,18 +298,19 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       );
 
       // Interaction 2 - F11. Same method, same depth, next statement.
-      const stepped = await stepToFrame(recorder, CMD_STEP_INTO);
-      assertStopReason(stepped.stop, 'step', 'a step into a call-free line');
-      eq(methodOf(stepped.frame), 'Accumulate', 'F11 on a call-free line stays in the method');
-      assertStoppedAt(
-        stepped.frame,
+      const stepped = await stepLandsAt(
+        recorder,
+        CMD_STEP_INTO,
         fixture,
         'accumulate-loop',
         'Accumulate',
         'a step into with nothing to enter advances one statement, exactly as a step over',
+        'step',
       );
-      eq(
-        (await stackFrames(session, stepped.stop.threadId)).length,
+      eq(methodOf(stepped.frame), 'Accumulate', 'F11 on a call-free line stays in the method');
+      await assertLandingDepth(
+        session,
+        stepped,
         before.length,
         'and pushes NO frame - a stall here is the F11 that appears to do nothing',
       );
@@ -299,9 +331,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
         ['Accumulate', 'Add'].includes(methodOf(last)),
         'walking on from the loop header reaches the call and then the callee, and nothing else',
       );
-      deepEq(
-        further.stops.map((entry) => entry.reason),
-        ['step', 'step'],
+      assertAllStepStops(
+        further.stops,
         'each one reported as a STEP, never as a breakpoint the user never set',
       );
       assertCleanSession(debuggee(), 'a step into a call-free line');
@@ -319,11 +350,11 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       // editor-scoped gesture to act on.
       await stopInFrame(debuggee(), 'main-mode', 'Main', 'the first statement of the program');
       eq(vscode.debug.breakpoints.length, 1, 'exactly one breakpoint is in the Breakpoints view');
-      eq(
-        recorder.capabilities()['supportsGotoTargetsRequest'],
-        true,
-        '[DEBUG-PROTOCOL-CAPABILITIES] makes supportsGotoTargetsRequest a Phase 4 Yes, and it ' +
-          'is what run-to-cursor is specified to use',
+      assertAdvertises(
+        recorder,
+        'supportsGotoTargetsRequest',
+        '[DEBUG-PROTOCOL-CAPABILITIES] makes supportsGotoTargetsRequest a Phase 4 Yes, and ' +
+          'run to cursor is the gesture specified to use it',
       );
 
       // Interaction 2 - put the caret much further down Main and run to it. The
@@ -351,23 +382,13 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
       // the view is one the user never set and cannot explain; one left armed on
       // the adapter stops the program again on the next pass.
       await settleBreakpointCount(1);
-      eq(
-        vscode.debug.breakpoints.length,
-        1,
-        'run to cursor must not add an entry to the Breakpoints view',
-      );
-      deepEq(
-        vscode.debug.breakpoints
-          .filter((breakpoint): breakpoint is vscode.SourceBreakpoint => {
-            return breakpoint instanceof vscode.SourceBreakpoint;
-          })
-          .map((breakpoint) => breakpoint.location.range.start.line),
+      assertSourceBreakpointLines(
         [fixture.source.line('main-mode')],
-        'the only breakpoint left is the one the user armed themselves',
+        'run to cursor must not add an entry to the Breakpoints view; the only breakpoint left ' +
+          'is the one the user armed themselves',
       );
       const stopsSoFar = recorder.stops().length;
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session after a run to cursor');
+      await continueToCompletion(recorder, 'a session after a run to cursor');
       eq(
         recorder.stops().length,
         stopsSoFar,
@@ -422,9 +443,8 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
 
       // Interaction 3 - every one of them was reported as a STEP, and the session
       // still runs out cleanly afterwards.
-      deepEq(
-        [...new Set(walked.stops.map((entry) => entry.reason))],
-        ['step'],
+      assertAllStepStops(
+        walked.stops,
         'a walk with no breakpoint armed ahead of it produces step stops and nothing else',
       );
       assert.ok(
@@ -436,8 +456,7 @@ suite('Debug stepping — breakpoints inside steps, and stepping off the end', (
         gestures.length + 1,
         'exactly the breakpoint plus one stop per gesture - no phantom stop in runtime startup',
       );
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session walked through with Just My Code on');
+      await continueToCompletion(recorder, 'a session walked through with Just My Code on');
       assertCleanSession(debuggee(), 'a long Just My Code walk');
     },
   );

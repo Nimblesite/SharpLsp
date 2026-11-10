@@ -59,7 +59,9 @@ import {
   assertContainsNone,
 } from './test-helpers';
 import {
+  actionLenses,
   codeLensesFor,
+  runActionTargets,
   warmCodeLensPath,
   TEST_LENS_SECTION,
   TEST_LENS_KEY,
@@ -67,6 +69,7 @@ import {
   withTestLensRestored,
   lensTargets,
 } from './code-lens-kit';
+import { assertActionsPaired, pressAtCursor } from './testing-lens-kit';
 import {
   ACTIVATION_MS,
   COMMAND_MS,
@@ -82,13 +85,18 @@ function testItem(id: string): vscode.TestItem {
   return { id } as unknown as vscode.TestItem;
 }
 
-/** Pull only the lenses this extension's test-lens provider contributes. */
-function testLensCommands(lenses: vscode.CodeLens[]): vscode.CodeLens[] {
-  return lenses.filter(
-    (lens) =>
-      lens.command?.command === CMD_TEST_RUN_AT_CURSOR ||
-      lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR,
-  );
+/** The extension's action lenses for `uri`, whole and split by command. */
+async function actionLensesByCommand(uri: vscode.Uri): Promise<{
+  lenses: vscode.CodeLens[];
+  runLenses: vscode.CodeLens[];
+  debugLenses: vscode.CodeLens[];
+}> {
+  const lenses = actionLenses(await codeLensesFor(uri));
+  return {
+    lenses,
+    runLenses: lenses.filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR),
+    debugLenses: lenses.filter((lens) => lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR),
+  };
 }
 
 /**
@@ -139,6 +147,52 @@ function plantReport(resultsDir: string, runId: string, xml: string): string {
   const reportPath = path.join(runDir, 'coverage.cobertura.xml');
   fs.writeFileSync(reportPath, xml, 'utf8');
   return reportPath;
+}
+
+/** One file's merged coverage: present, with exactly `total` lines of which `covered` ran. */
+interface ExpectedCoverage {
+  readonly file: string;
+  readonly total: number;
+  readonly covered: number;
+  /** What a missing entry means for the user. */
+  readonly present: string;
+  /** What the line count says about the fixture. */
+  readonly totalWhy: string;
+}
+
+/** The merged report really holds `expected.file` with the lines the fixture ran. */
+function assertFileCoverage(
+  entries: readonly vscode.FileCoverage[],
+  expected: ExpectedCoverage,
+): void {
+  const found = entries.find((entry) => entry.uri.fsPath.endsWith(expected.file));
+  assert.ok(found, expected.present);
+  eq(found.statementCoverage.total, expected.total, expected.totalWhy);
+  eq(found.statementCoverage.covered, expected.covered, 'two of them were executed');
+}
+
+/** Flip the test lens, then read the action lenses each of `uris` renders. */
+async function actionsAt(
+  enabled: boolean,
+  ...uris: readonly vscode.Uri[]
+): Promise<vscode.CodeLens[][]> {
+  await setTestLens(enabled);
+  return await Promise.all(uris.map(async (uri) => actionLenses(await codeLensesFor(uri))));
+}
+
+/** Every lens in `lenses` renders exactly one title, `title`. */
+function assertLensTitles(lenses: readonly vscode.CodeLens[], title: string, why: string): void {
+  assert.deepStrictEqual([...new Set(lenses.map((lens) => lens.command?.title))], [title], why);
+}
+
+/** Every `[line, expected]` pair reads through `read` exactly as tabulated. */
+function assertReads(
+  read: (line: string) => string | undefined,
+  cases: readonly (readonly [string, string | undefined])[],
+): void {
+  for (const [line, expected] of cases) {
+    eq(read(line), expected, JSON.stringify(line) + ' reads as ' + String(expected));
+  }
 }
 
 /** A `CachedTestResult` literal, so the four lens titles can be driven directly. */
@@ -365,10 +419,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       // The lens hands the command (uri, methodName). With a freshly-activated
       // controller no tests are discovered yet, so the deterministic outcome is a
       // warning — which we capture via the stub instead of a real modal.
-      stubs().queueWarning(undefined);
-      await assert.doesNotReject(async () => {
-        await vscode.commands.executeCommand(command, uri, method);
-      });
+      await pressAtCursor(stubs(), command, uri, method);
       assert.strictEqual(stubs().log.warningMessages.length, 1, 'one warning must be shown');
       const warning = stubs().log.warningMessages[0] ?? '';
       assertContainsAll(warning, [method, 'discovery'], 'warning');
@@ -395,10 +446,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       // message. A command that remembers it already complained goes silent on
       // the second press, and two commands that disagree about whether a test
       // exists send the user hunting for a difference that is not there.
-      stubs().queueWarning(undefined);
-      await assert.doesNotReject(async () => {
-        await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, method);
-      });
+      await pressAtCursor(stubs(), CMD_TEST_RUN_AT_CURSOR, uri, method);
       assert.strictEqual(stubs().log.warningMessages.length, 2, 'the second press warns again');
       assert.strictEqual(stubs().log.warningMessages[1], warning, 'naming the same method');
     });
@@ -564,10 +612,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     fs.mkdirSync(resultsDir, { recursive: true });
     assert.strictEqual(findCoberturaFile(resultsDir), undefined, 'empty dir → undefined');
 
-    const runDir = path.join(resultsDir, 'run-guid');
-    fs.mkdirSync(runDir, { recursive: true });
-    const coveragePath = path.join(runDir, 'coverage.cobertura.xml');
-    fs.writeFileSync(coveragePath, COBERTURA_XML, 'utf8');
+    const coveragePath = plantReport(resultsDir, 'run-guid', COBERTURA_XML);
 
     const found = findCoberturaFile(resultsDir);
     assert.strictEqual(found, coveragePath, 'finds the nested coverage report');
@@ -584,7 +629,8 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     assert.strictEqual(fc.uri.toString(), vscode.Uri.file('/src/Sample.cs').toString());
 
     // A report with no packages yields no coverage entries.
-    const emptyPath = path.join(runDir, 'empty.cobertura.xml');
+    fs.mkdirSync(path.join(resultsDir, 'run-guid'), { recursive: true });
+    const emptyPath = path.join(resultsDir, 'run-guid', 'empty.cobertura.xml');
     fs.writeFileSync(
       emptyPath,
       '<?xml version="1.0"?><coverage><packages></packages></coverage>',
@@ -695,10 +741,7 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // warning must show the user the name it actually looked for. A name that
     // arrived trimmed or split is a name no discovered test can ever match.
     const spaced = 'adds two numbers with spaces';
-    stubs().queueWarning(undefined);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand(CMD_TEST_RUN_AT_CURSOR, uri, spaced);
-    });
+    await pressAtCursor(stubs(), CMD_TEST_RUN_AT_CURSOR, uri, spaced);
     eq(stubs().log.warningMessages.length, 1, 'an unresolvable at-cursor run warns exactly once');
     const first = stubs().log.warningMessages[0] ?? '';
     assertContainsAll(first, [spaced, 'discovery'], 'first');
@@ -975,14 +1018,17 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
     // Interaction 3 - the per-file totals must survive the merge, and depth
     // must stay at ONE level: the collector writes `<run-id>/coverage.cobertura.xml`
     // and nothing deeper.
-    const alphaCoverage = merged.find((entry) => entry.uri.fsPath.endsWith('Alpha.cs'));
-    assert.ok(alphaCoverage, 'Alpha.cs must appear in the merged coverage');
-    eq(alphaCoverage.statementCoverage.total, 3, 'Alpha.cs declares three lines');
-    eq(alphaCoverage.statementCoverage.covered, 2, 'two of them were executed');
-    const betaCoverage = merged.find((entry) => entry.uri.fsPath.endsWith('Beta.cs'));
-    assert.ok(betaCoverage, 'Beta.cs must appear too');
-    eq(betaCoverage.statementCoverage.total, 4, 'Beta.cs declares four lines');
-    eq(betaCoverage.statementCoverage.covered, 2, 'two of them were executed');
+    for (const [file, total, present, totalWhy] of [
+      [
+        'Alpha.cs',
+        3,
+        'Alpha.cs must appear in the merged coverage',
+        'Alpha.cs declares three lines',
+      ],
+      ['Beta.cs', 4, 'Beta.cs must appear too', 'Beta.cs declares four lines'],
+    ] as const) {
+      assertFileCoverage(merged, { file, total, covered: 2, present, totalWhy });
+    }
 
     const deepDir = path.join(resultsDir, 'run-gamma', 'nested');
     fs.mkdirSync(deepDir, { recursive: true });
@@ -1139,14 +1185,8 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       // 96ms for a warm C# call in the same process.
       this.timeout(LSP_RESPONSE_MS);
       const { uri } = await open(tmpDir, file, source);
-      const lenses = testLensCommands(await codeLensesFor(uri));
-      const runLenses = lenses.filter((l) => l.command?.command === CMD_TEST_RUN_AT_CURSOR);
-      const debugLenses = lenses.filter((l) => l.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
-      const targetsOf = (group: vscode.CodeLens[]): string[] =>
-        group
-          .map((lens) => lens.command?.arguments?.[1])
-          .filter((name): name is string => typeof name === 'string');
-      const runTargets = targetsOf(runLenses);
+      const { lenses, runLenses, debugLenses } = await actionLensesByCommand(uri);
+      const runTargets = lensTargets(runLenses);
 
       // Interaction 1 — exactly the [Fact] and the [Theory] get ONE Run lens each,
       // rendered as the play action; a plain method gets none. F# is not a
@@ -1157,25 +1197,17 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         [fact, theory].sort(),
         `${language}: one Run lens per test method, and none on a plain one`,
       );
-      assert.deepStrictEqual(
-        [...new Set(runLenses.map((lens) => lens.command?.title))],
-        ['$(play) Run Test'],
-        'the Run half renders as the Run action',
-      );
+      assertLensTitles(runLenses, '$(play) Run Test', 'the Run half renders as the Run action');
 
       // Interaction 2 — the DEBUG half of [TEST-STATUS-LENS]'s "plus Run and Debug
       // actions". A Debug lens that reached the wrong method, or carried no
       // method at all, is how "Debug Test does nothing" presents to the user.
       assert.deepStrictEqual(
-        targetsOf(debugLenses).sort(),
+        lensTargets(debugLenses),
         [...runTargets].sort(),
         'every method offering Run must offer Debug, and for the SAME method name',
       );
-      assert.deepStrictEqual(
-        [...new Set(debugLenses.map((lens) => lens.command?.title))],
-        ['$(bug) Debug Test'],
-        'and every one of them renders as the Debug action',
-      );
+      assertLensTitles(debugLenses, '$(bug) Debug Test', 'and every one renders as Debug');
       assert.deepStrictEqual(
         lenses.filter((lens) => lens.command?.arguments?.length !== 2),
         [],
@@ -1191,13 +1223,10 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       // method share the range, so the user sees them side by side above it,
       // and every lens is anchored inside the file.
       for (const target of runTargets) {
-        const run = runLenses.find((lens) => lens.command?.arguments?.[1] === target);
-        const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === target);
-        assert.ok(run && debug, `${target} must have both a Run and a Debug lens`);
-        assert.ok(
-          run.range.isEqual(debug.range),
-          `${target}: the Run and Debug actions must render on the same line`,
-        );
+        assertActionsPaired([...runLenses, ...debugLenses], target, {
+          missing: (name) => `${name} must have both a Run and a Debug lens`,
+          row: (name) => `${name}: the Run and Debug actions must render on the same line`,
+        });
       }
       const document = await vscode.workspace.openTextDocument(uri);
       for (const lens of lenses) {
@@ -1221,18 +1250,18 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     await withTestLensRestored(async () => {
       // Baseline: lenses present while enabled (default true).
       await setTestLens(true);
-      const enabledLenses = testLensCommands(await codeLensesFor(uri));
+      const enabledLenses = actionLenses(await codeLensesFor(uri));
       assert.ok(enabledLenses.length >= 2, 'lenses present while enabled');
 
       // Disable → the provider returns an empty array, so no test lenses remain.
       await setTestLens(false);
-      const disabledLenses = testLensCommands(await codeLensesFor(uri));
+      const disabledLenses = actionLenses(await codeLensesFor(uri));
       assert.strictEqual(disabledLenses.length, 0, 'disabling testLens removes the lenses');
 
       // Re-enable → lenses come back. Restoring is EXACT, not approximate: the
       // same targets as the baseline, or "restored" means "some came back".
       await setTestLens(true);
-      const reEnabledLenses = testLensCommands(await codeLensesFor(uri));
+      const reEnabledLenses = actionLenses(await codeLensesFor(uri));
       assert.deepStrictEqual(
         lensTargets(reEnabledLenses),
         lensTargets(enabledLenses),
@@ -1257,7 +1286,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       await setTestLens(false);
       const allWhileDisabled = await codeLensesFor(uri);
       assert.strictEqual(
-        testLensCommands(allWhileDisabled).length,
+        actionLenses(allWhileDisabled).length,
         0,
         'no test lens survives the disable',
       );
@@ -1286,7 +1315,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       '',
     ].join('\n');
     const { uri } = await openCSharpFile(tmpDir, 'Plain.cs', plain);
-    const lenses = testLensCommands(await codeLensesFor(uri));
+    const lenses = actionLenses(await codeLensesFor(uri));
     assert.strictEqual(lenses.length, 0, 'a class with no [Fact]/[Test] yields no test lenses');
 
     // The exported signature parsers drive which method names the lenses target;
@@ -1446,12 +1475,8 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // Interaction 1 - a Run action above every attributed method, whichever
     // framework's attribute it carries. A framework that gets no lens is a
     // framework whose users have no Run Test button.
-    const lenses = testLensCommands(await codeLensesFor(uri));
-    const runLenses = lenses.filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR);
-    const debugLenses = lenses.filter((lens) => lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR);
-    const runTargets = runLenses
-      .map((lens) => lens.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
+    const { runLenses, debugLenses } = await actionLensesByCommand(uri);
+    const runTargets = runActionTargets(runLenses);
     for (const method of FRAMEWORK_TEST_METHODS) {
       assert.ok(runTargets.includes(method), method + ' must be offered a Run action');
       eq(
@@ -1480,21 +1505,17 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     // of them, which is what [TEST-STATUS-LENS] means by "plus Run and Debug
     // actions".
     eq(debugLenses.length, runLenses.length, 'the two actions are paired, one for one');
-    deepEq(
-      [...new Set(debugLenses.map((lens) => lens.command?.title))],
-      ['$(bug) Debug Test'],
+    assertLensTitles(
+      debugLenses,
+      '$(bug) Debug Test',
       'every Debug action renders as the Debug lens',
     );
-    deepEq(
-      [...new Set(runLenses.map((lens) => lens.command?.title))],
-      ['$(play) Run Test'],
-      'and every Run action as the Run lens',
-    );
+    assertLensTitles(runLenses, '$(play) Run Test', 'and every Run action as the Run lens');
     for (const method of FRAMEWORK_TEST_METHODS) {
-      const run = runLenses.find((lens) => lens.command?.arguments?.[1] === method);
-      const debug = debugLenses.find((lens) => lens.command?.arguments?.[1] === method);
-      assert.ok(run && debug, method + ' must carry both actions');
-      assert.ok(run.range.isEqual(debug.range), method + ': both actions render on the same line');
+      const { run, debug } = assertActionsPaired([...runLenses, ...debugLenses], method, {
+        missing: (name) => name + ' must carry both actions',
+        row: (name) => name + ': both actions render on the same line',
+      });
       eq(
         run.command?.arguments?.[0]?.toString(),
         uri.toString(),
@@ -1516,10 +1537,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     const { doc, uri } = await openCSharpFile(tmpDir, 'Reactive.cs', CSHARP_TESTS);
 
     // Interaction 1 - the baseline the fixture declares.
-    const before = testLensCommands(await codeLensesFor(uri))
-      .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
-      .map((lens) => lens.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
+    const before = runActionTargets(await codeLensesFor(uri));
     deepEq(
       [...before].sort(),
       ['Lens_AddsTheory', 'Lens_AddsTwoNumbers'],
@@ -1537,10 +1555,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
           '        public void NotATest()',
       );
     assert.ok(await replaceDocumentContent(doc, withExtra), 'the edit must apply');
-    const afterAdd = testLensCommands(await codeLensesFor(uri))
-      .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
-      .map((lens) => lens.command?.arguments?.[1])
-      .filter((name): name is string => typeof name === 'string');
+    const afterAdd = runActionTargets(await codeLensesFor(uri));
     assert.ok(
       afterAdd.includes('Lens_AddedLater'),
       'a test method typed into the open buffer gets its lens immediately',
@@ -1566,7 +1581,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       ),
       'the second edit must apply too',
     );
-    const afterRemove = testLensCommands(await codeLensesFor(uri));
+    const afterRemove = actionLenses(await codeLensesFor(uri));
     deepEq(afterRemove, [], 'a file with no test method carries no test lens at all');
     assert.ok(doc.isDirty, 'and all of this happened in the buffer, with nothing written to disk');
   });
@@ -1583,9 +1598,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
     await withTestLensRestored(async () => {
       // Interaction 1 - the default. Both languages carry lenses before the
       // user has touched the setting at all.
-      await setTestLens(true);
-      const csOn = testLensCommands(await codeLensesFor(csharp.uri));
-      const fsOn = testLensCommands(await codeLensesFor(fsharp.uri));
+      const [csOn = [], fsOn = []] = await actionsAt(true, csharp.uri, fsharp.uri);
       assert.ok(csOn.length >= 4, 'C# carries a Run and a Debug lens per test method');
       assert.ok(fsOn.length >= 4, 'and F# carries them for its [<Fact>] and [<Theory>] bindings');
       assert.ok(
@@ -1607,11 +1620,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
         ['F#', fsharp.uri],
       ] as const) {
         const off = await codeLensesFor(uri);
-        deepEq(
-          testLensCommands(off),
-          [],
-          `no ${language} test lens survives the setting being off`,
-        );
+        deepEq(actionLenses(off), [], `no ${language} test lens survives the setting being off`);
         deepEq(
           off.filter((lens) => (lens.command?.title ?? '').startsWith('$(circle-slash)')),
           [],
@@ -1621,9 +1630,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
 
       // Interaction 3 - switch it back on. What comes back must be what left,
       // for both languages, addressed by the same names.
-      await setTestLens(true);
-      const csBack = testLensCommands(await codeLensesFor(csharp.uri));
-      const fsBack = testLensCommands(await codeLensesFor(fsharp.uri));
+      const [csBack = [], fsBack = []] = await actionsAt(true, csharp.uri, fsharp.uri);
       eq(csBack.length, csOn.length, 're-enabling restores exactly the C# lenses that were there');
       eq(fsBack.length, fsOn.length, 'and exactly the F# ones');
       deepEq(
@@ -1652,13 +1659,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       ['', undefined],
       ['        // public void Commented()', undefined],
     ];
-    for (const [line, expected] of csharpCases) {
-      eq(
-        extractCSharpMethodName(line),
-        expected,
-        JSON.stringify(line) + ' reads as ' + String(expected),
-      );
-    }
+    assertReads(extractCSharpMethodName, csharpCases);
     for (const method of FRAMEWORK_TEST_METHODS) {
       assert.ok(
         FRAMEWORK_TESTS.includes(method),
@@ -1679,13 +1680,7 @@ suite('Test status lens e2e — CodeLens provider and toggle', () => {
       ['module Sample.FSharpTests', undefined],
       ['', undefined],
     ];
-    for (const [line, expected] of fsharpCases) {
-      eq(
-        extractFSharpFunctionName(line),
-        expected,
-        JSON.stringify(line) + ' reads as ' + String(expected),
-      );
-    }
+    assertReads(extractFSharpFunctionName, fsharpCases);
 
     // Interaction 3 - the duration suffix the status title appends, across the
     // ms/seconds boundary the spec's `(<duration>)` implies.

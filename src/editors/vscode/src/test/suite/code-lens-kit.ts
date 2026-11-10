@@ -26,7 +26,11 @@
 // start ONCE in `suiteSetup` via `warmCodeLensPath` — the same discipline
 // `warmSemanticEngine` applies to code actions ([DIST-CI-VSIX-SHARDS-TIMEOUTS]).
 
+import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { CMD_TEST_DEBUG_AT_CURSOR, CMD_TEST_RUN_AT_CURSOR } from '../../constants.js';
+import type { SharpLspTestController } from '../../testing.js';
+import { rootsOf } from './test-explorer-kit';
 
 /**
  * Every CodeLens contributed for `uri`, from every registered provider.
@@ -100,6 +104,64 @@ export async function withTestLensRestored(body: () => Promise<void>): Promise<v
   } finally {
     await setTestLens(saved);
   }
+}
+
+/** The Run and Debug action lenses this extension's test-lens provider contributes. */
+export function actionLenses(lenses: readonly vscode.CodeLens[]): vscode.CodeLens[] {
+  return lenses.filter(
+    (lens) =>
+      lens.command?.command === CMD_TEST_RUN_AT_CURSOR ||
+      lens.command?.command === CMD_TEST_DEBUG_AT_CURSOR,
+  );
+}
+
+/** The method name each Run action in `lenses` targets, in lens order, WITHOUT deduplication. */
+export function runActionTargets(lenses: readonly vscode.CodeLens[]): string[] {
+  return actionLenses(lenses)
+    .filter((lens) => lens.command?.command === CMD_TEST_RUN_AT_CURSOR)
+    .map((lens) => lens.command?.arguments?.[1])
+    .filter((name): name is string => typeof name === 'string');
+}
+
+/** Every method name the Run actions in `lenses` target, deduplicated and sorted. */
+export function lensedMethods(lenses: readonly vscode.CodeLens[]): string[] {
+  return [...new Set(runActionTargets(lenses))].sort();
+}
+
+/** The method names the lens rows over `uri` target right now. */
+export async function lensedMethodsOver(uri: vscode.Uri): Promise<string[]> {
+  return lensedMethods(await codeLensesFor(uri));
+}
+
+/** The Run/Debug action lenses over `uri` come in Run/Debug pairs. */
+export async function assertLensesPair(uri: vscode.Uri, why: string): Promise<void> {
+  const actions = actionLenses(await codeLensesFor(uri));
+  assert.strictEqual(
+    actions.length % 2,
+    0,
+    `${why}: the actions come in Run/Debug pairs, saw ${String(actions.length)}`,
+  );
+}
+
+/**
+ * Both fixture files still carry a lens over every discovered method, and the
+ * tree behind those lenses still stands.
+ */
+export async function assertLensedRowsStand(
+  csFile: vscode.Uri,
+  fsFile: vscode.Uri,
+  controller: SharpLspTestController,
+  why: string,
+): Promise<void> {
+  assert.ok(
+    (await lensedMethodsOver(csFile)).length >= 4,
+    `${why}: every C# test method is lensed`,
+  );
+  assert.ok(
+    (await lensedMethodsOver(fsFile)).length >= 4,
+    `${why}: every F# test method is lensed`,
+  );
+  assert.ok(rootsOf(controller.items).length >= 1, `${why}: the tree behind them stands`);
 }
 
 /** The method names `lenses` hand their command, sorted. */

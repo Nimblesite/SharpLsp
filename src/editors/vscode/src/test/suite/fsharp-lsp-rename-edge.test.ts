@@ -8,21 +8,28 @@ import {
   RENAME_USAGES_SOURCE,
 } from './fsharp-rename-fixtures';
 import {
+  applyAndVerify,
+  applyToDocument,
+  assertCleanEdits,
+  assertNoErrorDiagnostics,
+  assertOverlayUnchanged,
+  assertPrepareAcrossToken,
   changedFileNames,
   editCount,
-  openOverlay,
-  assertPrepareAcrossToken,
+  renamePreparedToken,
   requestPrepareRename,
   requestRename,
   tokenRange,
+  underLspBudget,
   undoAction,
+  withOverlay,
+  withTwoOverlays,
+  type OverlayText,
 } from './fsharp-refactor-test-kit';
 import {
   activateRealSharpLsp,
-  applyWorkspaceEdit,
   assertWorkspaceEditSafe,
-  revertDocument,
-  waitForMatchingDiagnostics,
+  type OpenFixture,
 } from './refactor-test-helpers';
 import { closeAllEditors, assertContainsAll } from './test-helpers';
 import { LSP_RESPONSE_MS } from './test-timeouts';
@@ -35,7 +42,6 @@ const NAMESPACE_FILE = 'fsharp/RenameNamespace.fs';
 const NAMESPACE_USAGE_FILE = 'fsharp/RenameNamespaceUsage.fs';
 const VALID_NAMES = ['renamedName', "renamedName'", '``renamed value``'] as const;
 const INVALID_NAMES = ['', '1bad', 'bad-name', 'two words', 'let', 'value.with.dot'] as const;
-type OpenOverlay = Awaited<ReturnType<typeof openOverlay>>;
 
 suite('F# real LSP — rename edge cases', defineRenameEdgeSuite);
 
@@ -50,65 +56,51 @@ function defineRenameEdgeSuite(): void {
 }
 
 function registerValidNameTests(): void {
-  for (const newName of VALID_NAMES) {
-    test(`unsaved overlay renames to ${JSON.stringify(newName)} and undoes cleanly`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await runUnsavedRename(newName);
-    });
-  }
+  for (const newName of VALID_NAMES)
+    test(
+      `unsaved overlay renames to ${JSON.stringify(newName)} and undoes cleanly`,
+      underLspBudget(() => runUnsavedRename(newName)),
+    );
 }
 
 function registerInvalidNameTests(): void {
-  for (const invalidName of INVALID_NAMES) {
-    test(`rejects invalid F# identifier ${JSON.stringify(invalidName)}`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await assertInvalidName(invalidName);
-    });
-  }
+  for (const invalidName of INVALID_NAMES)
+    test(
+      `rejects invalid F# identifier ${JSON.stringify(invalidName)}`,
+      underLspBudget(() => assertInvalidName(invalidName)),
+    );
 }
 
 function registerMetadataTests(): void {
-  for (const metadataName of ['System', 'String', 'Empty'] as const) {
-    test(`rejects external metadata symbol ${metadataName}`, async function () {
-      this.timeout(LSP_RESPONSE_MS + 5_000);
-      await assertMetadataRejected(metadataName);
-    });
-  }
+  for (const metadataName of ['System', 'String', 'Empty'] as const)
+    test(
+      `rejects external metadata symbol ${metadataName}`,
+      underLspBudget(() => assertMetadataRejected(metadataName)),
+    );
 }
 
 function registerRenameBoundaryTests(): void {
-  test('rejects prepare and rename on whitespace, literals, comments, and strings', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertTriviaRejected();
-  });
-  test('renames an indexer and keeps .[i] call sites compiling via DefaultMember', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertIndexerRename();
-  });
-
-  test('renames a namespace across files and reverses the rename', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    await assertNamespaceRename();
-  });
+  test(
+    'rejects prepare and rename on whitespace, literals, comments, and strings',
+    underLspBudget(assertTriviaRejected),
+  );
+  test(
+    'renames an indexer and keeps .[i] call sites compiling via DefaultMember',
+    underLspBudget(assertIndexerRename),
+  );
+  test(
+    'renames a namespace across files and reverses the rename',
+    underLspBudget(assertNamespaceRename),
+  );
 }
 
 async function runUnsavedRename(newName: string): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, RENAME_EDGE_SOURCE);
-  try {
-    const range = tokenRange(fixture.document, 'unsavedName');
-    await assertPrepareAcrossToken(fixture.uri, range, 'unsavedName');
-    const edit = await requestRename(
-      fixture.uri,
-      range.start.translate(0, 1),
-      newName,
-      LSP_RESPONSE_MS,
-    );
+  await withOverlay(TARGET_FILE, RENAME_EDGE_SOURCE, async (fixture) => {
+    const { edit } = await renamePreparedToken(fixture, 'unsavedName', newName);
     await assertUnsavedEdit(edit, fixture.uri, 'unsavedName', newName);
     await applyUnsavedEdit(fixture, edit, newName);
     await undoUnsavedEdit(fixture, newName);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+  });
 }
 
 async function assertUnsavedEdit(
@@ -123,18 +115,15 @@ async function assertUnsavedEdit(
   const snapshots = await assertWorkspaceEditSafe(edit);
   assert.strictEqual(snapshots.length, 1);
   assert.deepStrictEqual(snapshots[0]?.replacedText, [oldName, oldName]);
-  assert.ok(snapshots[0]?.edits.every((item) => item.newText === newName));
-  assert.ok(snapshots[0]?.edits.every((item) => !item.range.isEmpty && item.range.isSingleLine));
+  assertCleanEdits(snapshots[0], newName);
 }
 
 async function applyUnsavedEdit(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
+  fixture: OpenFixture,
   edit: vscode.WorkspaceEdit,
   newName: string,
 ): Promise<void> {
-  const version = fixture.document.version;
-  await applyWorkspaceEdit(edit);
-  assert.ok(fixture.document.version > version);
+  await applyToDocument(fixture, edit);
   assert.strictEqual(fixture.document.getText(), renamedEdgeSource(newName));
   assertContainsAll(
     fixture.document.getText(),
@@ -142,7 +131,7 @@ async function applyUnsavedEdit(
     'fixture.document.getText()',
   );
   assert.ok(fixture.document.isDirty);
-  await assertNoErrors(fixture.uri);
+  await assertNoErrorDiagnostics(fixture.uri);
   const renamedRange = tokenRange(fixture.document, newName);
   await assertPrepareAcrossToken(fixture.uri, renamedRange, newName);
   await assertReverseRenameAtBoundaries(fixture.uri, renamedRange, newName);
@@ -165,19 +154,10 @@ async function assertReverseRenameAtBoundaries(
   }
 }
 
-async function undoUnsavedEdit(
-  fixture: Awaited<ReturnType<typeof openOverlay>>,
-  newName: string,
-): Promise<void> {
+async function undoUnsavedEdit(fixture: OpenFixture, newName: string): Promise<void> {
   await undoAction(fixture.document, RENAME_EDGE_SOURCE);
-  const range = tokenRange(fixture.document, 'unsavedName');
-  const replay = await requestRename(
-    fixture.uri,
-    range.start.translate(0, 1),
-    newName,
-    LSP_RESPONSE_MS,
-  );
-  await assertUnsavedEdit(replay, fixture.uri, 'unsavedName', newName);
+  const replay = await renamePreparedToken(fixture, 'unsavedName', newName);
+  await assertUnsavedEdit(replay.edit, fixture.uri, 'unsavedName', newName);
   assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
 }
 
@@ -189,35 +169,26 @@ function renamedEdgeSource(newName: string): string {
 }
 
 async function assertInvalidName(invalidName: string): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, RENAME_EDGE_SOURCE);
-  try {
+  await withOverlay(TARGET_FILE, RENAME_EDGE_SOURCE, async (fixture) => {
     const range = tokenRange(fixture.document, 'unsavedName');
     const prepare = await requestPrepareRename(fixture.uri, range.start.translate(0, 1));
     assert.ok(prepare, 'the source symbol itself must remain renameable');
     const beforeVersion = fixture.document.version;
     await assertInvalidRenameError(fixture.uri, range.start, invalidName);
     assert.strictEqual(fixture.document.version, beforeVersion);
-    assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
-    assert.ok(fixture.document.isDirty);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+    assertOverlayUnchanged(fixture.document, RENAME_EDGE_SOURCE);
+  });
 }
 
 async function assertTriviaRejected(): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, RENAME_EDGE_SOURCE);
-  try {
-    const positions = triviaPositions(fixture.document);
-    for (const position of positions) {
+  await withOverlay(TARGET_FILE, RENAME_EDGE_SOURCE, async (fixture) => {
+    for (const position of triviaPositions(fixture.document)) {
       assert.strictEqual(await requestPrepareRename(fixture.uri, position), null);
       const result = await executeRenameWithoutEdit(fixture.uri, position, 'renamedTrivia');
       assert.ok(result === undefined || result.size === 0);
     }
-    assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
-    assert.ok(fixture.document.isDirty);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+    assertOverlayUnchanged(fixture.document, RENAME_EDGE_SOURCE);
+  });
 }
 
 function triviaPositions(document: vscode.TextDocument): readonly vscode.Position[] {
@@ -230,49 +201,34 @@ function triviaPositions(document: vscode.TextDocument): readonly vscode.Positio
 }
 
 async function assertMetadataRejected(name: string): Promise<void> {
-  const fixture = await openOverlay(TARGET_FILE, RENAME_EDGE_SOURCE);
-  try {
+  await withOverlay(TARGET_FILE, RENAME_EDGE_SOURCE, async (fixture) => {
     const range = tokenRange(fixture.document, name);
     assert.strictEqual(await requestPrepareRename(fixture.uri, range.start.translate(0, 1)), null);
     const result = await executeRenameWithoutEdit(fixture.uri, range.start, `Renamed${name}`);
     assert.ok(result === undefined || result.size === 0);
-    assert.strictEqual(fixture.document.getText(), RENAME_EDGE_SOURCE);
-    assert.ok(fixture.document.isDirty);
-  } finally {
-    await revertDocument(fixture.document);
-  }
+    assertOverlayUnchanged(fixture.document, RENAME_EDGE_SOURCE);
+  });
 }
 
 // An `x.[i]` call site carries no `Item` token, so renaming the member alone would
 // break it. The rename must also write DefaultMember metadata for the new name —
 // the usages file staying error-free is the proof it still binds.
 async function assertIndexerRename(): Promise<void> {
-  const declarations = await openOverlay(DECLARATIONS_FILE, RENAME_DECLARATIONS_SOURCE);
-  const usages = await openOverlay(USAGES_FILE, RENAME_USAGES_SOURCE);
-  try {
-    await runIndexerLifecycle(declarations, usages);
-  } finally {
-    await revertDocument(usages.document);
-    await revertDocument(declarations.document);
-  }
+  await withTwoOverlays(
+    { path: DECLARATIONS_FILE, source: RENAME_DECLARATIONS_SOURCE },
+    { path: USAGES_FILE, source: RENAME_USAGES_SOURCE },
+    runIndexerLifecycle,
+  );
 }
 
-async function runIndexerLifecycle(declarations: OpenOverlay, usages: OpenOverlay): Promise<void> {
-  const range = tokenRange(declarations.document, 'Item');
-  await assertPrepareAcrossToken(declarations.uri, range, 'Item');
-  const edit = await requestRename(
-    declarations.uri,
-    range.start.translate(0, 1),
-    'Lookup',
-    LSP_RESPONSE_MS,
-  );
+async function runIndexerLifecycle(declarations: OpenFixture, usages: OpenFixture): Promise<void> {
+  const { range, edit } = await renamePreparedToken(declarations, 'Item', 'Lookup');
   assert.deepStrictEqual(changedFileNames(edit).sort(), ['RenameDeclarations.fs']);
   assert.strictEqual(editCount(edit), 2, 'the member rename and its DefaultMember metadata');
-  await applyWorkspaceEdit(edit);
-  assert.strictEqual(declarations.document.getText(), renamedIndexerSource());
-  assert.strictEqual(usages.document.getText(), RENAME_USAGES_SOURCE);
-  await assertNoErrors(declarations.uri);
-  await assertNoErrors(usages.uri);
+  await applyAndVerify(edit, [
+    { fixture: declarations, expected: renamedIndexerSource() },
+    { fixture: usages, expected: RENAME_USAGES_SOURCE },
+  ]);
   await undoAction(declarations.document, RENAME_DECLARATIONS_SOURCE);
   await assertPrepareAcrossToken(declarations.uri, range, 'Item');
 }
@@ -285,31 +241,30 @@ function renamedIndexerSource(): string {
 }
 
 async function assertNamespaceRename(): Promise<void> {
-  const definition = await openOverlay(NAMESPACE_FILE, RENAME_NAMESPACE_SOURCE);
-  const usage = await openOverlay(NAMESPACE_USAGE_FILE, RENAME_NAMESPACE_USAGE_SOURCE);
-  try {
-    await runNamespaceLifecycle(definition, usage);
-  } finally {
-    await revertDocument(usage.document);
-    await revertDocument(definition.document);
-  }
+  await withTwoOverlays(
+    { path: NAMESPACE_FILE, source: RENAME_NAMESPACE_SOURCE },
+    { path: NAMESPACE_USAGE_FILE, source: RENAME_NAMESPACE_USAGE_SOURCE },
+    runNamespaceLifecycle,
+  );
 }
 
-async function runNamespaceLifecycle(definition: OpenOverlay, usage: OpenOverlay): Promise<void> {
-  const range = tokenRange(definition.document, 'RenameNamespace');
-  await assertPrepareAcrossToken(definition.uri, range, 'RenameNamespace');
-  const edit = await requestRename(
-    definition.uri,
-    range.start.translate(0, 1),
-    'RenamedNamespace',
-    LSP_RESPONSE_MS,
-  );
+async function runNamespaceLifecycle(definition: OpenFixture, usage: OpenFixture): Promise<void> {
+  const { edit } = await renamePreparedToken(definition, 'RenameNamespace', 'RenamedNamespace');
   await assertNamespaceEdit(edit, 'RenameNamespace', 'RenamedNamespace');
-  await applyWorkspaceEdit(edit);
-  assertNamespaceTexts(definition.document, usage.document, 'RenamedNamespace');
-  await assertNoErrors(definition.uri);
-  await assertNoErrors(usage.uri);
+  await applyAndVerify(edit, namespaceSites(definition, usage, 'RenamedNamespace'));
   await reverseNamespaceRename(definition, usage);
+}
+
+/** Both namespace overlays renamed to `name`. */
+function namespaceSites(
+  definition: OpenFixture,
+  usage: OpenFixture,
+  name: string,
+): readonly OverlayText[] {
+  return [
+    { fixture: definition, expected: RENAME_NAMESPACE_SOURCE.replace('RenameNamespace', name) },
+    { fixture: usage, expected: RENAME_NAMESPACE_USAGE_SOURCE.replace('RenameNamespace', name) },
+  ];
 }
 
 async function assertNamespaceEdit(
@@ -329,38 +284,14 @@ async function assertNamespaceEdit(
   assert.ok(snapshots.flatMap((item) => item.edits).every((item) => item.newText === newName));
 }
 
-function assertNamespaceTexts(
-  definition: vscode.TextDocument,
-  usage: vscode.TextDocument,
-  name: string,
-): void {
-  assert.strictEqual(
-    definition.getText(),
-    RENAME_NAMESPACE_SOURCE.replace('RenameNamespace', name),
-  );
-  assert.strictEqual(
-    usage.getText(),
-    RENAME_NAMESPACE_USAGE_SOURCE.replace('RenameNamespace', name),
-  );
-  assert.ok(definition.isDirty);
-  assert.ok(usage.isDirty);
-}
-
-async function reverseNamespaceRename(
-  definition: Awaited<ReturnType<typeof openOverlay>>,
-  usage: Awaited<ReturnType<typeof openOverlay>>,
-): Promise<void> {
-  const range = tokenRange(definition.document, 'RenamedNamespace');
-  await assertPrepareAcrossToken(definition.uri, range, 'RenamedNamespace');
-  const reverse = await requestRename(
-    definition.uri,
-    range.start.translate(0, 1),
+async function reverseNamespaceRename(definition: OpenFixture, usage: OpenFixture): Promise<void> {
+  const { edit: reverse } = await renamePreparedToken(
+    definition,
+    'RenamedNamespace',
     'RenameNamespace',
-    LSP_RESPONSE_MS,
   );
   await assertNamespaceEdit(reverse, 'RenamedNamespace', 'RenameNamespace');
-  await applyWorkspaceEdit(reverse);
-  assertNamespaceTexts(definition.document, usage.document, 'RenameNamespace');
+  await applyAndVerify(reverse, namespaceSites(definition, usage, 'RenameNamespace'));
   const restored = tokenRange(definition.document, 'RenameNamespace');
   await assertPrepareAcrossToken(definition.uri, restored, 'RenameNamespace');
 }
@@ -400,13 +331,4 @@ async function assertInvalidRenameError(
       ),
     /Invalid F# rename name:/,
   );
-}
-
-async function assertNoErrors(uri: vscode.Uri): Promise<void> {
-  const diagnostics = await waitForMatchingDiagnostics(
-    uri,
-    (items) => items.every((item) => item.severity !== vscode.DiagnosticSeverity.Error),
-    LSP_RESPONSE_MS,
-  );
-  assert.ok(diagnostics.every((item) => item.severity !== vscode.DiagnosticSeverity.Error));
 }

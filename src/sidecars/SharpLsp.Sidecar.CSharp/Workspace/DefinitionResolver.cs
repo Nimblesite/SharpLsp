@@ -60,7 +60,9 @@ internal static class DefinitionResolver
     )
     {
         var symbol = await ResolveSymbolAsync(document, line, character, ct).ConfigureAwait(false);
-        return symbol is null ? new LocationListResult() : await map(symbol).ConfigureAwait(false);
+        return symbol is null
+            ? new LocationListResult(Locations: [])
+            : await map(symbol).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -75,13 +77,13 @@ internal static class DefinitionResolver
         var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false);
         if (compilation is null)
         {
-            return new LocationListResult();
+            return new LocationListResult(Locations: []);
         }
 
         var metadataLocation = NamedMetadataLocation(project, symbol, compilation);
         return metadataLocation is null
-            ? new LocationListResult()
-            : new LocationListResult { Locations = [metadataLocation] };
+            ? new LocationListResult(Locations: [])
+            : new LocationListResult(Locations: [metadataLocation]);
     }
 
     /// <summary>
@@ -347,7 +349,7 @@ internal static class DefinitionResolver
     /// Navigation FROM generated files requires WorkspaceManager.FindDocumentAsync
     /// to resolve source-generated documents via Project.GetSourceGeneratedDocumentsAsync.
     /// </summary>
-    private static LocationListResult ToAllSourceLocations(ISymbol symbol)
+    internal static LocationListResult ToAllSourceLocations(ISymbol symbol)
     {
         var locations = new List<LocationResult>();
         foreach (var location in symbol.Locations.Where(l => l.IsInSource))
@@ -355,7 +357,7 @@ internal static class DefinitionResolver
             locations.Add(DocumentPosition.ToLocationResult(location.GetMappedLineSpan()));
         }
 
-        return new LocationListResult { Locations = locations };
+        return new LocationListResult(Locations: locations);
     }
 
     /// <summary>

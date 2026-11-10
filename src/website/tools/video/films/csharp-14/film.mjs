@@ -6,12 +6,10 @@
 // screen-film pipeline, which reads these clips from out/csharp-14/clips.
 //
 //   node src/website/tools/video/film.mjs csharp-14
-import fs from 'node:fs';
-import path from 'node:path';
 import { hoverOn } from '../../kit/code.mjs';
 import { LANGUAGE, awaitSemantics, complete, navigate, scene, typeText } from '../../kit/acts/language.mjs';
 import { runCommand } from '../../kit/editor.mjs';
-import { shootWalkthrough } from '../../kit/scenes.mjs';
+import { shootOnlyFilm } from '../../kit/scenes.mjs';
 import { CSHARP14 } from '../../kit/set.mjs';
 import { PARK, openFile, sleep, typeAt } from '../../kit/workbench.mjs';
 
@@ -107,16 +105,4 @@ const SCENES = [
   scene('assign', 5, 'Null-conditional assignment', nullConditional),
 ];
 
-/** The shot clips, in order: what the reel's factory reads. */
-const clipsOf = (out) => SCENES.filter((each) => each.clip).map((each) => path.join(out, 'clips', `${each.clip}.mp4`));
-
-export default {
-  name: 'csharp-14',
-  shoot: (out) => shootWalkthrough({ demo: CSHARP14, out, scenes: SCENES, settings: READABLE }),
-  publish: async (out) => {
-    const missing = clipsOf(out).filter((clip) => !fs.existsSync(clip));
-    if (missing.length) throw new Error(`not shot: ${missing.join(', ')}`);
-    return 0;
-  },
-  preview: async () => 0,
-};
+export default shootOnlyFilm({ name: 'csharp-14', demo: CSHARP14, scenes: SCENES, settings: READABLE });

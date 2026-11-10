@@ -69,12 +69,7 @@ public sealed class MetadataNavigatorCoverageEndToEndTests(CSharpSidecarFixture 
         // Declaration routes through the SINGLE-location metadata fallback; the
         // namespace still has no assembly path, so the result is an empty list.
         var payload = MessagePackSerializer.Serialize(
-            new PositionRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                Line = 0,
-                Character = 6,
-            }
+            new PositionRequest(FilePath: fixture.MetaProbeFile, Line: 0, Character: 6)
         );
         var loc = await fixture.SendAndDeserializeAsync<LocationListResult>(
             "textDocument/declaration",

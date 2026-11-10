@@ -54,6 +54,45 @@ pub(crate) fn inbound_with_inputs(
     Ok((inbound, inputs))
 }
 
+/// Let the diagnostics engine see every inbound message before the main loop
+/// does: a queued edit may wait for a request's IPC, and `$/cancelRequest` must
+/// cancel at once. [DIAG-ANALYSIS-CANCELLATION]
+fn observe_for_diagnostics(cancellation: &lspkit_server::CancellationHandle, msg: &Message) {
+    match msg {
+        Message::Request(request) => {
+            if let Err(error) = pull_diagnostics::requests::Requests::observe(cancellation, request)
+            {
+                warn!(%error, "Diagnostic request interest unavailable");
+            }
+        }
+        Message::Notification(notification) => {
+            pull_diagnostics::requests::Requests::changed(cancellation, notification);
+            if notification.method == "$/cancelRequest" {
+                cancellation.cancel_request(&notification.params);
+            }
+        }
+        Message::Response(_) => {}
+    }
+}
+
+/// Answer `shutdown` here, ahead of whatever the main loop is busy with, and
+/// hand the loop a [`SHUTDOWN_ANSWERED`] marker instead; every other message
+/// passes through. `None` once the client stream is gone.
+fn answer_shutdown(msg: Message, outbound: &crossbeam_channel::Sender<Message>) -> Option<Message> {
+    match msg {
+        Message::Request(req) if req.method == Shutdown::METHOD => {
+            info!("Shutdown request received");
+            let resp = Response::new_ok(req.id, serde_json::Value::Null);
+            outbound.send(Message::Response(resp)).ok()?;
+            Some(Message::Notification(Notification::new(
+                SHUTDOWN_ANSWERED.to_string(),
+                serde_json::Value::Null,
+            )))
+        }
+        other => Some(other),
+    }
+}
+
 /// Read client messages while the foreground handler is occupied.
 fn spawn_shutdown_fast_path(
     connection: &Connection,
@@ -69,33 +108,9 @@ fn spawn_shutdown_fast_path(
     // The thread ends with the client stream; nothing waits on it.
     drop(std::thread::spawn(move || {
         for msg in &inbound {
-            // [DIAG-ANALYSIS-CANCELLATION] A queued edit may wait for this request's IPC.
-            if let Message::Request(request) = &msg {
-                if let Err(error) =
-                    pull_diagnostics::requests::Requests::observe(&cancellation, request)
-                {
-                    warn!(%error, "Diagnostic request interest unavailable");
-                }
-            }
-            if let Message::Notification(notification) = &msg {
-                pull_diagnostics::requests::Requests::changed(&cancellation, notification);
-                if notification.method == "$/cancelRequest" {
-                    cancellation.cancel_request(&notification.params);
-                }
-            }
-            let forwarded = match msg {
-                Message::Request(req) if req.method == Shutdown::METHOD => {
-                    info!("Shutdown request received");
-                    let resp = Response::new_ok(req.id, serde_json::Value::Null);
-                    if outbound.send(Message::Response(resp)).is_err() {
-                        break;
-                    }
-                    Message::Notification(Notification::new(
-                        SHUTDOWN_ANSWERED.to_string(),
-                        serde_json::Value::Null,
-                    ))
-                }
-                other => other,
+            observe_for_diagnostics(&cancellation, &msg);
+            let Some(forwarded) = answer_shutdown(msg, &outbound) else {
+                break;
             };
             if to_loop.send(forwarded).is_err() {
                 break;

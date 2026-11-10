@@ -4,18 +4,16 @@
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
-use lsp_server::{Message, Notification, Request};
+use lsp_server::{Message, Request};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::sidecar::manager::SidecarManager;
 
-use super::{
-    cli, consolidate, edit, lanes, parse, restore::RestoreOutcome, search, targets, types, unused,
-    update,
-};
+use super::restore_job::spawn_restore;
+use super::{cli, consolidate, edit, lanes, parse, search, targets, types, unused, update};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
 pub fn handle_targets(req: Request) -> Result<serde_json::Value> {
@@ -109,11 +107,7 @@ pub fn handle_install(
     )?;
 
     let Some(sidecar) = csharp else {
-        return no_editor_response(types::InstallResponse {
-            success: false,
-            message: EDITOR_UNAVAILABLE.to_string(),
-            modified_files: Vec::new(),
-        });
+        return no_editor_response();
     };
     let response = apply_install(
         sidecar,
@@ -136,7 +130,7 @@ pub fn install_into_project(
     project_path: &str,
     package_id: &str,
     version: &str,
-) -> Result<types::InstallResponse> {
+) -> Result<types::PackageEditResponse> {
     let target = types::NuGetTarget::from_project_path(project_path);
     let response = apply_install(sidecar, runtime, &target, package_id, version)?;
     restore_if_modified(&response, runtime, sender, &target);
@@ -156,11 +150,7 @@ pub fn handle_uninstall(
     let target = resolve_target(params.target, params.project_path.clone())?;
 
     let Some(sidecar) = csharp else {
-        return no_editor_response(types::UninstallResponse {
-            success: false,
-            message: EDITOR_UNAVAILABLE.to_string(),
-            modified_files: Vec::new(),
-        });
+        return no_editor_response();
     };
     let response = apply_uninstall(sidecar, runtime, &target, &params.package_id)?;
 
@@ -172,9 +162,20 @@ pub fn handle_uninstall(
 pub(crate) const EDITOR_UNAVAILABLE: &str =
     "C# sidecar is not available to edit project files (open a workspace first)";
 
-/// Serialize a pre-built failure response for the no-editor case.
-fn no_editor_response<R: serde::Serialize>(response: R) -> Result<serde_json::Value> {
-    Ok(serde_json::to_value(response)?)
+/// The failed package edit answered when no C# sidecar can perform it.
+fn no_editor_response() -> Result<serde_json::Value> {
+    Ok(serde_json::to_value(failed_edit(
+        EDITOR_UNAVAILABLE.to_string(),
+    ))?)
+}
+
+/// A package edit that changed nothing, with why.
+fn failed_edit(message: String) -> types::PackageEditResponse {
+    types::PackageEditResponse {
+        success: false,
+        message,
+        modified_files: Vec::new(),
+    }
 }
 
 /// Handle `sharplsp/nuget/unused` — detect unused direct package references.
@@ -256,28 +257,25 @@ pub fn handle_consolidate(
 
 /// Fire a background restore when the operation modified files, then serialize the
 /// response. Shared tail of `handle_install` and `handle_uninstall`.
-fn finish_with_restore<R>(
-    response: R,
+fn finish_with_restore(
+    response: types::PackageEditResponse,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
-) -> Result<serde_json::Value>
-where
-    R: RestoreOutcome + serde::Serialize,
-{
+) -> Result<serde_json::Value> {
     restore_if_modified(&response, runtime, sender, target);
     Ok(serde_json::to_value(response)?)
 }
 
 /// Restore in the background when an edit succeeded and changed files.
-fn restore_if_modified<R: RestoreOutcome>(
-    response: &R,
+fn restore_if_modified(
+    response: &types::PackageEditResponse,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
 ) {
-    if response.succeeded() && !response.modified_files().is_empty() {
-        spawn_restore(runtime, sender, target, response.modified_files().to_vec());
+    if response.success && !response.modified_files.is_empty() {
+        spawn_restore(runtime, sender, target, response.modified_files.clone());
     }
 }
 
@@ -337,43 +335,53 @@ fn apply_install(
     target: &types::NuGetTarget,
     package_id: &str,
     version: &str,
-) -> Result<types::InstallResponse> {
-    let path = Path::new(&target.path);
-    if !path.exists() {
-        return Ok(types::InstallResponse {
-            success: false,
-            message: format!("target not found: {}", target.path),
-            modified_files: Vec::new(),
-        });
+) -> Result<types::PackageEditResponse> {
+    if !Path::new(&target.path).exists() {
+        return Ok(failed_edit(format!("target not found: {}", target.path)));
     }
 
     let element = pick_install_element(target);
     let outcome = edit::add_package(sidecar, runtime, &target.path, package_id, version, element)?;
 
-    // For CPM projects, also update Directory.Packages.props.
     let mut modified = modified_target(outcome.modified, target);
-    if matches!(element, edit::PackageElement::ReferenceNoVersion) {
-        if let Some(props_path) = targets::find_packages_props(path) {
-            let props_str = props_path.to_string_lossy().to_string();
-            let props_outcome = edit::add_package(
-                sidecar,
-                runtime,
-                &props_str,
-                package_id,
-                version,
-                edit::PackageElement::Version,
-            )?;
-            if props_outcome.modified {
-                modified.push(props_str);
-            }
-        }
-    }
+    modified.extend(pin_cpm_version(
+        sidecar, runtime, target, package_id, version, element,
+    )?);
 
-    Ok(types::InstallResponse {
+    Ok(types::PackageEditResponse {
         success: true,
         message: outcome.message,
         modified_files: modified,
     })
+}
+
+/// Under central package management the project reference carries no version,
+/// so the version is pinned in `Directory.Packages.props`; returns that file
+/// when the pin changed it.
+fn pin_cpm_version(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
+    target: &types::NuGetTarget,
+    package_id: &str,
+    version: &str,
+    element: edit::PackageElement,
+) -> Result<Option<String>> {
+    if !matches!(element, edit::PackageElement::ReferenceNoVersion) {
+        return Ok(None);
+    }
+    let Some(props_path) = targets::find_packages_props(Path::new(&target.path)) else {
+        return Ok(None);
+    };
+    let props = props_path.to_string_lossy().to_string();
+    let outcome = edit::add_package(
+        sidecar,
+        runtime,
+        &props,
+        package_id,
+        version,
+        edit::PackageElement::Version,
+    )?;
+    Ok(outcome.modified.then_some(props))
 }
 
 /// The target's path, when the edit changed it: the start of `modified_files`.
@@ -387,20 +395,15 @@ fn apply_uninstall(
     runtime: &Runtime,
     target: &types::NuGetTarget,
     package_id: &str,
-) -> Result<types::UninstallResponse> {
-    let path = Path::new(&target.path);
-    if !path.exists() {
-        return Ok(types::UninstallResponse {
-            success: false,
-            message: format!("target not found: {}", target.path),
-            modified_files: Vec::new(),
-        });
+) -> Result<types::PackageEditResponse> {
+    if !Path::new(&target.path).exists() {
+        return Ok(failed_edit(format!("target not found: {}", target.path)));
     }
 
     let element = pick_install_element(target);
     let outcome = edit::remove_package(sidecar, runtime, &target.path, package_id, element)?;
 
-    Ok(types::UninstallResponse {
+    Ok(types::PackageEditResponse {
         success: outcome.modified,
         message: outcome.message,
         modified_files: modified_target(outcome.modified, target),
@@ -417,112 +420,5 @@ fn pick_install_element(target: &types::NuGetTarget) -> edit::PackageElement {
         edit::PackageElement::ReferenceNoVersion
     } else {
         edit::PackageElement::Reference
-    }
-}
-
-// ── Background restore + notifications ─────────────────────────
-
-/// Spawn a background `dotnet restore` and send progress notifications.
-fn spawn_restore(
-    runtime: &tokio::runtime::Runtime,
-    sender: Sender<Message>,
-    target: &types::NuGetTarget,
-    modified_files: Vec<String>,
-) {
-    let target_id = target.id.clone();
-    let target_dir = crate::paths::directory_of(&target.path);
-    let lane = lanes::lane(&target.path);
-
-    // Notify "started" synchronously so the UI sees it immediately.
-    send_restore_progress(&sender, &target_id, types::RestorePhase::Started, None);
-
-    drop(runtime.spawn(async move {
-        send_restore_progress(
-            &sender,
-            &target_id,
-            types::RestorePhase::Restoring,
-            Some(format!("Restoring {}", modified_files.join(", "))),
-        );
-
-        let (Some(dir), Ok(lane)) = (target_dir, lane) else {
-            send_restore_progress(
-                &sender,
-                &target_id,
-                types::RestorePhase::Failed,
-                Some("cannot determine restore directory".into()),
-            );
-            return;
-        };
-        let _restoring = lane.lock().await;
-
-        let mut command = tokio::process::Command::new("dotnet");
-        let _ = command.arg("restore").current_dir(&dir);
-        crate::utils::hide_console_window_tokio(&mut command);
-        let output = command.output().await;
-
-        match output {
-            Ok(o) if o.status.success() => {
-                info!("nuget restore succeeded for {target_id}");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Succeeded,
-                    Some("Restore succeeded".into()),
-                );
-            }
-            Ok(o) => {
-                // MSBuild reports failures on stdout too. [NUGET-REQUESTS]
-                let diagnostic = [o.stdout, o.stderr]
-                    .into_iter()
-                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                    .filter(|message| !message.trim().is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                error!(target_id, exit_code = ?o.status.code(), "NuGet restore failed");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Failed,
-                    Some(diagnostic),
-                );
-            }
-            Err(err) => {
-                error!("nuget restore spawn failed for {target_id}: {err}");
-                send_restore_progress(
-                    &sender,
-                    &target_id,
-                    types::RestorePhase::Failed,
-                    Some(format!("spawn failed: {err}")),
-                );
-            }
-        }
-    }));
-}
-
-/// Send a `sharplsp/nuget/restoreProgress` notification to the client.
-fn send_restore_progress(
-    sender: &Sender<Message>,
-    target_id: &str,
-    phase: types::RestorePhase,
-    message: Option<String>,
-) {
-    let params = types::RestoreProgressParams {
-        target_id: target_id.to_string(),
-        phase,
-        message,
-    };
-    let params_value = match serde_json::to_value(&params) {
-        Ok(v) => v,
-        Err(err) => {
-            error!("failed to serialize RestoreProgressParams: {err}");
-            return;
-        }
-    };
-    let notif = Notification {
-        method: "sharplsp/nuget/restoreProgress".to_string(),
-        params: params_value,
-    };
-    if let Err(err) = sender.send(Message::Notification(notif)) {
-        error!("failed to send restoreProgress notification: {err}");
     }
 }

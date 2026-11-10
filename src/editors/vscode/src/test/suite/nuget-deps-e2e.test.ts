@@ -42,6 +42,24 @@ import {
 } from '../../project-deps-store.js';
 import { effect } from '../../signals.js';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import {
+  assertFirstPickOffered,
+  assertHasPackageName,
+  assertLacksPackageName,
+  assertNoToastIncludes,
+  assertOneRemovalOutcome,
+  assertPackageNames,
+  assertParsedProjectDeps,
+  assertProjectXmlCloses,
+  assertSdkProjectIntact,
+  assertSomeToastIncludes,
+  assertStoredFirstName,
+  expectResolved,
+  observeCountAt,
+  observeProjectCount,
+  packageNode,
+  singlePackageProjectXml,
+} from './nuget-deps-kit';
 import { closeAllEditors, assertContainsAll, removeDirRecursive } from './test-helpers';
 import { COMMAND_MS, DOTNET_CLI_MS } from './test-timeouts';
 import type { NuGetBrowserPanel } from '../../nuget-browser';
@@ -99,6 +117,15 @@ function stubFetch(response: Response | (() => Response)): { urls: string[]; res
       holder.fetch = original;
     },
   };
+}
+
+/** Restores `previous` and installs a fresh fetch stub answering `body`. */
+function restubFetch(
+  previous: { urls: string[]; restore: () => void } | undefined,
+  body: unknown,
+): { urls: string[]; restore: () => void } {
+  previous?.restore();
+  return stubFetch(fakeResponse(body));
 }
 
 // ── csproj/fsproj fixture writers ─────────────────────────────────
@@ -179,9 +206,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // No queued input → showInputBox returns undefined → early return, no fetch.
     fetchStub = stubFetch(fakeResponse(nugetSearchBody({ id: 'X', version: '1.0.0' })));
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    }, 'cancelling the query must not throw');
+    await expectResolved('sharplsp.nuget.add', 'cancelling the query must not throw');
 
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'exactly one input box was shown');
     const opts = stubs.log.inputBoxOptions[0];
@@ -204,9 +229,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // Interaction 4 - and the command is REUSABLE afterwards: cancelling once
     // must not consume the queue or leave the flow half-open.
     stubs.queueInput('AfterCancel');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    }, 'a second add after a cancellation must run');
+    await expectResolved('sharplsp.nuget.add', 'a second add after a cancellation must run');
     assert.strictEqual(stubs.log.inputBoxOptions.length, 2, 'the box was shown a second time');
     assert.strictEqual(fetchStub.urls.length, 1, 'and this time the search really fired');
   });
@@ -216,9 +239,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     fetchStub = stubFetch(fakeResponse(nugetSearchBody())); // empty data array
     stubs.queueInput('Definitely.Nonexistent.Package');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    });
+    await expectResolved('sharplsp.nuget.add');
 
     assert.strictEqual(fetchStub.urls.length, 1, 'the search hit nuget.org exactly once');
     assert.ok(fetchStub.urls[0]?.includes('azuresearch'), 'used the nuget search endpoint');
@@ -250,16 +271,13 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
 
     // Interaction 4 - a REAL query afterwards still works, so an empty result
     // does not poison the session.
-    fetchStub.restore();
-    fetchStub = stubFetch(fakeResponse(nugetSearchBody({ id: 'Found.Later', version: '1.0.0' })));
+    fetchStub = restubFetch(fetchStub, nugetSearchBody({ id: 'Found.Later', version: '1.0.0' }));
     stubs.queueInput('Found').queuePick(0);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    });
-    const offered = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(offered, 'the next search produced a package list');
-    assert.ok(
-      offered.some((item) => item.label === 'Found.Later'),
+    await expectResolved('sharplsp.nuget.add');
+    assertFirstPickOffered(
+      stubs,
+      'Found.Later',
+      'the next search produced a package list',
       'naming the hit',
     );
   });
@@ -285,9 +303,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // unqueued so it resolves to undefined (dismissed).
     stubs.queueInput('Newtonsoft').queuePick(0);
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    }, 'the add flow must complete without throwing');
+    await expectResolved('sharplsp.nuget.add', 'the add flow must complete without throwing');
 
     // Deterministic observable effects.
     assert.strictEqual(fetchStub.urls.length, 1, 'exactly one search request');
@@ -336,14 +352,14 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     fetchStub = stubFetch(fakeResponse({}, false, 503));
     stubs.queueInput('Anything');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    }, 'a failed HTTP status must be caught, not thrown');
+    await expectResolved('sharplsp.nuget.add', 'a failed HTTP status must be caught, not thrown');
 
     assert.strictEqual(fetchStub.urls.length, 1, 'one request was attempted');
-    assert.ok(
-      stubs.log.errorMessages.some((m) => m.includes('NuGet search failed') && m.includes('503')),
-      `expected an error toast mentioning the 503 status, got: ${stubs.log.errorMessages.join(' | ')}`,
+    assertSomeToastIncludes(
+      stubs,
+      'error',
+      ['NuGet search failed', '503'],
+      'expected an error toast mentioning the 503 status',
     );
 
     // Interaction 2 - [NUGET-ERRORS]: a failed feed is REPORTED, not acted on.
@@ -355,17 +371,17 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
 
     // Interaction 3 - the failure is RECOVERABLE. Searching again after the
     // feed comes back must work, or a single 503 poisons the session.
-    fetchStub.restore();
-    fetchStub = stubFetch(fakeResponse(nugetSearchBody({ id: 'Recovered', version: '2.0.0' })));
+    fetchStub = restubFetch(fetchStub, nugetSearchBody({ id: 'Recovered', version: '2.0.0' }));
     stubs.queueInput('Recovered');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.add');
-    }, 'a later search must not inherit the earlier failure');
+    await expectResolved(
+      'sharplsp.nuget.add',
+      'a later search must not inherit the earlier failure',
+    );
     assert.strictEqual(fetchStub.urls.length, 1, 'the retry reached the feed');
-    const recovered = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(recovered, 'and produced a package list this time');
-    assert.ok(
-      recovered.some((item) => item.label === 'Recovered'),
+    assertFirstPickOffered(
+      stubs,
+      'Recovered',
+      'and produced a package list this time',
       'naming the package the healthy feed returned',
     );
   });
@@ -412,9 +428,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     this.timeout(DOTNET_CLI_MS);
     // Restore runs `dotnet restore` in the workspace; it may succeed or fail, but
     // the command must always resolve and emit exactly one terminal toast.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.restore');
-    }, 'restore must never throw out of the command');
+    await expectResolved('sharplsp.nuget.restore', 'restore must never throw out of the command');
 
     const restored = stubs.log.infoMessages.some((m) => m.includes('restored'));
     const failed = stubs.log.errorMessages.some((m) => m.includes('Restore failed'));
@@ -458,9 +472,7 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
 
     // Interaction 5 - restore is REPEATABLE. Running it twice must report
     // twice, not deduplicate the second run into silence.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.restore');
-    }, 'a second restore must also complete');
+    await expectResolved('sharplsp.nuget.restore', 'a second restore must also complete');
     assert.strictEqual(
       stubs.log.infoMessages.length + stubs.log.errorMessages.length,
       2,
@@ -478,15 +490,17 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     stubs.queueInput('Polly').queuePick(0);
 
     const node = { projectFilePath: projectPath, sortName: 'ExplorerTarget' };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer', node);
-    }, 'addFromExplorer must complete against an explicit project node');
+    await expectResolved(
+      'sharplsp.nuget.addFromExplorer',
+      'addFromExplorer must complete against an explicit project node',
+      node,
+    );
 
     assert.strictEqual(fetchStub.urls.length, 1, 'a single search request was made');
-    const items = stubs.log.quickPickItems[0] as { label?: string }[] | undefined;
-    assert.ok(items, 'a package quick pick was shown');
-    assert.ok(
-      items.some((it) => it.label === 'Polly'),
+    assertFirstPickOffered(
+      stubs,
+      'Polly',
+      'a package quick pick was shown',
       'the explorer add offered the Polly package',
     );
     // No project-pick quick pick should have been needed — the package list is
@@ -496,11 +510,9 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
 
   test('sharplsp.nuget.addFromExplorer warns when the node has no project path', async function () {
     this.timeout(COMMAND_MS);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer', {
-        projectFilePath: undefined,
-        sortName: 'NoPath',
-      });
+    await expectResolved('sharplsp.nuget.addFromExplorer', undefined, {
+      projectFilePath: undefined,
+      sortName: 'NoPath',
     });
     assert.ok(
       stubs.log.warningMessages.some((m) => m.includes('No project file path')),
@@ -518,9 +530,10 @@ suite('NuGet Commands — search / add / update / restore (e2e)', () => {
     // Interaction 3 - the same guard holds for a node that is missing entirely,
     // which is what the palette passes when the command is run without a
     // selection ([SE-CONTEXT-VALUES]).
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.nuget.addFromExplorer');
-    }, 'invoking the explorer command with no node at all must not throw');
+    await expectResolved(
+      'sharplsp.nuget.addFromExplorer',
+      'invoking the explorer command with no node at all must not throw',
+    );
     assert.deepEqual(stubs.log.errorMessages, [], 'and must not error');
     assert.ok(stubs.log.warningMessages.length >= 1, 'it warns instead');
   });
@@ -557,11 +570,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
 
     const parsed = parseProjectXml(xml);
 
-    assert.deepEqual(
-      parsed.nugetPackages.map((p) => p.name),
-      ['AutoMapper', 'Serilog'],
-      'packages are sorted by name',
-    );
+    assertPackageNames(parsed, ['AutoMapper', 'Serilog'], 'packages are sorted by name');
     assert.strictEqual(parsed.nugetPackages[0]?.version, '13.0.1', 'AutoMapper version captured');
     assert.strictEqual(parsed.nugetPackages[1]?.version, '3.1.0', 'Serilog version captured');
     assert.deepEqual(
@@ -619,15 +628,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
   });
 
   test('a PackageReference without a Version defaults to an empty version string', () => {
-    const xml = [
-      '<Project Sdk="Microsoft.NET.Sdk">',
-      '  <ItemGroup>',
-      '    <PackageReference Include="VersionlessPkg" />',
-      '  </ItemGroup>',
-      '</Project>',
-    ].join('\n');
-
-    const parsed = parseProjectXml(xml);
+    const parsed = parseProjectXml(singlePackageProjectXml('VersionlessPkg'));
     assert.strictEqual(parsed.nugetPackages.length, 1, 'the package is still captured');
     assert.strictEqual(parsed.nugetPackages[0]?.name, 'VersionlessPkg');
     assert.strictEqual(parsed.nugetPackages[0]?.version, '', 'missing version → empty string');
@@ -653,11 +654,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      mixed.nugetPackages.map((pkg) => pkg.name),
-      ['Alpha', 'Zeta'],
-      'both are captured and sorted by name',
-    );
+    assertPackageNames(mixed, ['Alpha', 'Zeta'], 'both are captured and sorted by name');
     assert.strictEqual(
       mixed.nugetPackages[0]?.version,
       '1.2.3',
@@ -670,29 +667,14 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
     // Interaction 4 - an EMPTY Version attribute is the same as none. Roslyn
     // and MSBuild both treat it as unpinned, so the tree must not print a blank
     // version badge as if it were a real one.
-    const blank = parseProjectXml(
-      [
-        '<Project Sdk="Microsoft.NET.Sdk">',
-        '  <ItemGroup>',
-        '    <PackageReference Include="BlankVersion" Version="" />',
-        '  </ItemGroup>',
-        '</Project>',
-      ].join('\n'),
-    );
+    const blank = parseProjectXml(singlePackageProjectXml('BlankVersion', ''));
     assert.strictEqual(blank.nugetPackages.length, 1, 'the package is captured');
     assert.strictEqual(blank.nugetPackages[0]?.version, '', 'and its version reads empty');
     assert.strictEqual(blank.nugetPackages[0]?.name, 'BlankVersion', 'under its own name');
   });
 
   test('handles a single ItemGroup (non-array) and empty/whitespace projects', () => {
-    const single = [
-      '<Project Sdk="Microsoft.NET.Sdk">',
-      '  <ItemGroup>',
-      '    <PackageReference Include="Solo" Version="1.2.3" />',
-      '  </ItemGroup>',
-      '</Project>',
-    ].join('\n');
-    const parsedSingle = parseProjectXml(single);
+    const parsedSingle = parseProjectXml(singlePackageProjectXml('Solo', '1.2.3'));
     assert.strictEqual(parsedSingle.nugetPackages.length, 1, 'single ItemGroup is normalized');
     assert.strictEqual(parsedSingle.nugetPackages[0]?.name, 'Solo');
 
@@ -730,11 +712,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      commented.nugetPackages.map((pkg) => pkg.name),
-      ['Live'],
-      'a commented-out reference is not a dependency',
-    );
+    assertPackageNames(commented, ['Live'], 'a commented-out reference is not a dependency');
     assert.strictEqual(commented.nugetPackages.length, 1, 'exactly one live package');
     assert.strictEqual(commented.nugetPackages[0]?.version, '1.0.0', 'with its real version');
 
@@ -750,8 +728,8 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
         '</Project>',
       ].join('\n'),
     );
-    assert.deepEqual(
-      several.nugetPackages.map((pkg) => pkg.name),
+    assertPackageNames(
+      several,
       ['Ant', 'Zebra'],
       'packages from separate ItemGroups merge and sort',
     );
@@ -781,15 +759,7 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
 
     // Interaction 3 - and a well-formed file parsed straight afterwards still
     // works, so one bad project never poisons the next.
-    const healthy = parseProjectXml(
-      [
-        '<Project Sdk="Microsoft.NET.Sdk">',
-        '  <ItemGroup>',
-        '    <PackageReference Include="AfterBroken" Version="1.0.0" />',
-        '  </ItemGroup>',
-        '</Project>',
-      ].join('\n'),
-    );
+    const healthy = parseProjectXml(singlePackageProjectXml('AfterBroken', '1.0.0'));
     assert.strictEqual(healthy.nugetPackages.length, 1, 'the next project still parses');
     assert.strictEqual(healthy.nugetPackages[0]?.name, 'AfterBroken');
     assert.strictEqual(healthy.nugetPackages[0]?.version, '1.0.0', 'with its version');
@@ -815,14 +785,14 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
       projects: ['../Shared/Shared.csproj'],
     });
 
-    const parsed = parseProjectDependencies(projectPath);
-    assert.deepEqual(
-      parsed.nugetPackages.map((p) => p.name),
+    const parsed = assertParsedProjectDeps(
+      projectPath,
       ['MediatR', 'Polly'],
       'on-disk packages parsed and sorted',
+      'the project reference was parsed',
+      'Shared',
+      'reference basename extracted',
     );
-    assert.strictEqual(parsed.projectReferences.length, 1, 'the project reference was parsed');
-    assert.strictEqual(parsed.projectReferences[0]?.name, 'Shared', 'reference basename extracted');
     assert.strictEqual(
       parsed.projectReferences[0]?.includePath,
       '../Shared/Shared.csproj',
@@ -840,22 +810,22 @@ suite('Dependencies — parseProjectXml / parseProjectDependencies (pure)', () =
       projects: ['../Shared/Shared.fsproj'],
       ext: 'fsproj',
     });
-    const fsharp = parseProjectDependencies(fsharpPath);
-    assert.deepEqual(
-      fsharp.nugetPackages.map((pkg) => pkg.name),
+    assertParsedProjectDeps(
+      fsharpPath,
       ['Expecto', 'FsToolkit.ErrorHandling'],
       'an .fsproj parses and sorts exactly like a .csproj',
+      'and its project reference is read',
+      'Shared',
+      'with the same basename rule',
     );
-    assert.strictEqual(fsharp.projectReferences.length, 1, 'and its project reference is read');
-    assert.strictEqual(fsharp.projectReferences[0]?.name, 'Shared', 'with the same basename rule');
 
     // Interaction 3 - reading is READ-ONLY. A parser that normalises the file
     // on the way past would rewrite every project the tree ever displayed.
     const before = fs.readFileSync(projectPath, 'utf8');
     parseProjectDependencies(projectPath);
     assert.strictEqual(fs.readFileSync(projectPath, 'utf8'), before, 'parsing writes nothing back');
-    assert.deepEqual(
-      parseProjectDependencies(projectPath).nugetPackages.map((pkg) => pkg.name),
+    assertPackageNames(
+      parseProjectDependencies(projectPath),
       ['MediatR', 'Polly'],
       'and a second read answers identically',
     );
@@ -940,14 +910,8 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     if (error === undefined) {
       // `dotnet` succeeded — the XML must no longer reference Serilog but keep Polly.
       const after = parseProjectDependencies(projectPath);
-      assert.ok(
-        !after.nugetPackages.some((p) => p.name === 'Serilog'),
-        'Serilog was removed from the project',
-      );
-      assert.ok(
-        after.nugetPackages.some((p) => p.name === 'Polly'),
-        'unrelated Polly reference is preserved',
-      );
+      assertLacksPackageName(after, 'Serilog', 'Serilog was removed from the project');
+      assertHasPackageName(after, 'Polly', 'unrelated Polly reference is preserved');
     } else {
       // Offline / no SDK — the function reports the error string instead of throwing.
       assert.strictEqual(typeof error, 'string', 'a handled failure returns the error message');
@@ -958,12 +922,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // parts of the project survive. A mutation done by string splicing loses
     // the SDK attribute or the TargetFramework the moment an element moves.
     const afterXml = fs.readFileSync(projectPath, 'utf8');
-    assertContainsAll(
-      afterXml,
-      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
-      'afterXml',
-    );
-    assert.ok(afterXml.trim().endsWith('</Project>'), 'and the document still closes');
+    assertSdkProjectIntact(afterXml, 'afterXml', 'and the document still closes');
 
     // Interaction 3 - [NUGET-ERRORS]: removing a package that is not there is
     // reported, never thrown, and never silently rewrites the file.
@@ -1016,12 +975,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // a well-formed SDK project with its TargetFramework intact. A round trip
     // that leaves the file unparseable breaks the build, not just the feature.
     const consumerXml = fs.readFileSync(consumer, 'utf8');
-    assertContainsAll(
-      consumerXml,
-      ['<Project Sdk="Microsoft.NET.Sdk">', '<TargetFramework>net9.0</TargetFramework>'],
-      'consumerXml',
-    );
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and the document closes');
+    assertSdkProjectIntact(consumerXml, 'consumerXml', 'and the document closes');
 
     // Interaction 3 - the LIBRARY is untouched by either direction of the round
     // trip. Adding a reference edits the consumer alone.
@@ -1047,21 +1001,18 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // confirmAndRemoveDependency shows a modal warning with a 'Remove' action.
     stubs.queueWarning('Remove');
 
-    const node = {
-      projectFilePath: projectPath,
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', node);
-    }, 'the remove command must complete (handling offline dotnet)');
+    const node = packageNode(projectPath, 'Serilog');
+    await expectResolved(
+      'sharplsp.removeNuGetPackage',
+      'the remove command must complete (handling offline dotnet)',
+      node,
+    );
 
-    assert.ok(
-      stubs.log.warningMessages.some(
-        (m) => m.includes('Remove NuGet package') && m.includes('Serilog'),
-      ),
-      `a modal confirmation naming Serilog was shown, got: ${stubs.log.warningMessages.join(' | ')}`,
+    assertSomeToastIncludes(
+      stubs,
+      'warning',
+      ['Remove NuGet package', 'Serilog'],
+      'a modal confirmation naming Serilog was shown',
     );
     // Success path emits "Removed ..."; offline path emits a "Failed to remove" error.
     const reached =
@@ -1081,12 +1032,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // [NUGET-XML-DOM] forbids the splice that would leave it unparseable.
     const afterXml = fs.readFileSync(projectPath, 'utf8');
     assertContainsAll(afterXml, ['<Project Sdk="Microsoft.NET.Sdk">', 'net9.0'], 'afterXml');
-    assert.strictEqual(
-      stubs.log.infoMessages.filter((m) => m.includes('Removed')).length +
-        stubs.log.errorMessages.filter((m) => m.includes('Failed to remove')).length,
-      1,
-      'and reported its outcome exactly once',
-    );
+    assertOneRemovalOutcome(stubs, 'and reported its outcome exactly once');
     assert.ok(afterXml.trim().endsWith('</Project>'), 'and the document still closes');
     assert.ok(fs.existsSync(projectPath), 'with the project still on disk');
 
@@ -1103,20 +1049,15 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
       packages: [{ id: 'Serilog', version: '3.1.0' }],
     });
     // No queued warning answer → dialog dismissed (returns undefined) → no removal.
-    const node = {
-      projectFilePath: projectPath,
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
+    const node = packageNode(projectPath, 'Serilog');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', node);
-    });
+    await expectResolved('sharplsp.removeNuGetPackage', undefined, node);
 
     assert.strictEqual(stubs.log.warningMessages.length, 1, 'the confirmation prompt was shown');
-    assert.ok(
-      !stubs.log.infoMessages.some((m) => m.includes('Removed')),
+    assertNoToastIncludes(
+      stubs,
+      'info',
+      'Removed',
       'nothing is removed when the user dismisses the confirmation',
     );
     // The package is still on disk.
@@ -1162,9 +1103,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
       label: 'Library',
       contextValue: 'projectReference',
     };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeProjectReference', node);
-    });
+    await expectResolved('sharplsp.removeProjectReference', undefined, node);
 
     assert.ok(
       stubs.log.warningMessages.some(
@@ -1182,12 +1121,8 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 3 - the consumer project survives as a project, and the
     // command reported exactly one outcome ([NUGET-ERRORS]).
     const consumerXml = fs.readFileSync(consumer, 'utf8');
-    assert.ok(consumerXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the consumer is intact');
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and still well formed');
-    const outcomes =
-      stubs.log.infoMessages.filter((m) => m.includes('Removed')).length +
-      stubs.log.errorMessages.filter((m) => m.includes('Failed to remove')).length;
-    assert.strictEqual(outcomes, 1, 'exactly one terminal toast');
+    assertProjectXmlCloses(consumerXml, 'the consumer is intact', 'and still well formed');
+    assertOneRemovalOutcome(stubs, 'exactly one terminal toast');
 
     // Interaction 4 - and the LIBRARY it pointed at is untouched. Removing a
     // reference edits the consumer, never the referenced project.
@@ -1200,11 +1135,9 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
 
   test('sharplsp.removeNuGetPackage ignores a node missing projectFilePath / referenceName', async function () {
     this.timeout(COMMAND_MS);
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', {
-        projectFilePath: undefined,
-        referenceName: undefined,
-      });
+    await expectResolved('sharplsp.removeNuGetPackage', undefined, {
+      projectFilePath: undefined,
+      referenceName: undefined,
     });
     assert.strictEqual(
       stubs.log.warningMessages.length,
@@ -1225,15 +1158,15 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
       projectFilePath: writeProjectFile(tmpDir, 'HalfNode'),
       referenceName: undefined,
     };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', halfNode);
-    }, 'a node with a project but no package must not throw');
+    await expectResolved(
+      'sharplsp.removeNuGetPackage',
+      'a node with a project but no package must not throw',
+      halfNode,
+    );
     assert.strictEqual(stubs.log.warningMessages.length, 0, 'and must not prompt');
 
     // Interaction 4 - nor does the command with no argument at all.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage');
-    }, 'invoking it bare must not throw');
+    await expectResolved('sharplsp.removeNuGetPackage', 'invoking it bare must not throw');
     assert.deepEqual(stubs.log.errorMessages, [], 'and must not error');
     assert.deepEqual(stubs.log.warningMessages, [], 'and must not prompt');
     assert.deepEqual(stubs.log.infoMessages, [], 'and must not report success');
@@ -1241,17 +1174,17 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     // Interaction 5 - the guard is about the NODE, not about the command: a
     // complete node still prompts, so the inert paths above are a guard and not
     // a dead command.
-    const complete = {
-      projectFilePath: writeProjectFile(tmpDir, 'CompleteNode', {
+    const complete = packageNode(
+      writeProjectFile(tmpDir, 'CompleteNode', {
         packages: [{ id: 'Serilog', version: '3.1.0' }],
       }),
-      referenceName: 'Serilog',
-      label: 'Serilog',
-      contextValue: 'nugetPackage',
-    };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.removeNuGetPackage', complete);
-    }, 'a complete node must reach the confirmation');
+      'Serilog',
+    );
+    await expectResolved(
+      'sharplsp.removeNuGetPackage',
+      'a complete node must reach the confirmation',
+      complete,
+    );
     const prompts: readonly string[] = stubs.log.warningMessages;
     assert.strictEqual(prompts.length, 1, 'and prompt exactly once');
     assert.ok(prompts[0]?.includes('Serilog'), 'naming the package');
@@ -1269,9 +1202,11 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     });
 
     const node = { projectFilePath: projectPath, sortName: 'AddRefConsumer' };
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.addProjectReference', node);
-    }, 'addProjectReference must complete against a real node');
+    await expectResolved(
+      'sharplsp.addProjectReference',
+      'addProjectReference must complete against a real node',
+      node,
+    );
 
     // The workspace has several projects, so a "select project to reference" pick
     // must have been offered (candidates exclude the node's own project).
@@ -1306,8 +1241,7 @@ suite('Dependencies — remove/add commands mutate real .csproj files (e2e)', ()
     );
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'one picker, not a chain of them');
     const consumerXml = fs.readFileSync(projectPath, 'utf8');
-    assert.ok(consumerXml.includes('<Project Sdk="Microsoft.NET.Sdk">'), 'the consumer is intact');
-    assert.ok(consumerXml.trim().endsWith('</Project>'), 'and still well formed');
+    assertProjectXmlCloses(consumerXml, 'the consumer is intact', 'and still well formed');
 
     // Interaction 4 - the candidate list has no duplicates. The same project
     // offered twice is a picker where the user cannot tell the entries apart.
@@ -1379,11 +1313,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     });
     ensureTracked(second);
     assert.strictEqual(projectDependencies.value.size, 2, 'both projects are tracked');
-    assert.strictEqual(
-      projectDependencies.value.get(path.resolve(second))?.nugetPackages[0]?.name,
-      'Polly',
-      'the second project keeps its own packages',
-    );
+    assertStoredFirstName(second, 'Polly', 'the second project keeps its own packages');
     assert.strictEqual(
       projectDependencies.value.get(absolute)?.nugetPackages[0]?.name,
       'Serilog',
@@ -1411,11 +1341,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 2 - a redundant call publishes NOTHING, so no effect re-runs.
     // Republishing an identical map is how a reactive tree ends up rebuilding
     // itself on every keystroke ([VSCODE-REACTIVITY-SPEC]).
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
-    assert.deepEqual(runs, [1], 'the effect ran once for the current state');
+    const { runs, dispose } = observeCountAt(1, 'the effect ran once for the current state');
     ensureTracked(projectPath);
     ensureTracked(projectPath);
     dispose();
@@ -1445,10 +1371,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
   });
 
   test('an effect re-runs when ensureTracked publishes a new project', () => {
-    const observedSizes: number[] = [];
-    const dispose = effect(() => {
-      observedSizes.push(projectDependencies.value.size);
-    });
+    const { runs: observedSizes, dispose } = observeProjectCount();
     assert.deepEqual(observedSizes, [0], 'effect ran once with the empty store');
 
     const a = writeProjectFile(tmpDir, 'EffectA', { packages: [{ id: 'A', version: '1.0.0' }] });
@@ -1475,10 +1398,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 3 - a NEW effect starts from the current state, not from the
     // history the disposed one saw. That is what makes a late-mounting tree
     // view render correctly instead of empty.
-    const late: number[] = [];
-    const disposeLate = effect(() => {
-      late.push(projectDependencies.value.size);
-    });
+    const { runs: late, dispose: disposeLate } = observeProjectCount();
     assert.deepEqual(late, [3], 'a late observer sees the CURRENT store, not an empty one');
     ensureTracked(writeProjectFile(tmpDir, 'EffectD'));
     disposeLate();
@@ -1525,10 +1445,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 3 - refreshing when NOTHING changed publishes nothing. A
     // store that republishes on every poll makes every reactive consumer
     // rebuild on a timer ([VSCODE-REACTIVITY-SPEC]).
-    const quiet: number[] = [];
-    const disposeQuiet = effect(() => {
-      quiet.push(projectDependencies.value.size);
-    });
+    const { runs: quiet, dispose: disposeQuiet } = observeProjectCount();
     assert.deepEqual(quiet, [1], 'the effect ran once for the current state');
     const again = refreshTracked(projectPath);
     disposeQuiet();
@@ -1551,10 +1468,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
 
     // Interaction 2 - refreshing something untracked publishes nothing, so no
     // reactive consumer wakes up for a project nobody asked about.
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
+    const { runs, dispose } = observeProjectCount();
     refreshTracked(projectPath);
     refreshTracked(path.join(tmpDir, 'never-existed.csproj'));
     dispose();
@@ -1586,11 +1500,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // Interaction 2 - the drop is PUBLISHED. A tree that keeps rendering a
     // deleted project offers build and debug actions against a missing file.
     assert.strictEqual(projectDependencies.value.size, 0, 'the map is now empty');
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
-    assert.deepEqual(runs, [0], 'a fresh observer sees the project already gone');
+    const { runs, dispose } = observeCountAt(0, 'a fresh observer sees the project already gone');
 
     // Interaction 3 - a project that comes BACK (a branch switch, an undo) is
     // not resurrected by a refresh: it was dropped, so it must be tracked
@@ -1640,11 +1550,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     // makes every reactive consumer rebuild once per project in the solution,
     // which is the difference between a snappy tree and a frozen one on a
     // hundred-project repository ([VSCODE-REACTIVITY-SPEC]).
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
-    assert.deepEqual(runs, [2], 'the observer starts from the rescanned state');
+    const { runs, dispose } = observeCountAt(2, 'the observer starts from the rescanned state');
     writeProjectFile(tmpDir, 'RescanA', { packages: [{ id: 'A', version: '3.0.0' }] });
     writeProjectFile(tmpDir, 'RescanB', { packages: [{ id: 'B', version: '3.0.0' }] });
     rescanAll();
@@ -1657,11 +1563,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
       '3.0.0',
       'RescanA picked up its new version',
     );
-    assert.strictEqual(
-      projectDependencies.value.get(path.resolve(b))?.nugetPackages[0]?.name,
-      'B',
-      'and RescanB got its package back',
-    );
+    assertStoredFirstName(b, 'B', 'and RescanB got its package back');
     assert.strictEqual(projectDependencies.value.size, 2, 'with no project lost or duplicated');
   });
 
@@ -1681,11 +1583,7 @@ suite('Project Deps Store — reactive tracking (e2e)', () => {
     ensureTracked(
       writeProjectFile(tmpDir, 'Second', { packages: [{ id: 'Y', version: '1.0.0' }] }),
     );
-    const runs: number[] = [];
-    const dispose = effect(() => {
-      runs.push(projectDependencies.value.size);
-    });
-    assert.deepEqual(runs, [1], 'the observer starts from the tracked state');
+    const { runs, dispose } = observeCountAt(1, 'the observer starts from the tracked state');
     resetForTests();
     dispose();
     assert.deepEqual(runs, [1, 0], 'and observes the store emptying');

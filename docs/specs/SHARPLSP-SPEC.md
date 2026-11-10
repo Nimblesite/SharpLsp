@@ -20,7 +20,7 @@ SharpLsp is an open-source, editor-agnostic [LSP 3.17](https://microsoft.github.
 
 SharpLsp uses a Rust host for the LSP protocol and syntax analysis, plus managed .NET sidecars for C#/[Roslyn](https://github.com/dotnet/roslyn) and F#/[FCS](https://fsharp.github.io/fsharp-compiler-docs/) semantic analysis.
 
-Primary implementations: [main.rs](../../src/sharplsp/src/main.rs), [handlers.rs](../../src/sharplsp/src/handlers.rs), [semantic.rs](../../src/sharplsp/src/semantic.rs), and the [sidecar protocol](../../src/sharplsp/src/sidecar/protocol.rs).
+Primary implementations: [main.rs](../../src/sharplsp/src/main.rs) (start-up and main loop), [dispatch.rs](../../src/sharplsp/src/dispatch.rs) (request routing), [handlers.rs](../../src/sharplsp/src/handlers.rs), [semantic.rs](../../src/sharplsp/src/semantic.rs), and the [sidecar protocol](../../src/sharplsp/src/sidecar/protocol.rs).
 
 **Tier 1 — Rust LSP Host**
 
@@ -75,11 +75,17 @@ Outside the module, code MUST NOT call the platform path API (`System.IO.Path`, 
 
 Rationale: MSBuild, Roslyn, FCS, the host's canonicaliser and the editor each spell one file differently (`..` segments, case, verbatim prefixes, separators), and every scattered comparison is a place where two of those spellings fail to match. [GitHub #110] and the F# reference wiring under [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] were both bugs of that class.
 
-Sidecar identity resolves symlinked ancestors on Windows and macOS in the shared comparer and `IdentityOf`. Missing outputs retain their suffix beneath the resolved ancestor: an unbuilt project reference has the same identity through either spelling. Skill paths beneath linked directories follow the same rule. Normalized protocol paths retain the spelling the editor opened; comparing aliases must never redirect an edit into another document. Generated temporary paths use their physical spelling so SDK restore graphs have consistent project keys. Each resolved segment is memoized for one second, so path-keyed lookups and per-document scans probe the disk once per path, not once per segment on every call. A segment that is itself a link is read again on every call, so a retargeted file link is seen at once. File names and stems are compared and sorted by spelling (`SpellingComparer`), never through link resolution.
+Sidecar identity resolves symlinked ancestors on Windows and macOS in the shared comparer and `IdentityOf`. Missing outputs retain their suffix beneath the resolved ancestor: an unbuilt project reference has the same identity through either spelling. Skill paths beneath linked directories follow the same rule. Normalized protocol paths retain the spelling the editor opened; comparing aliases must never redirect an edit into another document. Generated temporary paths use their physical spelling so SDK restore graphs have consistent project keys. Each existing resolved segment is memoized for one second, so path-keyed lookups and per-document scans probe the disk once per path, not once per segment on every call. Missing entries are not memoized: a link created after a path lookup must be followed immediately. Nothing exists beneath a missing directory, so a missing path costs one disk probe however many of its segments are missing, and an entry's existence is read from the same probe that detects a link. A file link is read again on every call, so a retargeted file link is seen at once. File names and stems are compared and sorted by spelling (`SpellingComparer`), never through link resolution.
 
 Unix socket relocation uses UTF-8 byte length and a 103-byte ceiling, fitting macOS as well as Linux. A missing parent still fails to bind; relocation never turns an invalid endpoint into a successful connection elsewhere.
 
 Code implementing this section cites `[SHARPLSP-ARCHITECTURE-PATHS]`.
+
+### [SHARPLSP-ARCHITECTURE-STRUCTURED-EDITS] Structured File Edits
+
+Every edit to an MSBuild project, props or targets file goes through the C# sidecar's `Microsoft.Build.Construction.ProjectRootElement` with formatting preserved: package references in `PackageEditor`, compile items in `CompileItemEditor`, for `.csproj` and `.fsproj` alike. The Rust host and the editors only route the request ([NUGET-BROWSER-SPEC](NUGET-BROWSER-SPEC.md), [SE-ADD-FILE-REQUEST]). Comments, conditions, child elements, attribute order and line endings survive every edit.
+
+Production source MUST NOT write a project, props, targets, solution or extension manifest as one string: no string concatenation, `.replace()`, regex or line splicing. `make _lint-vsix` runs `tools/ci/structured-file-writes.mjs`, which fails on a whole-file write of such a file outside tests and fixtures.
 
 ### [SHARPLSP-ARCHITECTURE-IPC] IPC Transport Protocol
 
@@ -412,7 +418,7 @@ Both C# and F# columns require full support unless noted.
 
 Every completion item returned by either sidecar carries an explicit LSP `textEdit`, not just an `insertText`. Its range is the identifier span **at the caret** — the typed prefix to the left of the cursor *plus any identifier characters that already follow it on the same line*. Accepting an item therefore **replaces** that identifier instead of being appended to it: completing `WriteLine` at `Console.|WriteLine` yields `Console.WriteLine`, never `Console.WriteLineWriteLine` (GitHub #178). Without a `textEdit` the editor falls back to its own word-boundary heuristic, which appends after a member-access trigger character and duplicates the identifier.
 
-The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic.rs`.
+The C# sidecar derives the span from [`CompletionService.GetDefaultCompletionListSpan`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.completion.completionservice.getdefaultcompletionlistspan) extended over trailing identifier characters; the F# sidecar derives it from the FCS partial-name island (`QuickParse.GetPartialLongNameEx`) with the same trailing-character extension. The `NewText` is the item's insert text. The Rust host maps the flat sidecar edit onto `CompletionItem.textEdit` in `src/sharplsp/src/semantic/completion.rs`.
 
 #### [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN] Completion From Unopened Namespaces
 
@@ -707,6 +713,13 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 | Configuration | `workspace/didChangeConfiguration`, `sharplsp/configuration` | [.editorconfig](https://editorconfig.org/) + [shared TOML configuration](CONFIGURATION-SPEC.md) | P0 |
 
 ### [SHARPLSP-FEATURES-FSHARP] F#-Specific Features
+
+F# inlay hints read as FSAC's: a definition's inferred type in the file's short
+display names, after it, unless the source annotates it; each parameter name
+before its own argument (a method's tupled arguments, a function's curried ones),
+never on an operator; and a pipeline's input type before its `|>`. They come
+from FCS's parsed applications and checked symbol uses, never a scan of the
+source text (GitHub #389).
 
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|

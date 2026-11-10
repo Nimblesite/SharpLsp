@@ -148,6 +148,51 @@ const TEMPLATES: &[Template] = &[
     },
 ];
 
+/// Byte offset where the receiver expression ending at `expr_part`'s end
+/// begins: walk back over balanced parens/brackets and stop at a statement
+/// delimiter (`; { } = ,`) or the space after a leading keyword, then skip the
+/// indentation so the replacement range starts on the expression itself.
+fn expression_start(expr_part: &str) -> usize {
+    let bytes = expr_part.as_bytes();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, &byte) in bytes.iter().enumerate().rev() {
+        match byte {
+            b')' | b']' => depth += 1,
+            b'(' | b'[' => {
+                depth -= 1;
+                if depth < 0 {
+                    start = i + 1;
+                    break;
+                }
+            }
+            b';' | b'{' | b'}' | b'=' | b',' if depth == 0 => {
+                start = i + 1;
+                break;
+            }
+            b' ' | b'\t' if depth == 0 && i > 0 && follows_keyword(expr_part, i) => {
+                start = i + 1;
+                break;
+            }
+            _ => {}
+        }
+    }
+    while start < bytes.len() && matches!(bytes.get(start), Some(b' ' | b'\t')) {
+        start += 1;
+    }
+    start
+}
+
+/// Whether the word ending at byte `i` of `text` is a keyword that introduces an expression.
+fn follows_keyword(text: &str, i: usize) -> bool {
+    let word_before = text.get(..i).unwrap_or("").trim_end();
+    let last_word = word_before.rsplit_once(' ').map_or(word_before, |p| p.1);
+    matches!(
+        last_word,
+        "return" | "var" | "let" | "if" | "while" | "case" | "yield"
+    )
+}
+
 /// Extract the expression text before a `.trigger` at the cursor position.
 ///
 /// Given line text `foo.bar.if` and cursor at col 10, extracts `foo.bar`
@@ -165,50 +210,7 @@ fn extract_postfix_context(line_text: &str, col: u32) -> Option<(u32, String, St
         return None;
     }
 
-    // Walk backward from the dot to find the expression start.
-    // Stop at statement-level delimiters: ; { } = , (but not within parens/brackets).
-    let mut depth = 0i32;
-    let mut start = 0;
-    let bytes = expr_part.as_bytes();
-
-    for i in (0..bytes.len()).rev() {
-        let Some(&byte) = bytes.get(i) else {
-            continue;
-        };
-        match byte {
-            b')' | b']' => depth += 1,
-            b'(' | b'[' => {
-                depth -= 1;
-                if depth < 0 {
-                    start = i + 1;
-                    break;
-                }
-            }
-            b';' | b'{' | b'}' | b'=' | b',' if depth == 0 => {
-                start = i + 1;
-                break;
-            }
-            b' ' | b'\t' if depth == 0 && i > 0 => {
-                // Check if this space separates a keyword from the expression.
-                let word_before = expr_part.get(..i).unwrap_or("").trim_end();
-                let last_word = word_before.rsplit_once(' ').map_or(word_before, |p| p.1);
-                if matches!(
-                    last_word,
-                    "return" | "var" | "let" | "if" | "while" | "case" | "yield"
-                ) {
-                    start = i + 1;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // Skip leading whitespace so the replacement range starts at the expression.
-    while start < bytes.len() && matches!(bytes.get(start), Some(b' ' | b'\t')) {
-        start += 1;
-    }
-
+    let start = expression_start(expr_part);
     let expr_text = expr_part.get(start..)?.to_string();
     if expr_text.is_empty() {
         return None;
@@ -225,50 +227,52 @@ pub fn get_postfix_completions(
     character: u32,
     lang: LangId,
 ) -> Vec<CompletionItem> {
-    let lines: Vec<&str> = source.lines().collect();
-    let Some(line_idx) = usize::try_from(line).ok() else {
-        return Vec::new();
-    };
-
-    let Some(line_text) = lines.get(line_idx) else {
+    let Some(line_text) = usize::try_from(line)
+        .ok()
+        .and_then(|index| source.lines().nth(index))
+    else {
         return Vec::new();
     };
     let Some((expr_start, expr_text, trigger_part)) = extract_postfix_context(line_text, character)
     else {
         return Vec::new();
     };
-
     let replace_range = Range::new(
         Position::new(line, expr_start),
         Position::new(line, character),
     );
-
     TEMPLATES
         .iter()
         .filter(|t| t.trigger.starts_with(&trigger_part))
-        .filter_map(|t| {
-            let snippet = match lang {
-                LangId::CSharp => t.csharp_snippet,
-                LangId::FSharp => t.fsharp_snippet,
-                LangId::Razor => None,
-            }?;
-
-            let expanded = snippet.replace("{expr}", &expr_text);
-
-            Some(CompletionItem {
-                label: t.label.to_string(),
-                kind: Some(CompletionItemKind::SNIPPET),
-                detail: Some(t.detail.to_string()),
-                insert_text_format: Some(InsertTextFormat::SNIPPET),
-                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                    range: replace_range,
-                    new_text: expanded,
-                })),
-                sort_text: Some(format!("0_{}", t.trigger)),
-                ..CompletionItem::default()
-            })
-        })
+        .filter_map(|t| template_item(t, lang, &expr_text, replace_range))
         .collect()
+}
+
+/// One template as a snippet completion that replaces `expr.trigger` with the
+/// expansion; `None` when the template has no snippet for `lang`.
+fn template_item(
+    template: &Template,
+    lang: LangId,
+    expr_text: &str,
+    replace_range: Range,
+) -> Option<CompletionItem> {
+    let snippet = match lang {
+        LangId::CSharp => template.csharp_snippet,
+        LangId::FSharp => template.fsharp_snippet,
+        LangId::Razor => None,
+    }?;
+    Some(CompletionItem {
+        label: template.label.to_string(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some(template.detail.to_string()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+            range: replace_range,
+            new_text: snippet.replace("{expr}", expr_text),
+        })),
+        sort_text: Some(format!("0_{}", template.trigger)),
+        ..CompletionItem::default()
+    })
 }
 
 #[cfg(test)]

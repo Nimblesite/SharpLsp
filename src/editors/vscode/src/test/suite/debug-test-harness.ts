@@ -22,6 +22,9 @@ import { DapRecorder, type StopRecord } from './debug-dap-kit';
 import { assertStopReason, topFrame, type Frame } from './debug-drive-kit';
 import { assertBoundAtLines, useArmedRecorders } from './debug-suite-kit';
 import {
+  assertHandshakeOrder,
+  assertOneTestSession,
+  breakpointAt,
   disposeDebugTestFixture,
   requireActive,
   writeDebugTestFixture,
@@ -29,14 +32,14 @@ import {
   type FixtureRunner,
   type TestDebugFixture,
 } from './debug-test-kit';
-import { DebugSessionRecorder } from './run-debug-kit';
+import { DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import {
   activateTestExplorer,
   discoverSolution,
   findItem,
   runViaProfile,
 } from './test-explorer-kit';
-import { comparablePath, eq, requireAt } from './test-helpers';
+import { comparablePath, deepEq, eq, requireAt } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 import { type UiStubs } from './ui-stubs';
 
@@ -158,4 +161,84 @@ export async function stopInTestSource(
     `and in the fixture's own source file, not a generated or decompiled one`,
   );
   return { stop, active, frame };
+}
+
+/** Arm one breakpoint per `anchors` of `source` and assert the workbench holds exactly those. */
+export function armAnchoredBreakpoints(
+  source: AnchoredSource,
+  uri: vscode.Uri,
+  anchors: readonly string[],
+  countWhy: string,
+): void {
+  vscode.debug.addBreakpoints(anchors.map((anchor) => breakpointAt(source, uri, anchor)));
+  eq(vscode.debug.breakpoints.length, anchors.length, countWhy);
+}
+
+/** Press Debug on `items` and require the ONE conforming test-debug session it must start. */
+export async function debugRunOneSession(
+  items: readonly vscode.TestItem[],
+  sessions: DebugSessionRecorder,
+  why: string,
+): Promise<ObservedSession> {
+  await debugRun(items);
+  return assertOneTestSession(sessions, why);
+}
+
+/**
+ * The `nth` stop (1-based) of a test-debug run: required present, required to be
+ * a BREAKPOINT hit, and read as the live session's top frame — the bundle every
+ * "it stopped where the user armed" test opens with.
+ */
+export async function breakpointStopFrame(
+  recorder: DapRecorder,
+  nth: number,
+  why: string,
+): Promise<{ stop: StopRecord; active: vscode.DebugSession; frame: Frame }> {
+  const stop = requireAt(await recorder.waitForStops(nth), nth - 1, why);
+  assertStopReason(stop, 'breakpoint', why);
+  const active = requireActive(why);
+  const frame = await topFrame(active, stop.threadId);
+  return { stop, active, frame };
+}
+
+/** The debug traffic was clean: no adapter transport error, no failure surfaced to the user. */
+export function assertCleanDebugTraffic(recorder: DapRecorder, stubs: UiStubs): void {
+  deepEq(recorder.errors, [], 'with no adapter transport error');
+  deepEq(stubs.log.errorMessages, [], 'and nothing reported to the user as a failure');
+}
+
+/** The DAP handshake completed in order, and every armed `anchors` line BOUND. */
+export function assertHandshakeBoundLines(
+  recorder: DapRecorder,
+  source: AnchoredSource,
+  anchors: readonly string[],
+  why: string,
+  boundWhy: string,
+): void {
+  assertHandshakeOrder(recorder, why);
+  assertBoundAtLines(
+    recorder,
+    anchors.map((anchor) => source.dapLine(anchor)),
+    boundWhy,
+  );
+}
+
+/** The recorder side of a {@link DebugTestHarness}, for the gestures that need only traffic. */
+export interface DebugTraffic {
+  readonly recorder: DapRecorder;
+  readonly sessions: DebugSessionRecorder;
+}
+
+/** Press Debug on `items`: ONE session, handshake in order, and `anchors` bound. */
+export async function debugRunBound(
+  items: readonly vscode.TestItem[],
+  traffic: DebugTraffic,
+  source: AnchoredSource,
+  anchors: readonly string[],
+  why: string,
+  boundWhy: string,
+): Promise<ObservedSession> {
+  const session = await debugRunOneSession(items, traffic.sessions, why);
+  assertHandshakeBoundLines(traffic.recorder, source, anchors, why, boundWhy);
+  return session;
 }

@@ -24,7 +24,7 @@ import {
 import type { ProfileReport } from '@nimblesite/lsp-profiler-ui/out/src/wire-generated';
 import * as fs from 'node:fs';
 import { State } from 'vscode-languageclient/node';
-import { execute, lspClient, profilerStore } from './profiler-kit';
+import { execute, lspClient, profilerStore, untilSampling } from './profiler-kit';
 import { comparablePath } from './test-helpers';
 import { assertHardened, assertHtml, pollUntilResult } from './profiler-ui-helpers';
 import {
@@ -78,6 +78,7 @@ suite('CPU profiling — debug-launched end-to-end', () => {
       sample_rate: 100,
     });
     assert.ok(started.session_id.length > 0, 'the attach must mint a session');
+    await untilSampling(started.session_id);
     await delay(SAMPLE_WINDOW_MS);
     const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
     assert.ok(report.total_samples > 0, 'the sampler must collect real ticks from the debuggee');

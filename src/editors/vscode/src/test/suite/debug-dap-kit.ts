@@ -129,33 +129,45 @@ export class DapRecorder implements vscode.Disposable {
     return this.adapterExits;
   }
 
+  /** The messages whose `type` is `type` and whose `field` equals `value`. */
+  private messagesOf(
+    messages: readonly Record<string, any>[],
+    type: string,
+    field: string,
+    value: string,
+  ): Record<string, any>[] {
+    return messages.filter((message) => message['type'] === type && message[field] === value);
+  }
+
+  /** The DAP requests named `command`, read off `messages` in arrival order. */
+  private requestRecords(messages: readonly Record<string, any>[], command: string): DapRequest[] {
+    return this.messagesOf(messages, 'request', 'command', command).map((message) => ({
+      command,
+      args: (message['arguments'] ?? {}) as Record<string, any>,
+    }));
+  }
+
   /** Every `event` the adapter sent whose name is `name`, in arrival order. */
   public events(name: string): DapEvent[] {
-    return this.sentMessages
-      .filter((message) => message['type'] === 'event' && message['event'] === name)
-      .map((message) => ({ event: name, body: bodyOf(message) }));
+    return this.messagesOf(this.sentMessages, 'event', 'event', name).map((message) => ({
+      event: name,
+      body: bodyOf(message),
+    }));
   }
 
   /** Every `response` the adapter sent for `command`, in arrival order. */
   public responses(command: string): DapResponse[] {
-    return this.sentMessages
-      .filter((message) => message['type'] === 'response' && message['command'] === command)
-      .map((message) => ({
-        command,
-        success: message['success'] === true,
-        message: String(message['message'] ?? ''),
-        body: bodyOf(message),
-      }));
+    return this.messagesOf(this.sentMessages, 'response', 'command', command).map((message) => ({
+      command,
+      success: message['success'] === true,
+      message: String(message['message'] ?? ''),
+      body: bodyOf(message),
+    }));
   }
 
   /** Every `request` the workbench sent for `command`, in dispatch order. */
   public requests(command: string): DapRequest[] {
-    return this.receivedMessages
-      .filter((message) => message['type'] === 'request' && message['command'] === command)
-      .map((message) => ({
-        command,
-        args: (message['arguments'] ?? {}) as Record<string, any>,
-      }));
+    return this.requestRecords(this.receivedMessages, command);
   }
 
   /**
@@ -186,12 +198,7 @@ export class DapRecorder implements vscode.Disposable {
    * invisible on the forward channel.
    */
   public reverseRequests(command: string): DapRequest[] {
-    return this.sentMessages
-      .filter((message) => message['type'] === 'request' && message['command'] === command)
-      .map((message) => ({
-        command,
-        args: (message['arguments'] ?? {}) as Record<string, any>,
-      }));
+    return this.requestRecords(this.sentMessages, command);
   }
 
   /** Every command name the workbench asked the adapter for, deduplicated. */
@@ -452,6 +459,19 @@ export function assertSessionEnded(recorder: DapRecorder, why: string): void {
 export function assertAdapterAlive(recorder: DapRecorder, why: string): void {
   assertSessionEnded(recorder, why);
   deepEq(recorder.exits, [], `${why}: and the adapter process never exited under it`);
+}
+
+/**
+ * The initialize response advertises `capability` — the row of
+ * [DEBUG-PROTOCOL-CAPABILITIES] the calling gesture is specified to use.
+ */
+export function assertAdvertises(recorder: DapRecorder, capability: string, why: string): void {
+  eq(
+    recorder.capabilities()[capability],
+    true,
+    `${why}: [DEBUG-PROTOCOL-CAPABILITIES] makes \`${capability}\` a Phase 4 Yes; without it ` +
+      'the workbench never sends the request the gesture needs',
+  );
 }
 
 /** One handshake, one termination, and the adapter process alive throughout. */

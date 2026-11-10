@@ -39,8 +39,15 @@
     </Reference>
   </ItemGroup>
 
+  <!-- FSharp.Core's documentation beside the FSharp.Core the compiler reads, so hover
+       on `List.map` shows its summary. Only this package's: the others' would bloat the
+       VSIX. [HOVER-FSHARP-RENDERING] (GitHub #388) -->
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="10.1.403" />
+    <None Include="$(PkgFSharp_Core)/lib/netstandard2.1/FSharp.Core.xml" Link="FSharp.Core.xml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Core" Version="10.1.403" GeneratePathProperty="true" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.403" />
     <!-- Roslyn compiles the C# projects an F# project references, in memory, so the
          sidecar ships it like the C# sidecar does: restore full asset flow.
@@ -53,6 +60,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Hover/FSharpXmlDocFiles.fs" />
     <Compile Include="Hover/FSharpHoverBuilder.fs" />
     <Compile Include="FSharpAssets.fs" />
     <Compile Include="FSharpMetadataNavigator.fs" />
@@ -73,8 +81,10 @@
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpRenameToken.fs" />
     <Compile Include="FSharpReferences.fs" />
+    <Compile Include="FSharpImplementations.fs" />
     <Compile Include="FSharpForeignSymbols.fs" />
     <Compile Include="FSharpFeatures.fs" />
+    <Compile Include="FSharpInlayHints.fs" />
     <Compile Include="FSharpFileOrder.fs" />
     <Compile Include="FSharpDiagnosticWire.fs" />
     <Compile Include="FSharpCompletionWire.fs" />

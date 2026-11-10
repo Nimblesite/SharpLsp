@@ -2,19 +2,24 @@
 // the menus key on, searches over the tree, the clipboard the copy commands
 // write, and the one-project solution each suite loads and waits for.
 //
+// The package-maintenance commands those menus offer are driven here too: a
+// scratch solution of projects and the consolidate request over the LSP.
+//
 // Covers [SE-TREE]: every node a menu can target is reached through the real
 // exported provider, never a hand-built tree.
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { type LanguageClient } from 'vscode-languageclient/node';
+import { sharpLspExtension } from './extension-manifest-kit';
 import {
   activeExplorerProvider,
   type ExplorerProvider,
   writeOneProjectSolution,
 } from './explorer-kit';
 import { useLspTestSuite } from './lsp-suite-kit';
-import { pollUntilResult, waitForDocumentSymbols } from './test-helpers';
+import { pollUntilResult, requireAt, waitForDocumentSymbols } from './test-helpers';
 import { ACTIVATION_MS, FAST_MS } from './test-timeouts';
 import { nodeLabel, findNode } from './tree-node-kit';
 
@@ -151,4 +156,182 @@ export async function assertRuns(command: string, ...args: unknown[]): Promise<v
   await assert.doesNotReject(async () => {
     await vscode.commands.executeCommand(command, ...args);
   }, `${command} must not throw`);
+}
+
+/** Run `command` with `args` over the wire, asserting it completes cleanly, `why` saying what that proves. */
+export async function assertCommandSucceeds(
+  command: string,
+  args: unknown[],
+  why: string,
+): Promise<void> {
+  await assert.doesNotReject(async () => {
+    await vscode.commands.executeCommand(command, ...args);
+  }, why);
+}
+
+// ── Package maintenance the menu commands drive ([SE-CONTEXT-MENUS]) ──
+
+/** A `[id, version]` PackageReference pair. */
+export type PackageRef = readonly string[];
+
+/** One project of a scratch solution: its name, its package references, and its extension. */
+export interface ProjectSpec {
+  readonly name: string;
+  readonly refs: readonly PackageRef[];
+  readonly ext?: string;
+}
+
+/** One package a consolidate move reported. */
+export interface MovedPackage {
+  readonly id: string;
+  readonly version: string;
+  readonly fromProjects: string[];
+}
+
+/** The reply to `sharplsp/nuget/consolidate`. */
+export interface ConsolidateResp {
+  readonly moved: MovedPackage[];
+  readonly propsFile?: string;
+  readonly modifiedFiles: string[];
+  readonly message: string;
+}
+
+/** A scratch solution made by `makeSolution`: its `.sln`, its directory, its project files. */
+export interface ScratchSolution {
+  readonly sln: string;
+  readonly dir: string;
+  readonly projects: string[];
+}
+
+/** Write `<dir>/<name>/<name>.<ext>` carrying `refs` as PackageReferences; returns its path. */
+export function writeProject(
+  dir: string,
+  name: string,
+  refs: readonly PackageRef[],
+  ext = 'csproj',
+): string {
+  const projDir = path.join(dir, name);
+  fs.mkdirSync(projDir, { recursive: true });
+  const items = refs
+    .map((ref) => `    <PackageReference Include="${ref[0]}" Version="${ref[1]}" />`)
+    .join('\n');
+  const file = path.join(projDir, `${name}.${ext}`);
+  fs.writeFileSync(
+    file,
+    `<Project Sdk="Microsoft.NET.Sdk">\n` +
+      `  <PropertyGroup><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n` +
+      `  <ItemGroup>\n${items}\n  </ItemGroup>\n</Project>\n`,
+  );
+  return file;
+}
+
+/** Create `<tmpDir>/<name>/` holding `projects` and a `<name>.sln` naming them. */
+export function makeSolution(
+  tmpDir: string,
+  name: string,
+  projects: readonly ProjectSpec[],
+): ScratchSolution {
+  const dir = path.join(tmpDir, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const created = projects.map((project) =>
+    writeProject(dir, project.name, project.refs, project.ext ?? 'csproj'),
+  );
+  const sln = path.join(dir, `${name}.sln`);
+  fs.writeFileSync(sln, 'Microsoft Visual Studio Solution File, Format Version 12.00\n');
+  return { sln, dir, projects: created };
+}
+
+/** Two projects sharing one Serilog version: the canonical consolidation input. */
+export const SERILOG_PAIR: readonly ProjectSpec[] = [
+  { name: 'A', refs: [['Serilog', '3.1.0']] },
+  { name: 'B', refs: [['Serilog', '3.1.0']] },
+];
+
+/** Two projects pinning DIFFERENT Serilog versions, so the highest must be the one hoisted. */
+export const SPLIT_SERILOG_PAIR: readonly ProjectSpec[] = [
+  { name: 'A', refs: [['Serilog', '3.1.0']] },
+  { name: 'B', refs: [['Serilog', '3.0.0']] },
+];
+
+/** Two projects whose only packages are DIFFERENT, so nothing is shared at all. */
+export function unsharedPair(onlyBVersion = '1.0.0'): readonly ProjectSpec[] {
+  return [
+    { name: 'A', refs: [['OnlyA', '1.0.0']] },
+    { name: 'B', refs: [['OnlyB', onlyBVersion]] },
+  ];
+}
+
+/** Send a consolidate request (scan or apply) over the LSP. */
+export async function consolidate(
+  lsp: LanguageClient,
+  solutionPath: string,
+  dryRun: boolean,
+): Promise<ConsolidateResp> {
+  return lsp.sendRequest<ConsolidateResp>('sharplsp/nuget/consolidate', { solutionPath, dryRun });
+}
+
+/** A fresh solution of `projects` named `name`, with the running client that will drive it. */
+export function solutionFor(
+  tmpDir: string,
+  name: string,
+  projects: readonly ProjectSpec[],
+): ScratchSolution & { readonly lsp: LanguageClient } {
+  return { ...makeSolution(tmpDir, name, projects), lsp: activeLspClient() };
+}
+
+/**
+ * Consolidate a fresh solution of `projects` once — a scan unless `dryRun` is
+ * false — returning the reply beside the solution's `.sln` and directory.
+ */
+export async function consolidateNew(
+  tmpDir: string,
+  name: string,
+  projects: readonly ProjectSpec[],
+  dryRun = true,
+): Promise<{ readonly resp: ConsolidateResp; readonly sln: string; readonly dir: string }> {
+  const { lsp, sln, dir } = solutionFor(tmpDir, name, projects);
+  return { resp: await consolidate(lsp, sln, dryRun), sln, dir };
+}
+
+/** The single package a consolidate moved, asserted to be exactly one. */
+export function requireSoleMoved(resp: ConsolidateResp): MovedPackage {
+  assert.strictEqual(resp.moved.length, 1, 'exactly one package must be moved or reported');
+  return requireAt(resp.moved, 0, 'the moved package');
+}
+
+/** The running language client the extension publishes, asserted present. */
+export function activeLspClient(): LanguageClient {
+  const api = sharpLspExtension().exports as { getLspClient?: () => LanguageClient | undefined };
+  assert.ok(api?.getLspClient, 'Extension must export getLspClient');
+  const client = api.getLspClient();
+  assert.ok(client, 'LSP client must be running');
+  return client;
+}
+
+/**
+ * Assert a menu clause names one of what it should: a substring in `needles`, or
+ * a PREFIX in `prefixes` (a group numbered `1_…` is a first-tier group).
+ */
+export function assertMentions(
+  text: string,
+  needles: readonly string[],
+  what: string,
+  prefixes: readonly string[] = [],
+): void {
+  const mentioned = [...needles, ...prefixes.map((prefix) => `${prefix}…`)].join(', ');
+  assert.ok(
+    needles.some((needle) => text.includes(needle)) ||
+      prefixes.some((prefix) => text.startsWith(prefix)),
+    `${what} must name one of ${mentioned}, got '${text}'`,
+  );
+}
+
+/**
+ * Assert `text` is a dotted qualified name: it holds a dot separator and neither
+ * starts nor ends with one, so no empty segment leaks in from a missing ancestor.
+ */
+export function assertDottedName(text: string): void {
+  assert.ok(text.includes('.'), `qualified name '${text}' must contain a dot separator`);
+  assert.ok(!text.startsWith('.'), `qualified name '${text}' must not start with a dot`);
+  assert.ok(!text.endsWith('.'), `qualified name '${text}' must not end with a dot`);
 }

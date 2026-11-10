@@ -113,12 +113,12 @@ Requires `rustup target add wasm32-wasip2` for WASM builds.
 
 - [x] `lsp.sharplsp.binary.path`, `.arguments` and `.env` from Zed settings
 - [x] `lsp.sharplsp.settings` passed through as the server's client layer
-- [ ] Send initialization options (solution path) to sharplsp
+- [x] Send initialization options (solution path) to sharplsp — `language_server_initialization_options` sends the `lsp.sharplsp.settings` client layer with `initialize` (#375; `multi_solution.rs` `test_full_stack_initialization_options_choose_the_solution_in_multi_solution_root`)
 
 ### Phase 3: Symbol Integration
 
-- [ ] Custom symbol labels via `labels_for_symbols()`
-- [ ] Custom completion labels via `labels_for_completions()`
+- [x] Custom symbol labels via `labels_for_symbols()` — `src/editors/zed/src/labels.rs` `symbol_label`, [DIST-ZED-LABELS]
+- [x] Custom completion labels via `labels_for_completions()` — `labels.rs` `completion_label`, [DIST-ZED-LABELS]
 - [ ] Enhanced outline display for .NET symbol kinds
 
 ### Phase 4: Zed Custom Panel (Blocked on Zed API)
@@ -142,7 +142,7 @@ SharpLsp ships inside them as a server option ([DIST-ZED-REGISTRY]).
 - [ ] E2E test harness (launch Zed with extension, open .sln workspace)
 - [x] CI pipeline: `cargo test` with the coverage ratchet (`make _test-zed`)
 - [x] CI pipeline: `cargo clippy` (`make _lint-zed`)
-- [ ] WASM binary size optimization
+- [x] WASM binary size optimization — `[profile.release]` `opt-level = "s"`, LTO, one codegen unit, stripped: the release `sharplsp_zed.wasm` went from 337,328 to 182,829 bytes
 - [x] No bundled server: resolve from settings or PATH, else download the release archive ([DIST-ZED-REGISTRY])
 
 ### Phase 7: Upstream Distribution

@@ -121,12 +121,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
         // hints), a lambda parameter, and method-call arguments (param hints).
         var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
             "textDocument/inlayHint",
-            new InlayHintRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 119,
-                EndLine = 139,
-            }
+            new InlayHintRequest(FilePath: fixture.SourceFile, StartLine: 119, EndLine: 139)
         );
         Assert.NotEmpty(hints);
         Assert.Contains(hints, h => h.Kind == 1); // a type hint
@@ -152,14 +147,13 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
             SemanticTokensResult
         >(
             "textDocument/semanticTokens/range",
-            new RangeFormattingRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 54,
-                StartCharacter = 0,
-                EndLine = 84,
-                EndCharacter = 0,
-            }
+            new RangeFormattingRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: 54,
+                StartCharacter: 0,
+                EndLine: 84,
+                EndCharacter: 0
+            )
         );
         Assert.NotEmpty(tokens.Data);
     }
@@ -205,13 +199,12 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
     {
         var loc = await fixture.SendAndDeserializeAsync<ReferencesRequest, LocationListResult>(
             "textDocument/references",
-            new ReferencesRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 100,
-                Character = 22,
-                IncludeDeclaration = true,
-            }
+            new ReferencesRequest(
+                FilePath: fixture.SourceFile,
+                Line: 100,
+                Character: 22,
+                IncludeDeclaration: true
+            )
         );
         Assert.True(loc.Locations.Count > 1);
     }
@@ -225,12 +218,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
             DocumentHighlightListResult
         >(
             "textDocument/documentHighlight",
-            new PositionRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 122,
-                Character = 12,
-            }
+            new PositionRequest(FilePath: fixture.SourceFile, Line: 122, Character: 12)
         );
         Assert.NotEmpty(result.Highlights);
     }
@@ -247,11 +235,7 @@ public sealed class NavigationEndToEndTests(CSharpSidecarFixture fixture)
         var resolved = await fixture.SendAndDeserializeAsync<CompletionResolveResult>(
             "completionItem/resolve",
             MessagePackSerializer.Serialize(
-                new CompletionResolveRequest
-                {
-                    FilePath = fixture.SourceFile,
-                    Index = items[0].Index,
-                }
+                new CompletionResolveRequest(FilePath: fixture.SourceFile, Index: items[0].Index)
             )
         );
         Assert.NotNull(resolved.AdditionalEdits);

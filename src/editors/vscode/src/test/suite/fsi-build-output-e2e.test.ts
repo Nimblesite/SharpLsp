@@ -41,9 +41,11 @@ import { libraryProjectXml, writeProject } from './dotnet-project-kit.js';
 import {
   buildTasksOf,
   dispatchedBuildTask,
+  doesNotRejectCommand,
   expectedBuildTask,
   recordingChannel,
   terminateBuildTasks,
+  writeOpenEditSave,
 } from './fsi-build-kit.js';
 import { COMMAND_MS, DOTNET_CLI_MS, FAST_MS, QUIET_MS } from './test-timeouts';
 
@@ -53,6 +55,13 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
   let tmpDir: string;
   let stubs: UiStubs;
   const preexistingTerminals = new Set<vscode.Terminal>();
+
+  /** Turn the hotReload.onSave workspace setting on, so saves reach the watcher. */
+  async function enableHotReloadOnSave(): Promise<void> {
+    await vscode.workspace
+      .getConfiguration('sharplsp')
+      .update('hotReload.onSave', true, vscode.ConfigurationTarget.Workspace);
+  }
 
   setup(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sharplsp-fsi-build-'));
@@ -312,9 +321,7 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
       new vscode.Position(2, doc.lineAt(2).text.length),
     );
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.start');
-    }, 'sharplsp.fsi.start must not throw');
+    await doesNotRejectCommand('sharplsp.fsi.start', 'sharplsp.fsi.start must not throw');
 
     const fsiTerminal = await pollUntilResult(
       async () => vscode.window.terminals.find((t) => t.name === 'F# Interactive'),
@@ -323,13 +330,12 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     );
     assert.ok(fsiTerminal, 'fsi.start must create an "F# Interactive" terminal');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.send');
-    }, 'sharplsp.fsi.send must not throw with an F# selection');
+    await doesNotRejectCommand(
+      'sharplsp.fsi.send',
+      'sharplsp.fsi.send must not throw with an F# selection',
+    );
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.sendFile');
-    }, 'sharplsp.fsi.sendFile must not throw');
+    await doesNotRejectCommand('sharplsp.fsi.sendFile', 'sharplsp.fsi.sendFile must not throw');
 
     // Still exactly one FSI terminal — send/sendFile reuse the live session.
     const fsiTerminals = vscode.window.terminals.filter((t) => t.name === 'F# Interactive');
@@ -342,12 +348,14 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     const before = vscode.window.terminals.filter((t) => t.name === 'F# Interactive').length;
     await openCSharpFile(tmpDir, 'NotFsharp.cs', 'namespace N { class C { } }\n');
 
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.send');
-    }, 'sharplsp.fsi.send must not throw on a C# file');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.sendFile');
-    }, 'sharplsp.fsi.sendFile must not throw on a C# file');
+    await doesNotRejectCommand(
+      'sharplsp.fsi.send',
+      'sharplsp.fsi.send must not throw on a C# file',
+    );
+    await doesNotRejectCommand(
+      'sharplsp.fsi.sendFile',
+      'sharplsp.fsi.sendFile must not throw on a C# file',
+    );
 
     // Both commands take the warning branch and create no FSI terminal.
     assert.ok(
@@ -363,15 +371,17 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
 
     // No active editor at all.
     await closeAllEditors();
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.generateSignature');
-    }, 'generateSignature must not throw with no active editor');
+    await doesNotRejectCommand(
+      'sharplsp.fsi.generateSignature',
+      'generateSignature must not throw with no active editor',
+    );
 
     // A C# file is active — still rejected because it is not a .fs source.
     const { uri } = await openCSharpFile(tmpDir, 'Plain.cs', 'class Plain { }\n');
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.fsi.generateSignature');
-    }, 'generateSignature must not throw on a C# file');
+    await doesNotRejectCommand(
+      'sharplsp.fsi.generateSignature',
+      'generateSignature must not throw on a C# file',
+    );
 
     assert.ok(
       stubs.log.warningMessages.filter((m) => m.includes('No F# file is active')).length >= 2,
@@ -448,53 +458,38 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     assert.ok(isHotReloadRunning());
 
     // Enable onSave and save a C# document — the relevant-language path runs.
-    await vscode.workspace
-      .getConfiguration('sharplsp')
-      .update('hotReload.onSave', true, vscode.ConfigurationTarget.Workspace);
+    await enableHotReloadOnSave();
 
-    const csPath = path.join(tmpDir, 'Saved.cs');
-    fs.writeFileSync(csPath, 'class Saved { }\n', 'utf8');
-    const csDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(csPath));
-    const csEditor = await vscode.window.showTextDocument(csDoc);
-    await csEditor.edit((b) => {
-      b.insert(new vscode.Position(0, 0), '// touched\n');
-    });
-    await assert.doesNotReject(async () => {
-      await csDoc.save();
-    }, 'Saving a C# doc during hot reload must not throw');
+    await writeOpenEditSave(
+      tmpDir,
+      'Saved.cs',
+      'class Saved { }\n',
+      '// touched\n',
+      'Saving a C# doc during hot reload must not throw',
+    );
     assert.ok(isHotReloadRunning(), 'Hot reload must remain running after save');
 
     // Saving a non-relevant document must also be harmless (early-return branch).
-    const txtPath = path.join(tmpDir, 'notes.txt');
-    fs.writeFileSync(txtPath, 'hello\n', 'utf8');
-    const txtDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(txtPath));
-    const txtEditor = await vscode.window.showTextDocument(txtDoc);
-    await txtEditor.edit((b) => {
-      b.insert(new vscode.Position(0, 0), 'x');
-    });
-    await assert.doesNotReject(async () => {
-      await txtDoc.save();
-    }, 'Saving a non-relevant doc during hot reload must not throw');
+    const txtDoc = await writeOpenEditSave(
+      tmpDir,
+      'notes.txt',
+      'hello\n',
+      'x',
+      'Saving a non-relevant doc during hot reload must not throw',
+    );
     assert.ok(!isRelevantLanguage(txtDoc.languageId));
     assert.ok(isHotReloadRunning());
 
     // Saving a Razor document must also be harmless: its language is relevant,
     // so the onSave path runs instead of early-returning ([RAZOR-HOT-RELOAD]).
-    const razorPath = path.join(tmpDir, 'Saved.razor');
-    fs.writeFileSync(razorPath, '<h1>Saved</h1>\n', 'utf8');
-    const razorDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(razorPath));
-    assert.strictEqual(
-      razorDoc.languageId,
-      'razor',
-      'VS Code opens a .razor file as the razor language',
+    const razorDoc = await writeOpenEditSave(
+      tmpDir,
+      'Saved.razor',
+      '<h1>Saved</h1>\n',
+      '<p>touched</p>',
+      'Saving a Razor doc during hot reload must not throw',
+      { id: 'razor', why: 'VS Code opens a .razor file as the razor language' },
     );
-    const razorEditor = await vscode.window.showTextDocument(razorDoc);
-    await razorEditor.edit((b) => {
-      b.insert(new vscode.Position(0, 0), '<p>touched</p>');
-    });
-    await assert.doesNotReject(async () => {
-      await razorDoc.save();
-    }, 'Saving a Razor doc during hot reload must not throw');
     assert.ok(isRelevantLanguage(razorDoc.languageId));
     assert.ok(isHotReloadRunning(), 'Hot reload must remain running after a Razor save');
 
@@ -508,21 +503,15 @@ suite('FSI / Build / Output-filter / Hot-reload E2E', () => {
     assert.ok(!isHotReloadRunning());
 
     // Enable onSave but DO NOT start hot reload — the save handler must early-return.
-    await vscode.workspace
-      .getConfiguration('sharplsp')
-      .update('hotReload.onSave', true, vscode.ConfigurationTarget.Workspace);
+    await enableHotReloadOnSave();
 
-    const csPath = path.join(tmpDir, 'NoWatch.cs');
-    fs.writeFileSync(csPath, 'class NoWatch { }\n', 'utf8');
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(csPath));
-    const editor = await vscode.window.showTextDocument(doc);
-    await editor.edit((b) => {
-      b.insert(new vscode.Position(0, 0), '// edit\n');
-    });
-
-    await assert.doesNotReject(async () => {
-      await doc.save();
-    }, 'Saving with no watch terminal must not throw');
+    await writeOpenEditSave(
+      tmpDir,
+      'NoWatch.cs',
+      'class NoWatch { }\n',
+      '// edit\n',
+      'Saving with no watch terminal must not throw',
+    );
     assert.ok(
       !isHotReloadRunning(),
       'Saving must not start hot reload when no watch terminal exists',

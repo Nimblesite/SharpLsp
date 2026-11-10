@@ -13,7 +13,7 @@ use lsp_types::{
 use tracing::debug;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, with_sidecar, SidecarFileReq};
+use crate::utils::{request_sidecar, with_sidecar, SidecarFileReq, SidecarRangeReq};
 
 /// Cache of previous semantic token results per document URI.
 static TOKEN_CACHE: std::sync::LazyLock<Mutex<TokenCache>> =
@@ -74,16 +74,11 @@ pub fn handle_full(
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: SemanticTokensParams| {
-        let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
-        let Some(data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
+        let Some(data) = fetch_full_tokens(runtime, sidecar, &params.text_document.uri)? else {
             return Ok(serde_json::Value::Null);
         };
         debug!(values = data.len(), "semantic tokens from sidecar");
-        let uri_str = params.text_document.uri.as_str();
-        let result_id = TOKEN_CACHE
-            .lock()
-            .map(|mut cache| cache.store(uri_str, data.clone()))
-            .ok();
+        let result_id = remember_tokens(params.text_document.uri.as_str(), &data);
         let mut tokens = decode_tokens(&data);
         tokens.result_id = result_id;
         Ok(serde_json::to_value(SemanticTokensResult::Tokens(tokens))?)
@@ -100,13 +95,7 @@ pub fn handle_range(
         req,
         sidecar,
         |sidecar, params: SemanticTokensRangeParams| {
-            let request = SidecarRangeReq {
-                file_path: crate::paths::uri_to_path(params.text_document.uri.as_str())?,
-                start_line: params.range.start.line,
-                start_character: params.range.start.character,
-                end_line: params.range.end.line,
-                end_character: params.range.end.character,
-            };
+            let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
             let method = "textDocument/semanticTokens/range";
             let Some(result) =
                 request_sidecar::<SidecarSemanticTokens, _>(runtime, sidecar, method, &request)?
@@ -145,9 +134,7 @@ fn delta_against_cache(
     let uri_str = params.text_document.uri.as_str();
     let prev_id = &params.previous_result_id;
 
-    // Fetch fresh tokens from sidecar.
-    let file_path = crate::paths::uri_to_path(params.text_document.uri.as_str())?;
-    let Some(new_data) = fetch_full_tokens(runtime, sidecar, file_path)? else {
+    let Some(new_data) = fetch_full_tokens(runtime, sidecar, &params.text_document.uri)? else {
         return Ok(serde_json::Value::Null);
     };
 
@@ -157,11 +144,7 @@ fn delta_against_cache(
         Some(compute_delta(old_data, &new_data))
     });
 
-    // Cache the new tokens.
-    let new_result_id = TOKEN_CACHE
-        .lock()
-        .map(|mut cache| cache.store(uri_str, new_data.clone()))
-        .ok();
+    let new_result_id = remember_tokens(uri_str, &new_data);
 
     if let Some(edits) = delta {
         Ok(serde_json::to_value(
@@ -186,12 +169,24 @@ fn delta_against_cache(
 fn fetch_full_tokens(
     runtime: &tokio::runtime::Runtime,
     sidecar: &SidecarManager,
-    file_path: String,
+    uri: &lsp_types::Uri,
 ) -> Result<Option<Vec<i32>>> {
     let method = "textDocument/semanticTokens/full";
+    let request = SidecarFileReq {
+        file_path: crate::paths::uri_to_path(uri.as_str())?,
+    };
     let result: Option<SidecarSemanticTokens> =
-        request_sidecar(runtime, sidecar, method, &SidecarFileReq { file_path })?;
+        request_sidecar(runtime, sidecar, method, &request)?;
     Ok(result.map(|tokens| tokens.data))
+}
+
+/// Cache `data` as the document's latest result and return the id the client
+/// will quote in its next delta request; `None` when the cache lock is poisoned.
+fn remember_tokens(uri: &str, data: &[i32]) -> Option<String> {
+    TOKEN_CACHE
+        .lock()
+        .map(|mut cache| cache.store(uri, data.to_vec()))
+        .ok()
 }
 
 /// Integers per token on the wire: `[deltaLine, deltaStart, length, tokenType,
@@ -335,21 +330,6 @@ fn decode_tokens(data: &[i32]) -> SemanticTokens {
 }
 
 // ── Wire types ────────────────────────────────────────────────────
-
-/// Sidecar request for semantic tokens within a specific range.
-#[derive(serde::Serialize)]
-struct SidecarRangeReq {
-    /// Absolute filesystem path of the document.
-    file_path: String,
-    /// Start line of the requested range.
-    start_line: u32,
-    /// Start character of the requested range.
-    start_character: u32,
-    /// End line of the requested range.
-    end_line: u32,
-    /// End character of the requested range.
-    end_character: u32,
-}
 
 /// Sidecar response containing a flat array of encoded semantic tokens.
 #[derive(serde::Deserialize)]

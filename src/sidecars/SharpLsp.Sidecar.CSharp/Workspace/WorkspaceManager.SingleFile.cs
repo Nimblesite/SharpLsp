@@ -325,18 +325,18 @@ internal sealed partial class WorkspaceManager
         ProjectlessDegradation degradation
     )
     {
-        return new DiagnosticResult
-        {
-            FilePath = filePath,
-            StartLine = 0,
-            StartCharacter = 0,
-            EndLine = 0,
-            EndCharacter = 1,
-            Message =
-                $"File-based package restore degraded to BCL-only references: {degradation.Reason}",
-            Severity = "Info",
-            Code = degradation.IsPending ? RestorePendingCode : RestoreDegradedCode,
-        };
+        return new DiagnosticResult(
+            FilePath: filePath,
+            StartLine: 0,
+            StartCharacter: 0,
+            EndLine: 0,
+            EndCharacter: 1,
+            Message: $"File-based package restore degraded to BCL-only references: {degradation.Reason}",
+            Severity: "Info",
+            Code: degradation.IsPending ? RestorePendingCode : RestoreDegradedCode,
+            HelpLink: "",
+            Tags: []
+        );
     }
 
     private static ProjectInfo BuildProjectInfo(ProjectlessKind kind, string rootPath)

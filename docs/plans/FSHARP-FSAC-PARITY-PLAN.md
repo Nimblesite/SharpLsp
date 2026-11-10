@@ -40,7 +40,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Completion + resolve | `textDocument/completion`, `completionItem/resolve` | ✅ / ✅ | `[FS-COMPLETION]`; unopened-namespace items and their `open` on resolve `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]` |
 | Go to definition | `textDocument/definition` | ✅ | e2e: `test_full_stack_fsharp_navigation` |
 | Type definition | `textDocument/typeDefinition` | ✅ | resolves to the type decl; `test_full_stack_fsharp_navigation` (was gap [#112] — invalid-fixture artifact) |
-| Implementation | `textDocument/implementation` | ✅ | |
+| Implementation | `textDocument/implementation` | ✅ | `FSharpImplementations.fs`: an abstract member's overrides and interface implementations, a type's derived types; until 2026-11-09 it answered the symbol's own declaration |
 | Declaration | `textDocument/declaration` | ⭐✅ | not in FSAC's list |
 | Find references | `textDocument/references` | ✅ | `[REFERENCES-FSHARP-FIND]` project-wide incl. type use-sites; `test_full_stack_fsharp_references_type_use_sites` (was gap [#112] — invalid-fixture artifact) |
 | Hover | `textDocument/hover` | ✅ | XML-doc rendering; e2e covered |
@@ -138,6 +138,11 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 | Call hierarchy + type hierarchy | `test_full_stack_fsharp_hierarchies` | ✅ |
 | Rename (prepare + project-wide apply) | `test_full_stack_fsharp_rename` | ✅ |
 | Extension routing (.fs/.fsx/.fsi), no-sidecar nulls | `test_fsharp_*`, `coverage_boost*` | ✅ |
+| Definition on every kind (function, type, DU case, record field, active pattern), type definition, implementation of an abstract member, after a compiler crash | `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`, `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` | ✅ |
+| References and highlights on DU cases, record fields, active pattern cases (from their own name too), an unsaved edit | `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp` | ✅ |
+| Diagnostic tags: unused open, dead code, never-matched rule → `Unnecessary`; obsolete use → `Deprecated` | `diagnostic_tags.rs` | ✅ |
+| Scripts with no project and no root: hover after any token, only FCS started, then a C# file too | `lazy_routing.rs` | ✅ |
+| Cross-language references, F# ↔ C# | `definition_cross_language.rs` | ✅ |
 
 **TODO — e2e to add as the impl lands each gap:**
 - [x] rename (prepare + apply) full-stack — `test_full_stack_fsharp_rename`

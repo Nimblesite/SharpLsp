@@ -17,8 +17,8 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID } from './test-helpers';
-import { authoredPackageJson, contributes, packageJson } from './run-debug-kit';
+import { EXTENSION_ID, assertContainsAll, openCSharpFile } from './test-helpers';
+import { authoredPackageJson, contributes, invokeCommand, packageJson } from './run-debug-kit';
 
 /** One entry of `contributes.commands`. */
 export interface ContributedCommand {
@@ -279,4 +279,118 @@ export function nlsResolved(value: unknown): unknown {
   const resolved = nlsStrings()[key];
   assert.ok(resolved !== undefined, `package.nls.json must define ${key}`);
   return resolved;
+}
+
+/** The active extension's `exports`, asserted present; cast at the call site. */
+export function requireExtensionExports(what: string): unknown {
+  const ext = vscode.extensions.getExtension(EXTENSION_ID);
+  assert.ok(ext?.isActive, 'Extension must be active');
+  const api = ext.exports as object | undefined;
+  assert.ok(api !== undefined, `Extension must export ${what}`);
+  return api;
+}
+
+/** Invoke command `id` and assert it resolved without rejection or failure message. */
+export async function assertCleanCommand(
+  id: string,
+  why: string,
+): Promise<Awaited<ReturnType<typeof invokeCommand>>> {
+  const outcome = await invokeCommand(id);
+  assert.ok(!outcome.rejected, `'${id}' must run cleanly: ${outcome.message}`);
+  assert.strictEqual(outcome.message, '', why);
+  return outcome;
+}
+
+/** Write `content` to `name` in the scratch directory, open it, and assert it resolves to `languageId`. */
+export async function assertOpensAsLanguage(
+  tmpDir: string,
+  name: string,
+  content: string,
+  languageId: string,
+  why: string,
+): Promise<vscode.TextDocument> {
+  const { doc } = await openCSharpFile(tmpDir, name, content);
+  assert.strictEqual(doc.languageId, languageId, why);
+  return doc;
+}
+
+/** Assert `key` is contributed as a string enum defaulting to `expectedDefault` and offering `allowed`. */
+export function assertStringEnumSetting(
+  key: string,
+  expectedDefault: string,
+  allowed: readonly string[],
+): ConfigProperty {
+  const property = assertContributedSetting(key, expectedDefault);
+  assert.strictEqual(property.type, 'string', `${key} is an enum of strings`);
+  assert.ok(Array.isArray(property.enum), `${key} must offer a closed enum`);
+  assertContainsAll(property.enum ?? [], allowed, `${key} enum`);
+  return property;
+}
+
+/** Update a sharplsp setting at global scope and assert it reads back from there. */
+export async function assertGlobalSettingReadsBack(key: string, value: string): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp')
+    .update(key, value, vscode.ConfigurationTarget.Global);
+  // A WorkspaceConfiguration is a snapshot: read through a fresh one.
+  const config = vscode.workspace.getConfiguration('sharplsp');
+  assert.strictEqual(config.get(key), value, `${key} must read back ${JSON.stringify(value)}`);
+  assert.strictEqual(
+    config.inspect(key)?.globalValue,
+    value,
+    `${key} must be recorded at the scope it was written to`,
+  );
+}
+
+/** Clear a sharplsp setting at global scope and assert the default is restored with no residue. */
+export async function assertGlobalSettingCleared(
+  key: string,
+  expectedDefault: string,
+): Promise<void> {
+  await vscode.workspace
+    .getConfiguration('sharplsp')
+    .update(key, undefined, vscode.ConfigurationTarget.Global);
+  const config = vscode.workspace.getConfiguration('sharplsp');
+  assert.strictEqual(config.get(key), expectedDefault, `clearing ${key} restores the default`);
+  assert.strictEqual(config.inspect(key)?.globalValue, undefined, `${key} leaves no residue`);
+}
+
+/** Assert a contributed language claims every listed file extension. */
+export function assertClaimsExtensions(
+  entry: ContributedLanguage,
+  extensions: readonly string[],
+  label: string,
+): void {
+  for (const shape of extensions) {
+    assert.ok(entry.extensions?.includes(shape), `${label} must claim ${shape}`);
+  }
+}
+
+/** A language-configuration file, read out of the packaged payload and parsed. */
+export function readLanguageConfiguration(relativePath: string): Record<string, unknown> {
+  assert.ok(relativePath.length > 0, 'a language must declare a configuration path');
+  const resolved = `${sharpLspExtension().extensionPath}/${relativePath}`;
+  assert.ok(fs.existsSync(resolved), `language configuration must ship at ${resolved}`);
+  const parsed: unknown = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  assert.ok(parsed && typeof parsed === 'object', `${relativePath} must parse as a JSON object`);
+  return parsed as Record<string, unknown>;
+}
+
+/** Parse a language's packaged configuration file and assert it declares brackets and comment tokens. */
+export function assertLanguageConfigured(languageId: string): void {
+  const parsed = readLanguageConfiguration(languageNamed(languageId).configuration ?? '');
+  assert.ok(parsed.brackets, `${languageId} must declare bracket pairs`);
+  assert.ok(parsed.comments, `${languageId} must declare comment tokens`);
+}
+
+/** Assert the loaded command list names the same commands as the authored manifest, in the same order. */
+export function assertCommandsMatchAuthored(why: string): void {
+  const authored = authoredPackageJson().contributes?.commands ?? [];
+  assert.deepStrictEqual(
+    (Array.isArray(authored) ? authored : []).map(
+      (command: { command: string }) => command.command,
+    ),
+    commandEntries().map((command) => command.command),
+    why,
+  );
 }

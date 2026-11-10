@@ -334,7 +334,12 @@ internal sealed partial class WorkspaceManager
 
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
         var edits = ordered.Select(item => MapForeignEdit(text, item.Span, newName)).ToList();
-        return new DocumentEditResult { FilePath = first.FilePath, Edits = edits };
+        return new DocumentEditResult(
+            FilePath: first.FilePath,
+            Edits: edits,
+            Create: false,
+            RenameTo: null
+        );
     }
 
     private static TextEditResult MapForeignEdit(SourceText text, TextSpan span, string newName)
@@ -344,7 +349,7 @@ internal sealed partial class WorkspaceManager
 
     private static RenameEditResult ForeignRenameSuccess(List<DocumentEditResult> edits)
     {
-        var workspaceEdit = new WorkspaceEditResult { DocumentChanges = edits };
+        var workspaceEdit = new WorkspaceEditResult(DocumentChanges: edits);
         return new RenameEditResult.Ok<WorkspaceEditResult, string>(workspaceEdit);
     }
 }

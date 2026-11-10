@@ -13,6 +13,15 @@ let private layoutToString (layout: TaggedText seq) : string =
     |> Seq.map (fun t -> t.Text)
     |> String.concat ""
 
+/// A symbol's XML documentation, rooted for the shared renderer. FCS hands a source
+/// symbol's `///` text without a wrapper element, so it is wrapped in `<doc>`; a .NET
+/// symbol's comes from its assembly's documentation file as a `<member>` element.
+let private documentation (xmlDoc: FSharpXmlDoc) : string option =
+    match xmlDoc with
+    | FSharpXmlDoc.FromXmlText text -> Some $"<doc>{text.GetXmlText()}</doc>"
+    | FSharpXmlDoc.FromXmlFile(assembly, memberId) -> FSharpXmlDocFiles.tryMember assembly memberId
+    | FSharpXmlDoc.None -> None
+
 /// Render a single ToolTipElementData item to Markdown.
 let private renderGroupItem (item: ToolTipElementData) : string option =
     let mainText = layoutToString item.MainDescription
@@ -24,17 +33,8 @@ let private renderGroupItem (item: ToolTipElementData) : string option =
         sb.AppendLine(mainText) |> ignore
         sb.AppendLine("```") |> ignore
 
-        // XML documentation.
-        // FCS returns raw XML (e.g. <summary>...</summary>) without a wrapper element,
-        // unlike Roslyn which wraps in <member>. Wrap in <doc> so the shared renderer
-        // can find child elements like <summary> consistently.
-        match item.XmlDoc with
-        | FSharpXmlDoc.FromXmlText xmlDoc ->
-            let xmlText = $"<doc>{xmlDoc.GetXmlText()}</doc>"
-            let rendered = XmlDocRenderer.Render(xmlText)
-            if rendered.Length > 0 then
-                sb.AppendLine() |> ignore
-                sb.Append(rendered) |> ignore
+        match documentation item.XmlDoc |> Option.map XmlDocRenderer.Render with
+        | Some rendered when rendered.Length > 0 -> sb.AppendLine().Append(rendered) |> ignore
         | _ -> ()
 
         // Remarks (fully qualified name).

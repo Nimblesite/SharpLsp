@@ -76,13 +76,12 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task References_on_missing_document_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new ReferencesRequest
-            {
-                FilePath = MissingFile,
-                Line = 0,
-                Character = 0,
-                IncludeDeclaration = true,
-            }
+            new ReferencesRequest(
+                FilePath: MissingFile,
+                Line: 0,
+                Character: 0,
+                IncludeDeclaration: true
+            )
         );
         await AssertHandledGracefully("textDocument/references", payload);
     }
@@ -100,12 +99,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task InlayHints_on_missing_document_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new InlayHintRequest
-            {
-                FilePath = MissingFile,
-                StartLine = 0,
-                EndLine = 10,
-            }
+            new InlayHintRequest(FilePath: MissingFile, StartLine: 0, EndLine: 10)
         );
         await AssertHandledGracefully("textDocument/inlayHint", payload);
     }
@@ -114,14 +108,13 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CodeAction_on_missing_document_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new CodeActionRequest
-            {
-                FilePath = MissingFile,
-                StartLine = 0,
-                StartCharacter = 0,
-                EndLine = 0,
-                EndCharacter = 1,
-            }
+            new CodeActionRequest(
+                FilePath: MissingFile,
+                StartLine: 0,
+                StartCharacter: 0,
+                EndLine: 0,
+                EndCharacter: 1
+            )
         );
         await AssertHandledGracefully("textDocument/codeAction", payload);
     }
@@ -130,13 +123,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Rename_on_missing_document_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new RenameRequest
-            {
-                FilePath = MissingFile,
-                Line = 0,
-                Character = 0,
-                NewName = "Renamed",
-            }
+            new RenameRequest(FilePath: MissingFile, Line: 0, Character: 0, NewName: "Renamed")
         );
         await AssertHandledGracefully("textDocument/rename", payload);
     }
@@ -151,7 +138,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CodeActionResolve_with_unknown_id_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new CodeActionResolveRequest { Id = int.MaxValue }
+            new CodeActionResolveRequest(Id: int.MaxValue)
         );
         await AssertHandledGracefully("codeAction/resolve", payload);
     }
@@ -160,7 +147,7 @@ public sealed class EdgeCaseEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CompletionResolve_with_out_of_range_index_is_handled_gracefully()
     {
         var payload = MessagePackSerializer.Serialize(
-            new CompletionResolveRequest { FilePath = MissingFile, Index = int.MaxValue }
+            new CompletionResolveRequest(FilePath: MissingFile, Index: int.MaxValue)
         );
         await AssertHandledGracefully("completionItem/resolve", payload);
     }

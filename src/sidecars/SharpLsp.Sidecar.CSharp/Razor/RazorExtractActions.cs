@@ -329,22 +329,31 @@ internal static class RazorExtractActions
         string newText
     )
     {
-        return new WorkspaceEditResult
-        {
-            DocumentChanges =
+        return new WorkspaceEditResult(
+            DocumentChanges:
             [
-                new DocumentEditResult
-                {
-                    FilePath = newPath,
-                    Edits = [new TextEditResult { NewText = newText }],
-                    Create = true,
-                },
-                new DocumentEditResult
-                {
-                    FilePath = razorPath,
-                    Edits = [DocumentText.ToTextEdit(razorText, change)],
-                },
-            ],
-        };
+                new DocumentEditResult(
+                    FilePath: newPath,
+                    Edits:
+                    [
+                        new TextEditResult(
+                            StartLine: 0,
+                            StartCharacter: 0,
+                            EndLine: 0,
+                            EndCharacter: 0,
+                            NewText: newText
+                        ),
+                    ],
+                    Create: true,
+                    RenameTo: null
+                ),
+                new DocumentEditResult(
+                    FilePath: razorPath,
+                    Edits: [DocumentText.ToTextEdit(razorText, change)],
+                    Create: false,
+                    RenameTo: null
+                ),
+            ]
+        );
     }
 }

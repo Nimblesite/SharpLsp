@@ -53,28 +53,26 @@ internal sealed partial class WorkspaceManager
                 ? await MarkupHighlightsAsync(filePath, symbol, ct).ConfigureAwait(false)
                 : [];
         var tags = await ComponentTagsAsync(symbol, filePath, ct).ConfigureAwait(false);
-        return new DocumentHighlightListResult
-        {
-            Highlights =
+        return new DocumentHighlightListResult(
+            Highlights:
             [
                 .. found
                     .Highlights.Concat(markup)
                     .Concat(tags.Select(TagHighlight))
                     .DistinctBy(h => (h.StartLine, h.StartCharacter, h.EndLine, h.EndCharacter)),
-            ],
-        };
+            ]
+        );
     }
 
     private static DocumentHighlightResult TagHighlight(LocationResult tag)
     {
-        return new DocumentHighlightResult
-        {
-            StartLine = tag.Line,
-            StartCharacter = tag.Character,
-            EndLine = tag.EndLine,
-            EndCharacter = tag.EndCharacter,
-            Kind = ReferenceResolver.ReadKind,
-        };
+        return new DocumentHighlightResult(
+            StartLine: tag.Line,
+            StartCharacter: tag.Character,
+            EndLine: tag.EndLine,
+            EndCharacter: tag.EndCharacter,
+            Kind: ReferenceResolver.ReadKind
+        );
     }
 
     /// <summary>The symbol a position names: the C# there, else the markup name in a Razor file.</summary>

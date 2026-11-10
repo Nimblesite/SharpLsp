@@ -62,10 +62,12 @@ remaining gaps are explicit rather than implied.
       lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
 - [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
       filesystem root) — [SCRIPT-CONE]
-- [ ] Start the second language's sidecar on demand when a document of that language is first opened
-      (still a one-shot latch, so a mixed-language folder needs a restart) — [SCRIPT-ROUTE-LAZY]
-- [ ] Deduplicate the lazy path against `start_sidecar`: the lazy path still skips analyzer
-      configuration and diagnostics wiring that the eager path performs — [SCRIPT-ROUTE-LAZY]
+- [x] Start the second language's sidecar on demand when a document of that language is first opened
+      — [SCRIPT-ROUTE-LAZY]: the latch only gates the first lazy `workspace/open`; the second language's
+      document is forwarded to its own sidecar, which starts and loads it — `lazy_routing.rs`
+      `the_second_language_starts_on_its_first_document_without_a_restart`
+- [x] Deduplicate the lazy path against `start_sidecar`: the lazy open goes through the same
+      `start_sidecar` follow-up (analyzers, diagnostics, health) as the eager path — [SCRIPT-ROUTE-LAZY]
 
 ### C# Sidecar — file-based apps
 
@@ -211,9 +213,12 @@ Coarse, real-artifact tests only — real files on disk, real Roslyn, real FCS, 
 
 Still to write:
 
-- [ ] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
-      workspace — latch regression test for [SCRIPT-ROUTE-LAZY]
-- [ ] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY]
+- [x] Host-level `src/sharplsp/tests/lsp_e2e.rs`: opening a `.md` first, then a `.cs`, still initializes the C#
+      workspace — latch regression test for [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`
+      `a_document_no_compiler_reads_leaves_the_latch_clear_and_csharp_starts_only_roslyn`
+- [x] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`,
+      counting the host's compiler children by apphost; it found both #554 (the workspace scan started FCS) and #553
+      (hover on an F# token right after another token was dropped as whitespace)
 - [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
 - [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET]
 

@@ -1,6 +1,16 @@
 import tseslint from 'typescript-eslint';
 import eslint from '@eslint/js';
 
+/** `_`-prefixed names opt out of the unused check, in source and tests alike. */
+const UNUSED_VARS = [
+  'error',
+  {
+    argsIgnorePattern: '^_',
+    varsIgnorePattern: '^_',
+    caughtErrorsIgnorePattern: '^_',
+  },
+];
+
 export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -48,14 +58,7 @@ export default tseslint.config(
       'no-void': ['error', { allowAsStatement: true }],
 
       // ── 5. No unused variables — dead code is a bug vector ─────────
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
+      '@typescript-eslint/no-unused-vars': UNUSED_VARS,
 
       // ── 6. Prefer const — immutability by default ──────────────────
       'prefer-const': 'error',
@@ -163,14 +166,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
+      '@typescript-eslint/no-unused-vars': UNUSED_VARS,
       '@typescript-eslint/require-await': 'off',
       '@typescript-eslint/dot-notation': 'off',
       '@typescript-eslint/use-unknown-in-catch-callback-variable': 'off',

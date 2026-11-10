@@ -18,7 +18,6 @@ import { CMD_TEST_DEBUG_AT_CURSOR } from '../../constants.js';
 import { DapRecorder } from './debug-dap-kit';
 import {
   CMD_CONTINUE,
-  assertStopReason,
   evaluate,
   gesture,
   localsOf,
@@ -39,7 +38,8 @@ import {
   type TestDebugFixture,
 } from './debug-test-kit';
 import {
-  debugRun,
+  breakpointStopFrame,
+  debugRunOneSession,
   useDebugTestFixture,
   firstBreakpointStop,
   caretInSource,
@@ -81,8 +81,7 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     // 2. Arm the call line and press Debug: ONE session, ATTACHED to the
     //    waiting module's pid — never launched, never the extension host.
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-call')]);
-    await debugRun([item]);
-    const session = assertOneTestSession(sessions, 'debugging an F# MTP test');
+    const session = await debugRunOneSession([item], sessions, 'debugging an F# MTP test');
     eq(session.type, DEBUG_TYPE_ID, 'the SharpLsp adapter attached');
     eq(session.configuration['request'], 'attach', 'an MTP module is attached to');
     neq(Number(session.configuration['processId']), process.pid, 'the module, not the host');
@@ -114,14 +113,14 @@ suite('Debug an F# MTP test — backtick names, theory rows and the at-cursor ge
     const api = await activateTestExplorer();
     const cachedBefore = api.testController.getResult(FS_ROWS);
     vscode.debug.addBreakpoints([breakpointAt(FS_SOURCE, fixture.sourceUri, 'fs-rows-body')]);
-    await debugRun([item]);
-    assertOneTestSession(sessions, 'debugging an F# MTP theory');
+    await debugRunOneSession([item], sessions, 'debugging an F# MTP theory');
 
     // 2. Both rows stop in the one session, each with its own [<InlineData>].
-    const first = requireAt(await recorder.waitForStops(1), 0, 'the first F# row');
-    assertStopReason(first, 'breakpoint', 'the first row of an F# MTP theory');
-    const firstActive = requireActive('the first F# row');
-    const firstFrame = await topFrame(firstActive, first.threadId);
+    const { active: firstActive, frame: firstFrame } = await breakpointStopFrame(
+      recorder,
+      1,
+      'the first row of an F# MTP theory',
+    );
     eq(firstFrame.line, FS_SOURCE.dapLine('fs-rows-body'), 'on the armed line');
     eq(methodOf(firstFrame), 'adds rows', 'in the backtick binding, by its F# name');
     const firstExpected = variableNamed(await localsOf(firstActive, firstFrame.id), 'expected');

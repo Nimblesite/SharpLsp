@@ -15,19 +15,12 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import {
-  EXTENSION_ID,
-  closeAllEditors,
-  pollProvider,
-  removeDirRecursive,
-  requireWorkspaceRoot,
-} from './test-helpers';
+import { EXTENSION_ID, pollProvider, requireWorkspaceRoot } from './test-helpers';
 import { hoverText, pollHover } from './fsharp-helpers';
-import { installUiStubs, type UiStubs } from './ui-stubs';
 import { pollTreeFor } from './explorer-kit';
 import { explorer, projectNode, symbolNodeIn } from './fsharp-project-tree-kit';
 import { compileIncludes } from './project-xml-kit';
-import { useLspTestSuite } from './lsp-suite-kit';
+import { useExplorerSuite, writeFSharpModuleSources } from './lsp-suite-kit';
 import { COMMAND_MS, FAST_MS, LSP_RESPONSE_MS, SIDECAR_COLD_MS } from './test-timeouts';
 import {
   compileIncludeOf,
@@ -40,6 +33,17 @@ const CMD_ADD_FS_FILE = 'sharplsp.addFSharpSourceFile';
 
 function uniqueToken(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Assert the fsproj's Compile order: Domain first, Main last, `between` in order.
+ */
+function assertCompileOrder(fsprojPath: string, project: string, ...between: string[]): void {
+  assert.deepStrictEqual(compileIncludes(fsprojPath), [
+    `${project}Domain.fs`,
+    ...between,
+    `${project}Main.fs`,
+  ]);
 }
 
 /** The fsproj text exactly as `dotnet new console --language F#` shapes it. */
@@ -76,14 +80,7 @@ function writeFSharpProject(
 } {
   const projDir = path.join(root, project);
   fs.mkdirSync(projDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(projDir, `${project}Domain.fs`),
-    `module ${project}Domain\n\nlet answer = 42\n`,
-  );
-  fs.writeFileSync(
-    path.join(projDir, `${project}Main.fs`),
-    `module ${project}Main\n\nlet double x = x * 2\n`,
-  );
+  writeFSharpModuleSources(projDir, project, 'let double x = x * 2\n');
   const fsprojPath = path.join(projDir, `${project}.fsproj`);
   fs.writeFileSync(fsprojPath, fsprojText(project));
   const slnPath = path.join(root, `${project}.sln`);
@@ -104,30 +101,11 @@ function writeFSharpProject(
 }
 
 suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
-  useLspTestSuite('add-fs-file-');
-  let stubs: UiStubs;
-  let created: string[];
-
-  setup(() => {
-    stubs = installUiStubs();
-    created = [];
-  });
-
-  teardown(async () => {
-    stubs.restore();
-    await closeAllEditors();
-    try {
+  const ui = useExplorerSuite('add-fs-file-', {
+    cleanup: 'best-effort',
+    reset: () => {
       explorer().clear();
-    } catch {
-      /* best-effort reset of the live solution state */
-    }
-    for (const artifact of created) {
-      try {
-        removeDirRecursive(artifact);
-      } catch {
-        /* never fail teardown over a stray temp dir */
-      }
-    }
+    },
   });
 
   /** Create + load a fresh F# project and wait for its node in the tree. */
@@ -135,7 +113,7 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     const project = `AddFs${uniqueToken()}`;
     const root = requireWorkspaceRoot();
     const { slnPath, projDir, fsprojPath } = writeFSharpProject(root, project);
-    created.push(projDir, slnPath);
+    ui().created.push(projDir, slnPath);
     const tree = explorer();
     await tree.loadSolution(slnPath);
     assert.ok(await pollTreeFor(tree, project), 'the project node must appear in the tree');
@@ -154,8 +132,19 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     const loaded = await loadProject();
     const anchor = await symbolNodeIn(loaded.fsprojPath, `${loaded.project}${file}`);
     assert.ok(anchor, 'a symbol node in the anchor file must appear');
-    stubs.queueInput(name).queuePick('No').queuePick(position);
+    ui().stubs.queueInput(name).queuePick('No').queuePick(position);
     await vscode.commands.executeCommand(CMD_ADD_FS_FILE, anchor);
+    return loaded;
+  }
+
+  /** Load a fresh project, then add a source file from its project node. */
+  async function addFromProjectNode(
+    name: string,
+    signature: 'Yes' | 'No',
+  ): Promise<{ project: string; fsprojPath: string; projDir: string }> {
+    const loaded = await loadProject();
+    ui().stubs.queueInput(name).queuePick(signature);
+    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(loaded.fsprojPath));
     return loaded;
   }
 
@@ -163,14 +152,11 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
 
   test('project node: adds .fs before the last Compile item and FCS owns it', async function () {
     this.timeout(SIDECAR_COLD_MS + LSP_RESPONSE_MS);
-    const { project, fsprojPath, projDir } = await loadProject();
-
-    stubs.queueInput('NewLogic').queuePick('No');
-    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
+    const { project, fsprojPath, projDir } = await addFromProjectNode('NewLogic', 'No');
 
     // File created on disk with the module stub, and opened in the editor.
-    if (stubs.log.errorMessages.length > 0) {
-      assert.fail(`command reported errors: ${stubs.log.errorMessages.join(' | ')}`);
+    if (ui().stubs.log.errorMessages.length > 0) {
+      assert.fail(`command reported errors: ${ui().stubs.log.errorMessages.join(' | ')}`);
     }
     const fsPath = path.join(projDir, 'NewLogic.fs');
     assert.ok(fs.existsSync(fsPath), 'NewLogic.fs must exist on disk');
@@ -183,14 +169,10 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
 
     // [SE-ADD-FILE-ORDER]: default position = before the LAST Compile item, so
     // the entry-ish Main.fs stays last.
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `${project}Domain.fs`,
-      'NewLogic.fs',
-      `${project}Main.fs`,
-    ]);
+    assertCompileOrder(fsprojPath, project, 'NewLogic.fs');
     // The prompts: one name input, one signature quickpick — no position pick.
-    assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'exactly one name prompt');
-    assert.ok(stubs.log.quickPickItems.length >= 1, 'the signature quickpick was shown');
+    assert.strictEqual(ui().stubs.log.inputBoxOptions.length, 1, 'exactly one name prompt');
+    assert.ok(ui().stubs.log.quickPickItems.length >= 1, 'the signature quickpick was shown');
 
     // Reactivity: the tree picks the new module up after the refresh.
     assert.ok(
@@ -234,15 +216,11 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     this.timeout(LSP_RESPONSE_MS);
     const { project, fsprojPath, projDir } = await insertBeside('Domain.fs', 'BelowFile', 'Below');
 
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `${project}Domain.fs`,
-      'BelowFile.fs',
-      `${project}Main.fs`,
-    ]);
+    assertCompileOrder(fsprojPath, project, 'BelowFile.fs');
     // The file lands in the anchor file's directory (the project dir here).
     assert.ok(fs.existsSync(path.join(projDir, 'BelowFile.fs')), 'created beside the anchor');
     // The position pick offered Above and Below of the anchor file.
-    const positionPick = stubs.log.quickPickItems.at(-1) as { label: string }[] | undefined;
+    const positionPick = ui().stubs.log.quickPickItems.at(-1) as { label: string }[] | undefined;
     assert.ok(
       positionPick?.some((i) => i.label.includes('Above')),
       'Above offered',
@@ -257,30 +235,18 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     this.timeout(LSP_RESPONSE_MS);
     const { project, fsprojPath } = await insertBeside('Main.fs', 'AboveFile', 'Above');
 
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `${project}Domain.fs`,
-      'AboveFile.fs',
-      `${project}Main.fs`,
-    ]);
+    assertCompileOrder(fsprojPath, project, 'AboveFile.fs');
   });
 
   // ── Interaction 3: signature pair, .fsi first ─────────────────────
 
   test('signature choice creates .fsi before .fs in compile order', async function () {
     this.timeout(LSP_RESPONSE_MS);
-    const { project, fsprojPath, projDir } = await loadProject();
-
-    stubs.queueInput('Math').queuePick('Yes');
-    await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
+    const { project, fsprojPath, projDir } = await addFromProjectNode('Math', 'Yes');
 
     assert.ok(fs.existsSync(path.join(projDir, 'Math.fsi')), 'the .fsi is created');
     assert.ok(fs.existsSync(path.join(projDir, 'Math.fs')), 'the .fs is created');
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `${project}Domain.fs`,
-      'Math.fsi',
-      'Math.fs',
-      `${project}Main.fs`,
-    ]);
+    assertCompileOrder(fsprojPath, project, 'Math.fsi', 'Math.fs');
   });
 
   // ── Interaction 4: command palette (no node) ──────────────────────
@@ -289,15 +255,11 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
     this.timeout(LSP_RESPONSE_MS);
     const { project, fsprojPath, projDir } = await loadProject();
 
-    stubs.queuePick(project).queueInput('PaletteFile').queuePick('No');
+    ui().stubs.queuePick(project).queueInput('PaletteFile').queuePick('No');
     await vscode.commands.executeCommand(CMD_ADD_FS_FILE);
 
     assert.ok(fs.existsSync(path.join(projDir, 'PaletteFile.fs')), 'created in the project root');
-    assert.deepStrictEqual(compileIncludes(fsprojPath), [
-      `${project}Domain.fs`,
-      'PaletteFile.fs',
-      `${project}Main.fs`,
-    ]);
+    assertCompileOrder(fsprojPath, project, 'PaletteFile.fs');
   });
 
   // ── Cancel path ───────────────────────────────────────────────────
@@ -316,7 +278,7 @@ suite('Solution Explorer — Add F# Source File (#493, [SE-ADD-FILE])', () => {
       this.timeout(COMMAND_MS);
       const before = fs.readFileSync(fsprojPath, 'utf-8');
 
-      stubs.queueInput('Cancelled').queuePick(undefined);
+      ui().stubs.queueInput('Cancelled').queuePick(undefined);
       await vscode.commands.executeCommand(CMD_ADD_FS_FILE, projectNode(fsprojPath));
 
       assert.strictEqual(

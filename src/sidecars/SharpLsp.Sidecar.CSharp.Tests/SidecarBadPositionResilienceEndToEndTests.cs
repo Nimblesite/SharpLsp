@@ -63,13 +63,12 @@ public sealed class SidecarBadPositionResilienceEndToEndTests(CSharpSidecarFixtu
     public async Task References_survives_out_of_range_position()
     {
         var payload = MessagePackSerializer.Serialize(
-            new ReferencesRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = OutOfRangeLine,
-                Character = 0,
-                IncludeDeclaration = true,
-            }
+            new ReferencesRequest(
+                FilePath: fixture.SourceFile,
+                Line: OutOfRangeLine,
+                Character: 0,
+                IncludeDeclaration: true
+            )
         );
         await AssertSurvivesAsync("textDocument/references", payload);
     }
@@ -78,13 +77,12 @@ public sealed class SidecarBadPositionResilienceEndToEndTests(CSharpSidecarFixtu
     public async Task Rename_survives_out_of_range_position()
     {
         var payload = MessagePackSerializer.Serialize(
-            new RenameRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = OutOfRangeLine,
-                Character = 0,
-                NewName = "Renamed",
-            }
+            new RenameRequest(
+                FilePath: fixture.SourceFile,
+                Line: OutOfRangeLine,
+                Character: 0,
+                NewName: "Renamed"
+            )
         );
         await AssertSurvivesAsync("textDocument/rename", payload);
     }
@@ -93,14 +91,13 @@ public sealed class SidecarBadPositionResilienceEndToEndTests(CSharpSidecarFixtu
     public async Task CodeAction_survives_out_of_range_range()
     {
         var payload = MessagePackSerializer.Serialize(
-            new CodeActionRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = OutOfRangeLine,
-                StartCharacter = 0,
-                EndLine = OutOfRangeLine,
-                EndCharacter = 1,
-            }
+            new CodeActionRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: OutOfRangeLine,
+                StartCharacter: 0,
+                EndLine: OutOfRangeLine,
+                EndCharacter: 1
+            )
         );
         await AssertSurvivesAsync("textDocument/codeAction", payload);
     }
@@ -109,12 +106,11 @@ public sealed class SidecarBadPositionResilienceEndToEndTests(CSharpSidecarFixtu
     public async Task InlayHint_survives_out_of_range_range()
     {
         var payload = MessagePackSerializer.Serialize(
-            new InlayHintRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = OutOfRangeLine,
-                EndLine = OutOfRangeLine + 1,
-            }
+            new InlayHintRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: OutOfRangeLine,
+                EndLine: OutOfRangeLine + 1
+            )
         );
         await AssertSurvivesAsync("textDocument/inlayHint", payload);
     }

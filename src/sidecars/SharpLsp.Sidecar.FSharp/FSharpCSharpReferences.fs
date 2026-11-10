@@ -269,6 +269,9 @@ let private buildOf (builds: CSharpBuilds) (symbol: FSharpSymbol) =
     symbol.Assembly.FileName
     |> Option.bind (fun file -> builds.Values |> Seq.tryFind (fun build -> NativePaths.AreEqual(build.Reference, file)))
 
+/// Whether a C# project of the workspace, compiled here, declares `symbol`.
+let declares (builds: CSharpBuilds) (symbol: FSharpSymbol) = (buildOf builds symbol).IsSome
+
 let private positionsOf (location: Location) =
     let span = location.GetLineSpan()
     span.Path, span.StartLinePosition.Line, span.StartLinePosition.Character, span.EndLinePosition.Line, span.EndLinePosition.Character

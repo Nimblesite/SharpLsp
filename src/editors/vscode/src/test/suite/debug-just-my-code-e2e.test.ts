@@ -1,9 +1,67 @@
 // Implements [CONFIG-DEBUG-EXCEPTIONS], [DEBUG-FEATURES-STEPPING].
 import * as assert from 'node:assert/strict';
 import { isRecord } from '../../dap-emulate';
-import { MODE, CAUGHT_TYPE } from './debug-fixture-programs';
+import { MODE, CAUGHT_TYPE, type DebugFixture } from './debug-fixture-programs';
 import { useDebuggee, debugTest } from './debug-suite-kit';
-import { withRouter } from './debug-router-kit';
+import { withRouter, type LiveRouter } from './debug-router-kit';
+
+/** Launch the library-caught fixture under Just My Code, optionally arming `anchor`. */
+async function launchJmc(
+  driver: LiveRouter,
+  fixture: DebugFixture,
+  justMyCode: boolean,
+  anchor?: string,
+): Promise<void> {
+  await driver.launch(
+    fixture,
+    MODE.libraryCaught,
+    { break_on: 'all', just_my_code: justMyCode },
+    anchor === undefined ? [] : [anchor],
+  );
+}
+
+/** Stop on the first-chance exception and read its `exceptionInfo` body. */
+async function exceptionStopInfo(
+  driver: LiveRouter,
+): Promise<{ threadId: number; body: Record<string, unknown> }> {
+  const threadId = await driver.exceptionStop();
+  const info = await driver.request('exceptionInfo', { threadId });
+  assert.ok(isRecord(info.body));
+  return { threadId, body: info.body };
+}
+
+/** Assert `threadId`'s top frame is on the fixture's DAP line for `anchor`. */
+async function assertTopLine(
+  driver: LiveRouter,
+  threadId: number,
+  fixture: DebugFixture,
+  anchor: string,
+): Promise<void> {
+  assert.equal((await driver.topStack(threadId)).line, fixture.source.dapLine(anchor));
+}
+
+/** Step once, then assert the step landed on the fixture's DAP line for `anchor`. */
+async function assertStepLandsOn(
+  driver: LiveRouter,
+  threadId: number,
+  fixture: DebugFixture,
+  anchor: string,
+): Promise<void> {
+  await driver.stopped(2, 'step');
+  await assertTopLine(driver, threadId, fixture, anchor);
+}
+
+/** Send `command`, then assert the next stop carries `reason` with `why`. */
+async function assertRequestThenStop(
+  driver: LiveRouter,
+  threadId: number,
+  command: 'next' | 'continue',
+  reason: string,
+  why: string,
+): Promise<void> {
+  assert.equal((await driver.request(command, { threadId })).success, true);
+  await driver.stopped(2, reason, why);
+}
 
 for (const language of ['fsharp', 'csharp'] as const) {
   suite(`Just My Code exceptions on ${language}`, () => {
@@ -15,22 +73,13 @@ for (const language of ['fsharp', 'csharp'] as const) {
       async () => {
         await withRouter(async (driver) => {
           const fixture = debuggee().fixture;
-          await driver.launch(fixture, MODE.libraryCaught, {
-            break_on: 'all',
-            just_my_code: false,
-          });
-          const threadId = await driver.exceptionStop();
-          const info = await driver.request('exceptionInfo', { threadId });
-          assert.ok(isRecord(info.body));
-          assert.equal(info.body.breakMode, 'always');
-          assert.match(String(info.body.description), /library-internal/);
+          await launchJmc(driver, fixture, false);
+          const { threadId, body } = await exceptionStopInfo(driver);
+          assert.equal(body.breakMode, 'always');
+          assert.match(String(body.description), /library-internal/);
           const response = await driver.request('next', { threadId });
           assert.equal(response.success, true, String(response.message));
-          await driver.stopped(2, 'step');
-          assert.equal(
-            (await driver.topStack(threadId)).line,
-            fixture.source.dapLine('after-library'),
-          );
+          await assertStepLandsOn(driver, threadId, fixture, 'after-library');
         });
       },
     );
@@ -41,24 +90,17 @@ for (const language of ['fsharp', 'csharp'] as const) {
       async () => {
         await withRouter(async (driver) => {
           const fixture = debuggee().fixture;
-          await driver.launch(
-            fixture,
-            MODE.libraryCaught,
-            { break_on: 'all', just_my_code: true },
-            ['before-library'],
-          );
+          await launchJmc(driver, fixture, true, 'before-library');
           const stopped = await driver.stopped(1, 'breakpoint');
           const threadId = Number(stopped.threadId);
-          assert.equal((await driver.request('next', { threadId })).success, true);
-          await driver.stopped(
-            2,
+          await assertRequestThenStop(
+            driver,
+            threadId,
+            'next',
             'step',
             'ignoring the library throw must preserve the pending F10',
           );
-          assert.equal(
-            (await driver.topStack(threadId)).line,
-            fixture.source.dapLine('after-library'),
-          );
+          await assertTopLine(driver, threadId, fixture, 'after-library');
         });
       },
     );
@@ -69,12 +111,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
       async () => {
         await withRouter(async (driver) => {
           const fixture = debuggee().fixture;
-          await driver.launch(
-            fixture,
-            MODE.libraryCaught,
-            { break_on: 'all', just_my_code: true },
-            ['after-library'],
-          );
+          await launchJmc(driver, fixture, true, 'after-library');
           const stop = await driver.stopped(
             1,
             'breakpoint',
@@ -82,11 +119,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           );
           const threadId = Number(stop.threadId);
           assert.equal((await driver.request('next', { threadId })).success, true);
-          await driver.stopped(2, 'step');
-          assert.equal(
-            (await driver.topStack(threadId)).line,
-            fixture.source.dapLine('step-after-library'),
-          );
+          await assertStepLandsOn(driver, threadId, fixture, 'step-after-library');
           assert.equal((await driver.request('continue', { threadId })).success, true);
           const userThrow = await driver.stopped(3, 'exception');
           const info = await driver.request('exceptionInfo', { threadId: userThrow.threadId });
@@ -107,24 +140,18 @@ for (const language of ['fsharp', 'csharp'] as const) {
       debuggee,
       async () => {
         await withRouter(async (driver) => {
-          await driver.launch(
-            debuggee().fixture,
-            MODE.libraryCaught,
-            { break_on: 'all', just_my_code: false },
-            ['after-library'],
-          );
-          const threadId = await driver.exceptionStop();
-          const info = await driver.request('exceptionInfo', { threadId });
-          assert.ok(isRecord(info.body));
+          await launchJmc(driver, debuggee().fixture, false, 'after-library');
+          const { threadId, body } = await exceptionStopInfo(driver);
           assert.equal(
-            info.body.breakMode,
+            body.breakMode,
             'always',
             'this exception has a handler; it is not a terminal crash',
           );
-          assert.match(String(info.body.description), /library-internal/);
-          assert.equal((await driver.request('continue', { threadId })).success, true);
-          await driver.stopped(
-            2,
+          assert.match(String(body.description), /library-internal/);
+          await assertRequestThenStop(
+            driver,
+            threadId,
+            'continue',
             'breakpoint',
             'continue must execute the library handler and return to our code',
           );

@@ -41,7 +41,7 @@ let private failure file (reason: string) =
     Serilog.Log.Warning("F# lint analysis failed: {FailureKind}", reason)
     { FilePath = file; StartLine = 0; StartCharacter = 0; EndLine = 0; EndCharacter = 0
       Message = "F# lint analysis did not complete. Check the lint configuration and SharpLsp output."
-      Severity = "Warning"; Code = "SLSPF0104"; HelpLink = "" }
+      Severity = "Warning"; Code = "SLSPF0104"; HelpLink = ""; Tags = [||] }
 
 /// The stable FSharpLint rule page: every FLxxxx rule is documented at this
 /// address ([DIAG-CATEGORIES-ANALYZER]).

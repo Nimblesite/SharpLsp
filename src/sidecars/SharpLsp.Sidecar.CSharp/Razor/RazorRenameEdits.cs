@@ -88,7 +88,12 @@ internal static class RazorRenameEdits
             .ToList();
         return edits.Count == 0
             ? null
-            : new DocumentEditResult { FilePath = file.Key, Edits = edits };
+            : new DocumentEditResult(
+                FilePath: file.Key,
+                Edits: edits,
+                Create: false,
+                RenameTo: null
+            );
     }
 
     /// <summary>Whether the span is one C# identifier whose semantic name matches, escapes included.</summary>

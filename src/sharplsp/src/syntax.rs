@@ -15,25 +15,24 @@ use crate::utils::usize_to_u32;
 /// Extract document symbols from a tree-sitter parse tree.
 pub fn document_symbols(tree: &Tree, source: &str) -> Vec<DocumentSymbol> {
     let root = tree.root_node();
-    let symbols = collect_symbols(root, source.as_bytes());
+    let symbols = collect_declarations(root, source.as_bytes(), &node_to_symbol);
     reparent_file_scoped_members(symbols)
 }
 
-/// Recursively collect document symbols from tree-sitter child nodes.
-fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<DocumentSymbol> {
-    let mut symbols = Vec::new();
-
+/// The declarations under `node`, in source order: every child `to_symbol`
+/// recognises becomes one entry; the rest are descended into.
+pub(crate) fn collect_declarations<T>(
+    node: Node<'_>,
+    source: &[u8],
+    to_symbol: &impl Fn(Node<'_>, &[u8]) -> Option<T>,
+) -> Vec<T> {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if let Some(sym) = node_to_symbol(child, source) {
-            symbols.push(sym);
-        } else {
-            // Recurse into nodes that aren't themselves symbols
-            symbols.extend(collect_symbols(child, source));
-        }
-    }
-
-    symbols
+    node.children(&mut cursor)
+        .flat_map(|child| match to_symbol(child, source) {
+            Some(symbol) => vec![symbol],
+            None => collect_declarations(child, source, to_symbol),
+        })
+        .collect()
 }
 
 /// Extract the symbol name and its AST node for range calculation.
@@ -91,7 +90,7 @@ fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<DocumentSymbol> {
     let range = ts_range_to_lsp(node);
     let selection_range = ts_range_to_lsp(name_node);
 
-    let children = collect_symbols(node, source);
+    let children = collect_declarations(node, source, &node_to_symbol);
 
     let children_opt = if children.is_empty() {
         None
@@ -245,10 +244,7 @@ pub fn linked_editing_ranges(
 /// caller to short-circuit hover requests with `null` before dispatching
 /// to the sidecar.
 pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
-        .is_some_and(|node| node.kind() == "comment")
+    node_under_cursor(tree, position).is_some_and(|node| node.kind() == "comment")
 }
 
 /// Whether a position has no symbol under it at all: whitespace, or a comment.
@@ -263,9 +259,7 @@ pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
 /// containing a point inside a TOKEN is that token, a leaf, while a point
 /// between tokens resolves to the enclosing construct, which has children.
 pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
+    node_under_cursor(tree, position)
         .is_some_and(|node| node.kind() == "comment" || node.child_count() > 0)
 }
 
@@ -274,24 +268,34 @@ pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
 /// Returns `true` when the position falls inside a string literal, allowing
 /// the caller to short-circuit definition requests with `null`.
 pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
-    let point = lsp_pos_to_ts_point(position);
-    tree.root_node()
-        .descendant_for_point_range(point, point)
-        .is_some_and(|node| {
-            matches!(
-                node.kind(),
-                "string_literal"
-                    | "verbatim_string_literal"
-                    | "raw_string_literal"
-                    | "interpolated_string_expression"
-                    | "interpolated_string_text"
-                    | "string_content"
-                    | "character_literal"
-            )
-        })
+    node_under_cursor(tree, position).is_some_and(|node| {
+        matches!(
+            node.kind(),
+            "string_literal"
+                | "verbatim_string_literal"
+                | "raw_string_literal"
+                | "interpolated_string_expression"
+                | "interpolated_string_text"
+                | "string_content"
+                | "character_literal"
+        )
+    })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+/// The smallest node holding the character under `position`: the span from the
+/// cursor to the next column. A zero-width point on the boundary of two adjacent
+/// tokens — the `(` and `add` of `(add 1 2)` — resolves to the construct holding
+/// both, which reads as whitespace and dropped the hover (#553).
+fn node_under_cursor(tree: &Tree, position: Position) -> Option<Node<'_>> {
+    let start = lsp_pos_to_ts_point(position);
+    let end = Point {
+        row: start.row,
+        column: start.column.saturating_add(1),
+    };
+    tree.root_node().descendant_for_point_range(start, end)
+}
 
 /// Convert a tree-sitter `Point` to an LSP `Position`.
 fn ts_point_to_lsp_pos(point: Point) -> Position {
@@ -310,7 +314,7 @@ fn lsp_pos_to_ts_point(position: Position) -> Point {
 }
 
 /// Convert a tree-sitter node's range to an LSP `Range`.
-fn ts_range_to_lsp(node: Node<'_>) -> Range {
+pub(crate) fn ts_range_to_lsp(node: Node<'_>) -> Range {
     Range {
         start: ts_point_to_lsp_pos(node.start_position()),
         end: ts_point_to_lsp_pos(node.end_position()),

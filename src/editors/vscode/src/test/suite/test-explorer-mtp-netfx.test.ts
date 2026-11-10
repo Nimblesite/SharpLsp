@@ -20,6 +20,7 @@ import {
   MTP_MSTEST_PACKAGES,
   MTP_PROPERTIES,
   MTP_XUNIT_PACKAGES,
+  type PackageRef,
   writeMtpGlobalJson,
 } from './dotnet-project-kit';
 import {
@@ -110,35 +111,65 @@ const CS_SOURCE = [
   '',
 ].join('\n');
 
-/** F# `xunit.v3`: backtick ids with SPACES, taken from the listing's `type` block. */
-const FSHARP: MtpNetfxFixture = {
-  ...fixtureNames('xunit', 'fsharp', 'MtpNetfx'),
-  language: 'fsharp',
-  packages: MTP_XUNIT_PACKAGES,
-  source: FS_SOURCE,
-  ids: {
-    passes: 'Fs.XunitMtpNetfx.Fixtures.passes on every framework',
-    failsOnNet48: 'Fs.XunitMtpNetfx.Fixtures.fails only on net48',
-    skipped: 'Fs.XunitMtpNetfx.Fixtures.skipped on every framework',
-    net48Only: 'Fs.XunitMtpNetfx.Fixtures.exists only on net framework',
-  },
-  failureText: 'Assert.Equal() Failure',
+/** Each test shape's id suffix: the F# backtick binding and the C# method. */
+const MTP_NETFX_NAMES: Readonly<Record<keyof MtpNetfxIds, readonly [fs: string, cs: string]>> = {
+  passes: ['passes on every framework', 'PassesOnEveryFramework'],
+  failsOnNet48: ['fails only on net48', 'FailsOnlyOnNet48'],
+  skipped: ['skipped on every framework', 'SkippedOnEveryFramework'],
+  net48Only: ['exists only on net framework', 'ExistsOnlyOnNetFramework'],
 };
 
-/** C# MSTest: its DISPLAY name is the bare method, its id the full name. */
-const CSHARP: MtpNetfxFixture = {
-  ...fixtureNames('mstest', 'csharp', 'MtpNetfx'),
-  language: 'csharp',
-  packages: MTP_MSTEST_PACKAGES,
-  source: CS_SOURCE,
-  ids: {
-    passes: 'Cs.MstestMtpNetfx.Fixtures.NetfxTests.PassesOnEveryFramework',
-    failsOnNet48: 'Cs.MstestMtpNetfx.Fixtures.NetfxTests.FailsOnlyOnNet48',
-    skipped: 'Cs.MstestMtpNetfx.Fixtures.NetfxTests.SkippedOnEveryFramework',
-    net48Only: 'Cs.MstestMtpNetfx.Fixtures.NetfxTests.ExistsOnlyOnNetFramework',
-  },
-  failureText: 'Assertion failed. Expected values to be equal.',
+/** The id namespace each language's tests live in — C# nests its class row. */
+const MTP_NETFX_NAMESPACES: Readonly<Record<'fsharp' | 'csharp', string>> = {
+  fsharp: 'Fs.XunitMtpNetfx.Fixtures',
+  csharp: 'Cs.MstestMtpNetfx.Fixtures.NetfxTests',
 };
+
+/** One language's MTP fixture: metadata, its source, its own failure text, four ids. */
+function mtpNetfxFixture(
+  framework: 'xunit' | 'mstest',
+  language: 'fsharp' | 'csharp',
+  packages: readonly PackageRef[],
+  source: string,
+  failureText: string,
+): MtpNetfxFixture {
+  const csharp = language === 'csharp';
+  const id = (shape: keyof MtpNetfxIds): string =>
+    csharp
+      ? `${MTP_NETFX_NAMESPACES[language]}.${MTP_NETFX_NAMES[shape][1]}`
+      : `${MTP_NETFX_NAMESPACES[language]}.${MTP_NETFX_NAMES[shape][0]}`;
+  return {
+    ...fixtureNames(framework, language, 'MtpNetfx'),
+    language,
+    packages,
+    source,
+    ids: {
+      passes: id('passes'),
+      failsOnNet48: id('failsOnNet48'),
+      skipped: id('skipped'),
+      net48Only: id('net48Only'),
+    },
+    failureText,
+  };
+}
+
+/** F# `xunit.v3`: backtick ids with SPACES, taken from the listing's `type` block. */
+const FSHARP: MtpNetfxFixture = mtpNetfxFixture(
+  'xunit',
+  'fsharp',
+  MTP_XUNIT_PACKAGES,
+  FS_SOURCE,
+  'Assert.Equal() Failure',
+);
+
+/** C# MSTest: its DISPLAY name is the bare method, its id the full name. */
+const CSHARP: MtpNetfxFixture = mtpNetfxFixture(
+  'mstest',
+  'csharp',
+  MTP_MSTEST_PACKAGES,
+  CS_SOURCE,
+  'Assertion failed. Expected values to be equal.',
+);
 
 /** F# FIRST, always. */
 const FIXTURES = [FSHARP, CSHARP];

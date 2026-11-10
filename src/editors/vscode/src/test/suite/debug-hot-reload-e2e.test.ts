@@ -15,16 +15,16 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { MODE, type DebugFixture } from './debug-fixture-programs';
-import { CMD_CONTINUE, assertStoppedAt, topFrame } from './debug-drive-kit';
+import { assertStoppedAt, topFrame } from './debug-drive-kit';
 import {
   armBreakpoints,
-  assertRanToCompletion,
   refusalsOf,
   startDebuggee,
   useDebuggee,
-  runToFirstStop,
   debugTest,
 } from './debug-suite-kit';
+import { continueToCompletion } from './debug-inspect-kit';
+import { assertSameSession, runReloading } from './debug-flow-kit';
 import { deepEq, eq, requireAt, sleep } from './test-helpers';
 
 /** Long enough for a save to reach Roslyn, produce deltas, and be applied. */
@@ -102,9 +102,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       await sleep(RELOAD_SETTLE_MS);
 
       // Interaction 3 — the SESSION must have survived the edit intact.
-      eq(
-        vscode.debug.activeDebugSession?.id,
-        session.id,
+      assertSameSession(
+        session,
         'architecture step 4: "Subsequent calls use the new IL WITHOUT INTERRUPTING THE SESSION". ' +
           'A new session id means the debuggee was restarted and the user lost their state',
       );
@@ -116,8 +115,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       eq(sessions.ours.length, 1, 'exactly one session has existed across the edit');
 
       // Interaction 4 — continue: the NEW IL must be what runs.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a hot-reloaded session');
+      await continueToCompletion(recorder, 'a hot-reloaded session');
       const output = recorder.outputText();
       assert.ok(
         output.includes('total=308'),
@@ -139,10 +137,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     debuggee,
     async ({ fixture, recorder }) => {
       // Interaction 1 — pause before the type is used.
-      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
-        mode: MODE.plain,
-        extra: { hotReload: true },
-      });
+      const { session } = await runReloading(debuggee());
 
       // Interaction 2 — add a method to the existing type, and call it.
       await rewriteLine(
@@ -158,9 +153,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       await sleep(RELOAD_SETTLE_MS);
 
       // Interaction 3 — the session must still be the same one.
-      eq(
-        vscode.debug.activeDebugSession?.id,
-        session.id,
+      assertSameSession(
+        session,
         '"Add new method to existing type" is a SUPPORTED edit on .NET 8+, so it must not force ' +
           'a restart',
       );
@@ -171,8 +165,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       );
 
       // Interaction 4 — continue: the new method must be the one that runs.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session with a newly added method');
+      await continueToCompletion(recorder, 'a session with a newly added method');
       assert.ok(
         recorder.outputText().includes('total=3008'),
         'the new method adds 1000 per iteration: 2 -> 1003 -> 2005 -> 3008. ' +
@@ -188,10 +181,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     debuggee,
     async ({ fixture, recorder, stubs, sessions }) => {
       // Interaction 1 — pause.
-      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
-        mode: MODE.plain,
-        extra: { hotReload: true },
-      });
+      const { session } = await runReloading(debuggee());
       deepEq(refusalsOf(debuggee().stubs), [], 'nothing has been reported before the edit');
 
       // Interaction 2 — change the method's SIGNATURE. The call site still
@@ -225,15 +215,13 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
       deepEq(stubs.log.infoMessages, [], 'a refused edit is not an informational notice');
 
       // Interaction 4 — the session must SURVIVE the refusal.
-      eq(
-        vscode.debug.activeDebugSession?.id,
-        session.id,
+      assertSameSession(
+        session,
         'a rude edit is refused, not fatal: killing the session on a rude edit throws away the ' +
           'state the user was inspecting without them ever choosing to restart',
       );
       eq(sessions.ours.length, 1, 'and no second session was started behind their back');
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session after a refused rude edit');
+      await continueToCompletion(recorder, 'a session after a refused rude edit');
       assert.ok(
         recorder.outputText().includes('total=8'),
         'a refused edit leaves the ORIGINAL IL running, so the original result must appear',
@@ -250,10 +238,7 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
     debuggee,
     async ({ fixture, recorder, stubs }) => {
       // Interaction 1 — run the debuggee with hot reload enabled.
-      const { session } = await runToFirstStop(debuggee(), 'accumulate-entry', {
-        mode: MODE.plain,
-        extra: { hotReload: true },
-      });
+      const { session } = await runReloading(debuggee());
 
       // Interaction 2 — save a Razor document inside the debugged project.
       // This console debuggee lists no Razor file, so the sidecar must refuse
@@ -287,13 +272,8 @@ suite('Debug hot reload — editing a method while the debuggee is paused', () =
 
       // Interaction 4 — the session SURVIVED the refusal, and the original IL
       // still runs: a refused save is a verdict, not a lost debuggee.
-      eq(
-        vscode.debug.activeDebugSession?.id,
-        session.id,
-        'an unlisted Razor save must not restart or kill the session',
-      );
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a session after an unlisted Razor save');
+      assertSameSession(session, 'an unlisted Razor save must not restart or kill the session');
+      await continueToCompletion(recorder, 'a session after an unlisted Razor save');
       assert.ok(
         recorder.outputText().includes('total=8'),
         'nothing was applied, so the original result must appear',

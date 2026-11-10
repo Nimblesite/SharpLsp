@@ -37,16 +37,21 @@ import {
 import {
   assertBreakpointsBound,
   assertCleanSession,
-  assertRanToCompletion,
   breakpointAt,
-  startDebuggee,
   useDebuggee,
   runToFirstStop,
   stopInFrame,
   debugTest,
 } from './debug-suite-kit';
+import { stopAfterLaunch } from './debug-stepping-kit';
 import { deepEq, eq, requireAt, assertContainsAll } from './test-helpers';
-import { assertValues, onlySourceBreakpoint, stepIntoAddThroughLoop } from './debug-inspect-kit';
+import {
+  assertArmedSourceLines,
+  assertValues,
+  continueToCompletion,
+  onlySourceBreakpoint,
+  stepIntoAddThroughLoop,
+} from './debug-inspect-kit';
 
 suite('Debug F# — breakpoints, stepping and exceptions', () => {
   const debuggee = useDebuggee('debug-step-fs-', 'fsharp');
@@ -67,10 +72,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 2 — F9 must create the breakpoint.
       await vscode.commands.executeCommand(CMD_TOGGLE_BREAKPOINT);
-      deepEq(
-        vscode.debug.breakpoints
-          .filter((bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint)
-          .map((bp) => bp.location.range.start.line),
+      assertArmedSourceLines(
         [fixture.source.line('main-accumulate')],
         'F9 must create an F# breakpoint. [DEBUG-FEATURES-BREAKPOINTS-CONTRIBUTION] rule 3: F# ' +
           'breakpoints working today "only by accident — the built-in ms-vscode.js-debug happens ' +
@@ -79,9 +81,11 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
       );
 
       // Interaction 3 — launch and prove the breakpoint really binds.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'an F# breakpoint must stop the debuggee');
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'an F# breakpoint must stop the debuggee',
+      );
       assertStopReason(stop, 'breakpoint', 'an F# line breakpoint');
       assertBreakpointsBound(recorder, fixture, ['main-accumulate'], 'the F# line');
       assertStoppedAt(
@@ -199,8 +203,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
       );
 
       // Interaction 3 — continue; the F# handler runs and the program finishes.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'a handled F# exception');
+      await continueToCompletion(recorder, 'a handled F# exception');
       await recorder.waitForOutput(`handled ${CAUGHT_MESSAGE}`);
       eq(
         recorder.stops().filter((stop) => stop.reason === 'exception').length,
@@ -237,8 +240,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 2 — continue; the handled `raise` must be invisible.
       const baseline = recorder.stops().length;
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'an ignored, handled F# exception');
+      await continueToCompletion(recorder, 'an ignored, handled F# exception');
       deepEq(
         recorder
           .stops()
@@ -289,9 +291,11 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 2 — the condition must reach the adapter, and the stop must
       // be the pass it names.
-      const session = await startDebuggee(debuggee(), { mode: MODE.plain });
-      const [stop] = await recorder.waitForStops(1);
-      assert.ok(stop, 'the condition holds on one F# pass, so the debuggee must stop once');
+      const { session, stop } = await stopAfterLaunch(
+        debuggee(),
+        { mode: MODE.plain },
+        'the condition holds on one F# pass, so the debuggee must stop once',
+      );
       assertStopReason(stop, 'breakpoint', 'an F# conditional breakpoint');
       eq(
         recorder.capabilities()['supportsConditionalBreakpoints'],
@@ -308,8 +312,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
 
       // Interaction 3 — the run finishes with exactly that one stop, and the F#
       // program really printed its completion line.
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'an F# conditional breakpoint');
+      await continueToCompletion(recorder, 'an F# conditional breakpoint');
       eq(
         recorder.stops().length,
         1,
@@ -448,8 +451,7 @@ suite('Debug F# — breakpoints, stepping and exceptions', () => {
         'a breakpoint added to an F# file mid-session must be pushed to the LIVE adapter, not ' +
           'queued for the next launch',
       );
-      await vscode.commands.executeCommand(CMD_CONTINUE);
-      await assertRanToCompletion(recorder, 0, 'an F# session driven from the editor');
+      await continueToCompletion(recorder, 'an F# session driven from the editor');
       eq(recorder.stops().length, 3, 'the gate, the cursor target and the added breakpoint');
       assertCleanSession(debuggee(), 'F# editor-scoped debug gestures');
       // Interaction 4 - run-to-cursor and a mid-session breakpoint are both

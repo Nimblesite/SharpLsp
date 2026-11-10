@@ -77,7 +77,16 @@ async function invokeVsTest(
   const started = Date.now();
   const timeoutMs = options.timeoutMs ?? DOTNET_TIMEOUT_MS;
   const args = vstestArgs(assemblies, ids, dir);
+  info(JSON.stringify({ event: 'frameworkRun', phase: 'vstest', state: 'started' }));
   const run = await runDotnet(args, cwd, timeoutMs, options.signal, options.hooks);
+  info(
+    JSON.stringify({
+      event: 'frameworkRun',
+      phase: 'vstest',
+      state: 'finished',
+      failed: run.failed,
+    }),
+  );
   return outcomeOf(run, dir, before, Date.now() - started);
 }
 
@@ -126,9 +135,27 @@ async function builtAssemblies(
   const assemblies: string[] = [];
   for (const project of targets) {
     if (options.signal?.aborted === true) return err('Run cancelled before building');
+    info(JSON.stringify({ event: 'frameworkRun', phase: 'build', state: 'started' }));
     const built = await buildTarget(project, dirOf(project), timeoutMs, options.signal);
+    info(
+      JSON.stringify({
+        event: 'frameworkRun',
+        phase: 'build',
+        state: 'finished',
+        failed: built.length > 0,
+      }),
+    );
     if (built.length > 0) return err(built.join('\n'));
+    info(JSON.stringify({ event: 'frameworkRun', phase: 'discovery', state: 'started' }));
     const listing = await listTests(project, timeoutMs, true);
+    info(
+      JSON.stringify({
+        event: 'frameworkRun',
+        phase: 'discovery',
+        state: 'finished',
+        failed: !listing.ok,
+      }),
+    );
     if (!listing.ok) return err(listing.warnings.join('\n'));
     assemblies.push(...assembliesOf(new FrameworkIndex(listing.byAssembly), frameworks));
   }

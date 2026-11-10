@@ -22,9 +22,7 @@ import {
   localsOf,
   frameNamesUntil,
   stepToFrame,
-  topFrame,
   variableNamed,
-  variablesOf,
   type Variable,
 } from './debug-drive-kit';
 import {
@@ -35,9 +33,22 @@ import {
   runToFirstFrame,
   debugTest,
 } from './debug-suite-kit';
-import { deepEq, eq, neq, assertContainsAll } from './test-helpers';
+import { deepEq, eq, assertContainsAll } from './test-helpers';
 import { assertAnswered, assertSessionEnded, assertAdapterAlive } from './debug-dap-kit';
 import { assertValues, assertEvaluatesEverywhere } from './debug-inspect-kit';
+import {
+  assertExpandedContains,
+  assertExpandedValue,
+  assertLocalNamed,
+  assertLocalsInclude,
+  assertPausedQuietly,
+  assertRequested,
+  assertStopsNamedThreads,
+  expandLocal,
+  runToLocals,
+  stopForLocals,
+  topFrameLocals,
+} from './debug-inspection-flow-kit';
 
 /** CLR spellings [DEBUG-FSHARP-UNIONS] names as the wrong answer. */
 const RAW_CLR_FORMS: readonly string[] = ['Tag =', 'Tag=', 'FSharpOption`1', 'FSharpList`1'];
@@ -71,17 +82,17 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     debuggee,
     async ({ recorder }) => {
       // Interaction 1 — stop once every F# value in `main` is bound.
-      const { session, frame } = await stopInFrame(
+      const { session, locals } = await stopForLocals(
         debuggee(),
         'main-print',
         'main',
         'the F# inspection frame',
       );
-      const locals = await localsOf(session, frame.id);
-      const names = locals.map((local) => local.name).sort();
-      assert.ok(
-        ['maybe', 'numbers', 'pair', 'point', 'shape', 'total'].every((w) => names.includes(w)),
-        `every F# binding in scope must be listed; the panel offered: ${names.join(', ')}`,
+      assertLocalsInclude(
+        locals,
+        ['maybe', 'numbers', 'pair', 'point', 'shape', 'total'],
+        'every F# binding in scope must be listed;',
+        'the panel offered: ',
       );
 
       // Interaction 2 — the DU case must be named, with its fields.
@@ -96,19 +107,14 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       assertFSharpRendering(variableNamed(locals, 'maybe'), ['Some', '42'], 'the option');
 
       // Interaction 4 — the case's fields must still be reachable underneath.
-      const expandable = shape.reference > 0;
-      assert.ok(
-        expandable,
+      const { children: fields } = await expandLocal(
+        session,
+        locals,
+        'shape',
         'an F# DU value must remain EXPANDABLE: the F# rendering replaces the summary line, it ' +
           'does not remove access to the case fields',
       );
-      const fields = await variablesOf(session, shape.reference);
-      assert.ok(
-        fields.some((field) => field.value === '3'),
-        `the DU’s named fields must be inspectable; expansion produced: ${fields
-          .map((field) => `${field.name}=${field.value}`)
-          .join(', ')}`,
-      );
+      assertExpandedValue(fields, '3', 'the DU’s named fields must be inspectable', 'name=value');
       assertCleanSession(debuggee(), 'inspecting an F# union');
       // Interaction 4 - F# rendering is a REWRITE of the `variables` response, so
       // the response has to have happened and been answered.
@@ -118,8 +124,12 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
         true,
         'with the type column advertised for F# too',
       );
-      eq(recorder.stops().length, 1, 'reading variables never resumes an F# debuggee either');
-      deepEq(recorder.errors, [], 'and with no adapter transport error');
+      assertPausedQuietly(
+        recorder,
+        1,
+        'reading variables never resumes an F# debuggee either',
+        'and with no adapter transport error',
+      );
     },
   );
 
@@ -129,41 +139,39 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     debuggee,
     async ({ recorder }) => {
       // Interaction 1 — stop with the record, tuple and list all bound.
-      const { session, frame } = await runToFirstFrame(debuggee(), 'main-print');
-      const locals = await localsOf(session, frame.id);
+      const { session, frame, locals } = await runToLocals(debuggee(), 'main-print');
 
       // Interaction 2 — the record's fields carry the computed values.
-      const point = variableNamed(locals, 'point');
-      assert.ok(point.reference > 0, 'an F# record must be expandable');
-      const fields = await variablesOf(session, point.reference);
+      const { children: fields } = await expandLocal(
+        session,
+        locals,
+        'point',
+        'an F# record must be expandable',
+      );
       assertValues(fields, [
         ['X', '8', '`accumulate 2` produces 8, so the record field X must read 8'],
         ['Y', '12', '`area (Rect(3, 4))` is 12, so the record field Y must read 12'],
       ]);
 
       // Interaction 3 — the tuple's elements.
-      const pair = variableNamed(locals, 'pair');
-      assert.ok(pair.reference > 0, 'an F# tuple must be expandable');
-      const elements = await variablesOf(session, pair.reference);
-      assert.ok(
-        elements.some((element) => element.value === '8'),
-        `the tuple’s first element must be 8; expansion produced: ${elements
-          .map((element) => element.value)
-          .join(', ')}`,
+      const { children: elements } = await expandLocal(
+        session,
+        locals,
+        'pair',
+        'an F# tuple must be expandable',
       );
-      assert.ok(
-        elements.some((element) => element.value.includes('boxed')),
-        'and its second element must be the string',
-      );
+      assertExpandedValue(elements, '8', 'the tuple’s first element must be 8', 'value');
+      assertExpandedContains(elements, 'boxed', 'and its second element must be the string');
 
       // Interaction 4 — the F# list must expand to its three items.
       const numbers = variableNamed(locals, 'numbers');
-      assert.ok(
-        numbers.reference > 0,
+      const { children: items } = await expandLocal(
+        session,
+        locals,
+        'numbers',
         '"Collection/array expansion" is P1 and an F# list is the collection F# users hit ' +
           `first; it rendered as '${numbers.value}' with no children`,
       );
-      const items = await variablesOf(session, numbers.reference);
       deepEq(
         ['10', '20', '30'].filter((value) => items.some((item) => item.value.includes(value))),
         ['10', '20', '30'],
@@ -181,13 +189,14 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       assertCleanSession(debuggee(), 'inspecting F# records, tuples and lists');
       // Interaction 4 - records, tuples and lists are all EXPANDABLE, which means
       // more than one `variables` round trip against nested handles.
-      assert.ok(
-        recorder.requests('variables').length >= 2,
-        'the panel expanded at least one F# value',
-      );
+      assertRequested(recorder, 'variables', 2, 'the panel expanded at least one F# value');
       assertAnswered(recorder, 'scopes', 'after resolving the frame scopes');
-      eq(recorder.stops().length, 1, 'with the debuggee paused throughout');
-      deepEq(recorder.errors, [], 'and no adapter transport error');
+      assertPausedQuietly(
+        recorder,
+        1,
+        'with the debuggee paused throughout',
+        'and no adapter transport error',
+      );
     },
   );
 
@@ -232,9 +241,9 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       );
 
       // Interaction 4 — the innermost frame's own state must be readable.
-      const frame = await topFrame(session, stop.threadId);
+      const { locals } = await topFrameLocals(session, stop);
       eq(
-        variableNamed(await localsOf(session, frame.id), 'seed').value,
+        variableNamed(locals, 'seed').value,
         '1',
         'the `task {}` frame’s bindings must be inspectable; hoisted state-machine locals that ' +
           'cannot be read make F# async debugging useless',
@@ -244,10 +253,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       // Interaction 4 - an F# `task {}` chain is a state machine, so the stack
       // read is where the logical reconstruction has to happen.
       assertAnswered(recorder, 'stackTrace', 'the async stack was really read');
-      assert.ok(
-        recorder.requests('threads').length >= 1,
-        'against a thread the adapter enumerated',
-      );
+      assertRequested(recorder, 'threads', 1, 'against a thread the adapter enumerated');
       assertSessionEnded(recorder, 'the session ended at most once');
     },
   );
@@ -302,10 +308,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       // Interaction 4 - "ONE F11, not two" is a claim about STEP requests: two
       // step requests for one gesture is the state-machine hop leaking through.
       assertAnswered(recorder, 'stepIn', 'the step into really reached the adapter');
-      assert.ok(
-        recorder.stops().every((entry) => entry.threadId !== 0),
-        'every stop named its thread',
-      );
+      assertStopsNamedThreads(recorder, 'every stop named its thread');
       assertSessionEnded(recorder, 'the session ended at most once');
     },
   );
@@ -319,24 +322,27 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
     debuggee,
     async ({ recorder }) => {
       // Interaction 1 — stop where every F# shape the fixture builds is bound.
-      const { session, frame } = await stopInFrame(
+      const { session, frame, locals } = await stopForLocals(
         debuggee(),
         'main-print',
         'main',
         'the F# inspection frame',
       );
-      const locals = await localsOf(session, frame.id);
       for (const name of ['point', 'pair', 'numbers', 'maybe', 'shape']) {
-        assert.ok(
-          locals.map((local) => local.name).includes(name),
+        assertLocalNamed(
+          locals,
+          name,
           'the F# binding ' + name + ' must appear in the Variables panel under its own name',
         );
       }
 
       // Interaction 2 — the RECORD expands to its declared fields, by name.
-      const point = variableNamed(locals, 'point');
-      neq(point.reference, 0, 'an F# record must be expandable, or its fields are unreachable');
-      const fields = await variablesOf(session, point.reference);
+      const { children: fields } = await expandLocal(
+        session,
+        locals,
+        'point',
+        'an F# record must be expandable, or its fields are unreachable',
+      );
       const fieldNames = fields.map((field) => field.name);
       assertContainsAll(fieldNames, ['X', 'Y'], 'fieldNames');
       assertValues(fields, [
@@ -352,21 +358,21 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
 
       // Interaction 3 — the TUPLE and the LIST expand too, and an evaluation of
       // the same path agrees with the expansion.
-      const pair = variableNamed(locals, 'pair');
-      neq(pair.reference, 0, 'an F# tuple must be expandable');
-      const items = await variablesOf(session, pair.reference);
+      const { children: items } = await expandLocal(
+        session,
+        locals,
+        'pair',
+        'an F# tuple must be expandable',
+      );
       assert.ok(items.length >= 2, 'a two-element tuple exposes at least its two elements');
-      assert.ok(
-        items.some((item) => item.value.includes('8')),
-        'carrying the first component the program bound',
+      assertExpandedContains(items, '8', 'carrying the first component the program bound');
+      assertExpandedContains(items, 'boxed', 'and the second');
+      const { children: elements } = await expandLocal(
+        session,
+        locals,
+        'numbers',
+        'an F# list must be expandable',
       );
-      assert.ok(
-        items.some((item) => item.value.includes('boxed')),
-        'and the second',
-      );
-      const numbers = variableNamed(locals, 'numbers');
-      neq(numbers.reference, 0, 'an F# list must be expandable');
-      const elements = await variablesOf(session, numbers.reference);
       assert.ok(
         elements.length >= 1,
         'an F# list must expose its elements - a list that shows a length and no items is the ' +
@@ -381,10 +387,7 @@ suite('Debug F# — unions, records, tuples and task {} stacks', () => {
       // Interaction 5 - the whole expansion sweep happened against ONE paused F#
       // frame, and every nested read was answered.
       assertAnswered(recorder, 'variables', 'a record, a tuple and a list were each expanded', 3);
-      assert.ok(
-        recorder.requests('evaluate').length >= 1,
-        'with at least one watch cross-checking the panel',
-      );
+      assertRequested(recorder, 'evaluate', 1, 'with at least one watch cross-checking the panel');
       eq(recorder.stops().length, 1, 'and the debuggee paused throughout');
       deepEq(recorder.exits, [], 'with the adapter process alive');
     },

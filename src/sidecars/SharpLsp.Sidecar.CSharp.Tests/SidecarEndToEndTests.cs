@@ -328,12 +328,7 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
     public byte[] PosPayload(int line, int character)
     {
         return MessagePackSerializer.Serialize(
-            new PositionRequest
-            {
-                FilePath = SourceFile,
-                Line = line,
-                Character = character,
-            }
+            new PositionRequest(FilePath: SourceFile, Line: line, Character: character)
         );
     }
 
@@ -341,12 +336,7 @@ public sealed class CSharpSidecarFixture : IAsyncLifetime
     public static byte[] PosFor(string filePath, int line, int character)
     {
         return MessagePackSerializer.Serialize(
-            new PositionRequest
-            {
-                FilePath = filePath,
-                Line = line,
-                Character = character,
-            }
+            new PositionRequest(FilePath: filePath, Line: line, Character: character)
         );
     }
 
@@ -687,7 +677,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
             }
             """;
         var payload = MessagePackSerializer.Serialize(
-            new DidChangeRequest { FilePath = fixture.SourceFile, NewText = newSource }
+            new DidChangeRequest(FilePath: fixture.SourceFile, NewText: newSource)
         );
         var r = await fixture.SendAsync("textDocument/didChange", payload);
         Assert.Null(r.Error);
@@ -695,11 +685,10 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
 
         await fixture.SendAndAssertOkAsync(
             "textDocument/didChange",
-            new DidChangeRequest
-            {
-                FilePath = fixture.SourceFile,
-                NewText = CSharpSidecarFixture.InitialSource,
-            }
+            new DidChangeRequest(
+                FilePath: fixture.SourceFile,
+                NewText: CSharpSidecarFixture.InitialSource
+            )
         );
     }
 
@@ -708,13 +697,12 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     {
         var loc = await fixture.SendAndDeserializeAsync<ReferencesRequest, LocationListResult>(
             "textDocument/references",
-            new ReferencesRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 9,
-                Character = 15,
-                IncludeDeclaration = true,
-            }
+            new ReferencesRequest(
+                FilePath: fixture.SourceFile,
+                Line: 9,
+                Character: 15,
+                IncludeDeclaration: true
+            )
         );
         Assert.NotEmpty(loc.Locations);
     }
@@ -724,12 +712,7 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/documentHighlight",
-            new PositionRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 9,
-                Character = 15,
-            }
+            new PositionRequest(FilePath: fixture.SourceFile, Line: 9, Character: 15)
         );
     }
 

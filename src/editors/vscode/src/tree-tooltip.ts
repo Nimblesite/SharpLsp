@@ -1,5 +1,5 @@
 import { MarkdownString } from 'vscode';
-import { type ExplorerNode } from './tree.js';
+import { type ExplorerNode } from './tree-nodes.js';
 
 // ── Tooltip ──────────────────────────────────────────────────────
 

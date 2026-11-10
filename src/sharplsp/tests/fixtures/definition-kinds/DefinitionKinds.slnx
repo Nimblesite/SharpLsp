@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CsPartials/CsPartials.csproj" />
+  <Project Path="FsKinds/FsKinds.fsproj" />
+</Solution>

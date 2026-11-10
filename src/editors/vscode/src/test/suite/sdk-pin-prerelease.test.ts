@@ -1,11 +1,6 @@
 import * as assert from 'node:assert/strict';
-import {
-  type SdkPin,
-  parseSdkVersion,
-  pinSatisfiedBy,
-  runtimeFloorMet,
-  sdkSatisfiesPin,
-} from '../../global-json.js';
+import { type SdkPin, parseSdkVersion } from '../../global-json.js';
+import { assertFloorMet, assertPinSatisfiedBy, assertSdkSatisfies } from './sdk-pin-kit';
 
 /**
  * Where a prerelease sits, asked of both halves of the SDK question.
@@ -37,24 +32,28 @@ suite('prerelease ordering decides both the floor and the pin', () => {
 
     // Every case below was measured against the real staged sidecar DLL on a
     // composed root carrying exactly one Microsoft.NETCore.App directory.
-    assert.equal(
-      runtimeFloorMet(['10.0.0-rc.2'], '10.0.0'),
+    assertFloorMet(
+      ['10.0.0-rc.2'],
+      '10.0.0',
       false,
       'measured: a 10.0.0-rc.2-only root exits 150 — a prerelease is below its own release',
     );
-    assert.equal(
-      runtimeFloorMet(['9.0.14'], '10.0.0'),
+    assertFloorMet(
+      ['9.0.14'],
+      '10.0.0',
       false,
       'measured: a 9-only root exits 150, which is issue #297 itself',
     );
-    assert.equal(runtimeFloorMet(['10.0.7'], '10.0.0'), true, 'measured: starts both sidecars');
-    assert.equal(
-      runtimeFloorMet(['10.0.99-rc.1'], '10.0.0'),
+    assertFloorMet(['10.0.7'], '10.0.0', true, 'measured: starts both sidecars');
+    assertFloorMet(
+      ['10.0.99-rc.1'],
+      '10.0.0',
       true,
       'measured: a prerelease ABOVE the floor starts them — the rule is ordering, not a "-" test',
     );
-    assert.equal(
-      runtimeFloorMet(['11.0.0-preview.1'], '10.0.0'),
+    assertFloorMet(
+      ['11.0.0-preview.1'],
+      '10.0.0',
       true,
       'measured: RollForward=LatestMajor makes the floor upward-open, so 11.x hosts them',
     );
@@ -65,28 +64,33 @@ suite('prerelease ordering decides both the floor and the pin', () => {
     // root advertising exactly `10.0.99+x1`: `dotnet --list-runtimes` reports
     // it and the real C# sidecar exits 0. A floor that rejects it discards a
     // host that demonstrably works, which is #297's harm with the sign flipped.
-    assert.equal(
-      runtimeFloorMet(['10.0.99+x1'], '10.0.0'),
+    assertFloorMet(
+      ['10.0.99+x1'],
+      '10.0.0',
       true,
       'measured: a 10.0.99+x1-only root STARTS the sidecars, so the floor must accept it',
     );
-    assert.equal(
-      runtimeFloorMet(['10.0.0+x1'], '10.0.0'),
+    assertFloorMet(
+      ['10.0.0+x1'],
+      '10.0.0',
       true,
       'build metadata carries no precedence: 10.0.0+x1 IS the release 10.0.0, not below it',
     );
-    assert.equal(
-      runtimeFloorMet(['10.0.0+build-5'], '10.0.0'),
+    assertFloorMet(
+      ['10.0.0+build-5'],
+      '10.0.0',
       true,
       'build metadata may itself contain "-", so the prerelease test must run after it is cut',
     );
-    assert.equal(
-      runtimeFloorMet(['10.0.0-rc.1+sha.abc'], '10.0.0'),
+    assertFloorMet(
+      ['10.0.0-rc.1+sha.abc'],
+      '10.0.0',
       false,
       'a prerelease stays below its release however much build metadata follows it',
     );
-    assert.equal(
-      runtimeFloorMet(['9.0.14+x1'], '10.0.0'),
+    assertFloorMet(
+      ['9.0.14+x1'],
+      '10.0.0',
       false,
       'stripping build metadata must not promote a 9.x runtime over the floor',
     );
@@ -102,19 +106,22 @@ suite('prerelease ordering decides both the floor and the pin', () => {
     );
 
     // A root is judged on its best runtime, not its first or its worst.
-    assert.equal(
-      runtimeFloorMet(['9.0.14', '10.0.7'], '10.0.0'),
+    assertFloorMet(
+      ['9.0.14', '10.0.7'],
+      '10.0.0',
       true,
       'the two-root macOS machine: 9 and 10 side by side still hosts the sidecars',
     );
-    assert.equal(
-      runtimeFloorMet(['9.0.14', '10.0.0-rc.2'], '10.0.0'),
+    assertFloorMet(
+      ['9.0.14', '10.0.0-rc.2'],
+      '10.0.0',
       false,
       'neither a 9 nor a below-floor prerelease can host them, so the root cannot',
     );
-    assert.equal(runtimeFloorMet([], '10.0.0'), false, 'a root with no runtime hosts nothing');
-    assert.equal(
-      runtimeFloorMet(['not.a.version'], '10.0.0'),
+    assertFloorMet([], '10.0.0', false, 'a root with no runtime hosts nothing');
+    assertFloorMet(
+      ['not.a.version'],
+      '10.0.0',
       false,
       'an unreadable runtime directory is not evidence of capability',
     );
@@ -142,41 +149,47 @@ suite('prerelease ordering decides both the floor and the pin', () => {
       'latestMinor',
       'latestMajor',
     ] as const) {
-      assert.equal(
-        sdkSatisfiesPin('10.0.100-rc.1', gaPin(rollForward)),
+      assertSdkSatisfies(
+        '10.0.100-rc.1',
+        gaPin(rollForward),
         false,
         `${rollForward}: rc.1 sorts below the 10.0.100 it pins, so it can never satisfy it — ` +
           'selecting that root hands every build exit 155',
       );
     }
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.1+x1', gaPin('latestPatch')),
+    assertSdkSatisfies(
+      '10.0.100-rc.1+x1',
+      gaPin('latestPatch'),
       false,
       'build metadata carries no precedence, so it cannot lift a prerelease onto its release',
     );
-    assert.equal(
-      pinSatisfiedBy(['10.0.100-rc.1'], gaPin('latestPatch')),
+    assertPinSatisfiedBy(
+      ['10.0.100-rc.1'],
+      gaPin('latestPatch'),
       false,
       'and a root carrying only that prerelease does not satisfy the pin either',
     );
 
     // The rule is ORDERING, not a "-" test: everything genuinely at or above
     // the pin must still pass, or this trades one wrong answer for another.
-    assert.equal(sdkSatisfiesPin('10.0.100', gaPin('latestPatch')), true, 'the release itself');
-    assert.equal(sdkSatisfiesPin('10.0.107', gaPin('latestPatch')), true, 'a later patch');
-    assert.equal(sdkSatisfiesPin('10.0.303', gaPin('latestFeature')), true, 'a later band');
-    assert.equal(
-      sdkSatisfiesPin('10.0.303-rc.1', gaPin('latestFeature')),
+    assertSdkSatisfies('10.0.100', gaPin('latestPatch'), true, 'the release itself');
+    assertSdkSatisfies('10.0.107', gaPin('latestPatch'), true, 'a later patch');
+    assertSdkSatisfies('10.0.303', gaPin('latestFeature'), true, 'a later band');
+    assertSdkSatisfies(
+      '10.0.303-rc.1',
+      gaPin('latestFeature'),
       true,
       'a prerelease of a LATER band is still above the pin — only the tie was ever wrong',
     );
-    assert.equal(
-      sdkSatisfiesPin('10.0.100', { ...gaPin('latestPatch'), version: '10.0.100-rc.1' }),
+    assertSdkSatisfies(
+      '10.0.100',
+      { ...gaPin('latestPatch'), version: '10.0.100-rc.1' },
       true,
       'and the release satisfies a pin on its own prerelease, which is the same rule inverted',
     );
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.1', { ...gaPin('disable'), version: '10.0.100-rc.1' }),
+    assertSdkSatisfies(
+      '10.0.100-rc.1',
+      { ...gaPin('disable'), version: '10.0.100-rc.1' },
       true,
       'rollForward=disable stays an exact string match, prerelease or not',
     );
@@ -203,24 +216,28 @@ suite('prerelease ordering decides both the floor and the pin', () => {
       ['10.0.100-rc', '10.0.100-rc.1'],
     ];
     for (const [lower, higher] of ordered) {
-      assert.equal(
-        sdkSatisfiesPin(lower, pin(higher)),
+      assertSdkSatisfies(
+        lower,
+        pin(higher),
         false,
         `${lower} sorts below ${higher}, so it cannot satisfy a pin on it`,
       );
-      assert.equal(
-        sdkSatisfiesPin(higher, pin(lower)),
+      assertSdkSatisfies(
+        higher,
+        pin(lower),
         true,
         `and ${higher} is above ${lower}, so it must satisfy a pin on it`,
       );
     }
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.2', pin('10.0.100-rc.2')),
+    assertSdkSatisfies(
+      '10.0.100-rc.2',
+      pin('10.0.100-rc.2'),
       true,
       'a prerelease satisfies a pin on itself',
     );
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.2+x1', pin('10.0.100-rc.2')),
+    assertSdkSatisfies(
+      '10.0.100-rc.2+x1',
+      pin('10.0.100-rc.2'),
       true,
       'build metadata carries no precedence between prereleases either',
     );
@@ -248,13 +265,15 @@ suite('prerelease ordering decides both the floor and the pin', () => {
     // the wrong classifier would coincidentally agree and the test would pass
     // while proving nothing.
     for (const identifier of ['0x10', '1e3', '0b11', '0o17', '-1', '  ']) {
-      assert.equal(
-        sdkSatisfiesPin(`10.0.100-${identifier}`, pin('10.0.100-9999')),
+      assertSdkSatisfies(
+        `10.0.100-${identifier}`,
+        pin('10.0.100-9999'),
         true,
         `"${identifier}" is alphanumeric under semver, so it outranks numeric 9999`,
       );
-      assert.equal(
-        sdkSatisfiesPin('10.0.100-9999', pin(`10.0.100-${identifier}`)),
+      assertSdkSatisfies(
+        '10.0.100-9999',
+        pin(`10.0.100-${identifier}`),
         false,
         `and numeric 9999 therefore sits below "${identifier}"`,
       );
@@ -265,25 +284,29 @@ suite('prerelease ordering decides both the floor and the pin', () => {
     // that it does not silently TIE `rc.0`, which is what reading it as
     // `Number('') === 0` did. It falls to the non-numeric side and therefore
     // outranks the numeric `0`, deterministically and in one direction only.
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.', pin('10.0.100-rc.0')),
+    assertSdkSatisfies(
+      '10.0.100-rc.',
+      pin('10.0.100-rc.0'),
       true,
       'an empty identifier is not numeric, so it outranks the numeric 0',
     );
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.0', pin('10.0.100-rc.')),
+    assertSdkSatisfies(
+      '10.0.100-rc.0',
+      pin('10.0.100-rc.'),
       false,
       'and the ordering is strict: rc.0 does not also satisfy a pin on rc.',
     );
 
     // Genuine numeric identifiers must still compare by value, not as text.
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.10', pin('10.0.100-rc.9')),
+    assertSdkSatisfies(
+      '10.0.100-rc.10',
+      pin('10.0.100-rc.9'),
       true,
       'rc.10 is above rc.9: real numeric identifiers compare numerically',
     );
-    assert.equal(
-      sdkSatisfiesPin('10.0.100-rc.9', pin('10.0.100-rc.10')),
+    assertSdkSatisfies(
+      '10.0.100-rc.9',
+      pin('10.0.100-rc.10'),
       false,
       'and rc.9 is below rc.10, which a lexical comparison would reverse',
     );

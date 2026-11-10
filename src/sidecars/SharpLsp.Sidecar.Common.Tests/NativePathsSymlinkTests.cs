@@ -102,6 +102,42 @@ public sealed class NativePathsSymlinkTests : IDisposable
         Assert.False(NativePaths.ResolvedSegments.ContainsKey(linkedFile));
     }
 
+    /// <summary>
+    /// Missing paths are never memoized, so every lookup asks the disk. Per-document scans
+    /// compare unbuilt outputs and source-generated paths on every request, and asking about
+    /// every missing segment, twice each, timed out Windows suites (849e1cd4). Nothing exists
+    /// beneath a missing directory: one probe answers, and a link created there is followed at once.
+    /// </summary>
+    [Fact]
+    public void A_path_beneath_a_missing_directory_costs_one_probe_and_follows_a_new_link_at_once()
+    {
+        var unbuilt = NativePaths.Join(root, "unbuilt");
+        var output = NativePaths.Join(unbuilt, "obj", "Debug", "net10.0", "App.dll");
+        Assert.Equal(output, NativePaths.WithLinksResolved(output));
+        const int lookups = 1_000;
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var probes = CountProbes(() =>
+            Assert.True(
+                Enumerable
+                    .Range(0, lookups)
+                    .All(_ => NativePaths.WithLinksResolved(output) == output)
+            )
+        );
+        var lifetimes = 1 + (int)(timer.Elapsed / NativePaths.ResolvedLifetime);
+        Assert.True(probes >= lookups, $"a missing path must never be memoized: {probes}");
+        Assert.True(probes <= lookups + lifetimes, $"{probes} disk probes for {lookups} lookups");
+        Assert.False(NativePaths.ResolvedSegments.ContainsKey(output));
+        Assert.False(NativePaths.ResolvedSegments.ContainsKey(unbuilt));
+
+        _ = Directory.CreateSymbolicLink(unbuilt, "physical");
+        var built = NativePaths.Join(physical, "obj", "Debug", "net10.0", "App.dll");
+        Assert.Equal(built, NativePaths.WithLinksResolved(output));
+        Assert.True(
+            NativePaths.AreEqual(output, NativePaths.Join(alias, "obj/Debug/net10.0/App.dll"))
+        );
+        Assert.Equal(physical, NativePaths.WithLinksResolved(unbuilt));
+    }
+
     /// <summary>How many disk probes <paramref name="lookups"/> makes for paths under this test's root.</summary>
     private int CountProbes(Action lookups)
     {

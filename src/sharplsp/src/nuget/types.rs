@@ -253,13 +253,13 @@ pub struct InstallParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Response for the `sharplsp/nuget/install` request.
-pub struct InstallResponse {
-    /// Whether the install operation succeeded.
+/// Response for the `sharplsp/nuget/install` and `sharplsp/nuget/uninstall` requests.
+pub struct PackageEditResponse {
+    /// Whether the edit succeeded.
     pub success: bool,
     /// Human-readable status message.
     pub message: String,
-    /// Paths of files modified by the install.
+    /// Paths of files the edit modified.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modified_files: Vec<String>,
 }
@@ -278,19 +278,6 @@ pub struct UninstallParams {
     pub project_path: Option<String>,
     /// Package identifier to remove.
     pub package_id: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Response for the `sharplsp/nuget/uninstall` request.
-pub struct UninstallResponse {
-    /// Whether the uninstall operation succeeded.
-    pub success: bool,
-    /// Human-readable status message.
-    pub message: String,
-    /// Paths of files modified by the uninstall.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub modified_files: Vec<String>,
 }
 
 // ── sharplsp/nuget/unused ──────────────────────────────────────────

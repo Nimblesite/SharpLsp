@@ -330,16 +330,6 @@ let supertypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line chara
             return []
     }
 
-/// Whether `candidate` directly derives from / implements `target`.
-let private derivesFrom (target: FSharpEntity) (candidate: FSharpEntity) : bool =
-    let matches (ty: FSharpType) =
-        ty.HasTypeDefinition && target.IsEffectivelySameAs(ty.TypeDefinition :> FSharpSymbol)
-    let baseMatch =
-        match candidate.BaseType with
-        | Some bt -> matches bt
-        | None -> false
-    baseMatch || (candidate.DeclaredInterfaces |> Seq.exists matches)
-
 /// Get subtypes: project entities whose base type or interfaces include the target.
 let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
     task {
@@ -368,7 +358,7 @@ let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line charact
 
                     return
                         entities
-                        |> Seq.filter (derivesFrom target)
+                        |> Seq.filter (FSharpImplementations.derivesFrom target)
                         |> Seq.choose (fun ent -> itemOfSymbol (ent :> FSharpSymbol))
                         |> List.ofSeq
         with ex ->

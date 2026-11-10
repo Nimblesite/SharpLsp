@@ -1,6 +1,7 @@
 // Walking an extension tree (Solution Explorer, profiler) the way a user reads
 // it: by the label a row shows, or by the context value its menus key on.
 // Implements [SHARPLSP-FEATURES-NAVIGATION] test support.
+import * as assert from 'node:assert/strict';
 
 /** What a row shows: a plain label, or a `TreeItemLabel`. */
 export interface Labelled {
@@ -57,4 +58,46 @@ export function walkTree<N extends TreeShape<N>>(
     visit(node);
     walkTree(node.children, visit);
   }
+}
+
+/** Every node at or below `nodes`, roots before their children. */
+export function collectNodes<N extends TreeShape<N>>(nodes: readonly N[] | undefined): N[] {
+  const collected: N[] = [];
+  walkTree(nodes, (node) => collected.push(node));
+  return collected;
+}
+
+/** A predicate accepting a node labelled with `label` that also carries `contextValue`. */
+export function labelledSymbol<N extends TreeShape<N>>(
+  label: string,
+  contextValue: string,
+): (node: N) => boolean {
+  return (node) => nodeLabel(node).includes(label) && node.contextValue === contextValue;
+}
+
+/** The first node `predicate` accepts, asserted present so callers hold a non-optional node. */
+export function requireNodeWhere<N extends TreeShape<N>>(
+  nodes: readonly N[] | undefined,
+  predicate: (node: N) => boolean,
+  why: string,
+): N {
+  const node = findNode(nodes, predicate);
+  assert.ok(node, why);
+  return node;
+}
+
+/**
+ * Assert `nodes` was selected non-empty and that `check` rejects NONE of them,
+ * naming every offender `check` describes and the contract it breaks, `why`.
+ */
+export function assertAllNodes<N>(
+  nodes: readonly N[],
+  check: (node: N) => string | undefined,
+  why: string,
+): void {
+  assert.ok(nodes.length > 0, `${why}: the tree must hold at least one of these nodes`);
+  const offenders = nodes
+    .map((node) => check(node))
+    .filter((text): text is string => text !== undefined);
+  assert.deepEqual(offenders, [], `${why}: ${offenders.join(', ')}`);
 }

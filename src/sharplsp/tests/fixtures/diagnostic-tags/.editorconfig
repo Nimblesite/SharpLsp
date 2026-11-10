@@ -1,0 +1,6 @@
+root = true
+
+# Promote the unused-code IDE rules so the editor reports them ([DIAG-CATEGORIES-TAGS]).
+[*.cs]
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0051.severity = warning

@@ -207,13 +207,12 @@ internal static class CallHierarchyResolver
         var (_, line, character, endLine, endCharacter) = DocumentPosition.Coordinates(
             location.GetMappedLineSpan()
         );
-        return new CallSiteResult
-        {
-            Line = line,
-            Character = character,
-            EndLine = endLine,
-            EndCharacter = endCharacter,
-        };
+        return new CallSiteResult(
+            Line: line,
+            Character: character,
+            EndLine: endLine,
+            EndCharacter: endCharacter
+        );
     }
 
     /// <summary>

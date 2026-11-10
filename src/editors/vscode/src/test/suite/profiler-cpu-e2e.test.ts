@@ -29,6 +29,7 @@ import {
   profilingSuite,
   Target,
   uiCommand,
+  untilSampling,
 } from './profiler-kit';
 import { PROCESS_START_MS } from './test-timeouts';
 
@@ -49,6 +50,7 @@ suite('CPU profiling — real end-to-end', () => {
   const live = profilingSuite('profiler-cpu-', 'ProfileTarget');
   registerCpuCaptureContract(async () => {
     const started = await execute<{ session_id: string }>('cpu.start', { pid: live.target.pid });
+    await untilSampling(started.session_id);
     await new Promise((resolve) => setTimeout(resolve, SAMPLE_WINDOW_MS));
     return toProfileResult(
       await execute<ProfileReport>('cpu.stop', { session_id: started.session_id }),
@@ -62,6 +64,7 @@ suite('CPU profiling — real end-to-end', () => {
       pid: target.pid,
     });
     assert.equal(started.runtime, 'dotnet');
+    await untilSampling(started.session_id);
     await new Promise((resolve) => setTimeout(resolve, SAMPLE_WINDOW_MS));
     const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
     assert.ok(report.total_samples > 100, `samples: ${report.total_samples}`);

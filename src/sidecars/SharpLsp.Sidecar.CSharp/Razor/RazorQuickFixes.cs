@@ -236,9 +236,16 @@ internal static class RazorQuickFixes
 
     private static WorkspaceEditResult Edit(string path, IEnumerable<TextEditResult> edits)
     {
-        return new WorkspaceEditResult
-        {
-            DocumentChanges = [new DocumentEditResult { FilePath = path, Edits = [.. edits] }],
-        };
+        return new WorkspaceEditResult(
+            DocumentChanges:
+            [
+                new DocumentEditResult(
+                    FilePath: path,
+                    Edits: [.. edits],
+                    Create: false,
+                    RenameTo: null
+                ),
+            ]
+        );
     }
 }

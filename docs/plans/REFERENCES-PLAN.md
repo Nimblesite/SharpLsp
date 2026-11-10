@@ -65,10 +65,10 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Extract `ReferenceLocation` entries from each `ReferencedSymbol.Locations`
 - [x] Include declaration locations when `IncludeDeclaration` is true
 - [x] Map each reference to `LocationResult` (reuse existing type)
-- [ ] Handle override chains: include references to all overrides + base virtual/abstract
-- [ ] Handle interface members: include references across all implementing classes
-- [ ] Handle partial classes/methods: references across all partial definitions
-- [ ] Handle implicit references (`[Foo]` → `FooAttribute`)
+- [x] Handle override chains: include references to all overrides + base virtual/abstract — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] Handle interface members: include references across all implementing classes — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] Handle partial classes/methods: references across all partial definitions — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`; `includeDeclaration` listed only the first part before
+- [x] Handle implicit references (`[Foo]` → `FooAttribute`) — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
 
 ### C# Sidecar (Roslyn) — textDocument/documentHighlight
 
@@ -89,9 +89,9 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] For project-wide references: call `GetUsesOfSymbolInFile()`, filter to target symbol
 - [x] Include declaration range when `IncludeDeclaration` is true
 - [x] Map each `FSharpSymbolUse.Range` to `LocationResult`
-- [ ] Handle DU cases: pattern matches + constructions
-- [ ] Handle record fields: field accesses + record expressions
-- [ ] Handle active patterns: all usages of the active pattern case
+- [x] Handle DU cases: pattern matches + constructions — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] Handle record fields: field accesses + record expressions — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] Handle active patterns: all usages of the active pattern case — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
 
 ### F# Sidecar (FCS) — textDocument/documentHighlight
 
@@ -108,26 +108,26 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Design cross-sidecar merge strategy in Rust host (dispatch to both sidecars, merge + deduplicate results)
 - [x] Implement C# symbol → F# references (Rust host dispatches to F# sidecar for F# projects)
 - [x] Implement F# symbol → C# references (Rust host dispatches to C# sidecar for C# projects)
-- [ ] E2E test: cross-language references on a mixed C#/F# solution
+- [x] E2E test: cross-language references on a mixed C#/F# solution — `definition_cross_language.rs`: an F# type from its C# use and its F# declaration, a C# type from its F# use (that direction answered only the F# use before)
 
 ### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 
-- [ ] E2E test: C# find-all-references on method returns all call sites
-- [ ] E2E test: C# find-all-references on class returns all type usages
-- [ ] E2E test: C# find-all-references with `includeDeclaration: true` includes declaration
-- [ ] E2E test: C# find-all-references with `includeDeclaration: false` excludes declaration
-- [ ] E2E test: C# find-all-references on interface member returns implementations + call sites
-- [ ] E2E test: C# find-all-references on override returns references across override chain
-- [ ] E2E test: C# find-all-references on whitespace/comment returns null
-- [ ] E2E test: C# find-all-references without sidecar returns null gracefully
-- [ ] E2E test: C# document-highlight returns read/write annotations
-- [ ] E2E test: C# document-highlight on variable distinguishes reads from writes
-- [ ] E2E test: F# find-all-references on function returns all call sites
-- [ ] E2E test: F# find-all-references on DU case returns matches + constructions
-- [ ] E2E test: F# find-all-references on record field returns accesses
-- [ ] E2E test: F# document-highlight returns definition as Write, usages as Read
-- [ ] E2E test: references after document edit returns updated locations
-- [ ] E2E test: references response has correct LSP structure
+- [x] E2E test: C# find-all-references on method returns all call sites — `references.rs` `test_full_stack_references_on_method_returns_call_sites`
+- [x] E2E test: C# find-all-references on class returns all type usages — `test_full_stack_references_on_class_returns_type_usages`
+- [x] E2E test: C# find-all-references with `includeDeclaration: true` includes declaration — `test_full_stack_references_include_declaration_true`
+- [x] E2E test: C# find-all-references with `includeDeclaration: false` excludes declaration — `test_full_stack_references_include_declaration_true` (both flags)
+- [x] E2E test: C# find-all-references on interface member returns implementations + call sites — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: C# find-all-references on override returns references across override chain — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: C# find-all-references on whitespace/comment returns null — `test_references_on_comment_returns_null`
+- [x] E2E test: C# find-all-references without sidecar returns null gracefully — `test_references_without_sidecar_returns_null`
+- [x] E2E test: C# document-highlight returns read/write annotations — `test_full_stack_document_highlight_read_write`
+- [x] E2E test: C# document-highlight on variable distinguishes reads from writes — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: F# find-all-references on function returns all call sites — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: F# find-all-references on DU case returns matches + constructions — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: F# find-all-references on record field returns accesses — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: F# document-highlight returns definition as Write, usages as Read — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp`
+- [x] E2E test: references after document edit returns updated locations — `navigation_kinds.rs` `references_and_highlights_on_every_kind_are_exact_in_fsharp_and_csharp` (an unsaved F# call)
+- [x] E2E test: references response has correct LSP structure — `test_full_stack_references_response_structure`
 
 ### Performance Validation
 

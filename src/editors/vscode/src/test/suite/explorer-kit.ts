@@ -8,7 +8,15 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { EXTENSION_ID, pollUntilResult } from './test-helpers';
+import {
+  EXTENSION_ID,
+  openCSharpFile,
+  openCSharpOutline,
+  pollUntilResult,
+  waitForDocumentSymbols,
+} from './test-helpers';
+import { assertSymbolShapesAndTree, assertSymbolTree, childNamed } from './lsp-invariants-kit';
+import { assertReachableCommand, requireExtensionExports } from './extension-manifest-kit';
 
 /** One node of the tree, viewed only through the fields the searches read. */
 export interface ExplorerNode {
@@ -81,4 +89,111 @@ export async function pollTreeFor(provider: ExplorerProvider, target: string): P
     (found) => found,
     5_000,
   );
+}
+
+/** Asserts `command` is registered and passes the manifest reachability checks; returns its manifest entry. */
+export async function assertRegisteredCommand(
+  command: string,
+): Promise<ReturnType<typeof assertReachableCommand>> {
+  const allCommands = await vscode.commands.getCommands(true);
+  assert.ok(allCommands.includes(command), `${command} should be registered`);
+  return assertReachableCommand(command, allCommands);
+}
+
+/** Opens `uri` and asserts each `[symbol, kind]` pair's shape against the live tree; returns the document. */
+export async function assertShapesAndTreeFor(
+  uri: vscode.Uri,
+  symbols: readonly vscode.DocumentSymbol[],
+  pairs: readonly (readonly [vscode.DocumentSymbol, vscode.SymbolKind])[],
+): Promise<vscode.TextDocument> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  assertSymbolShapesAndTree(symbols, doc, pairs);
+  return doc;
+}
+
+/** Opens `uri` and asserts `symbols` form a well-formed tree for it; returns the document. */
+export async function assertTreeFor(
+  uri: vscode.Uri,
+  symbols: readonly vscode.DocumentSymbol[],
+): Promise<vscode.TextDocument> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  assertSymbolTree(symbols, doc);
+  return doc;
+}
+
+/** Asserts `symbol`'s children are named exactly `names`, in source order. */
+export function assertChildNames(
+  symbol: vscode.DocumentSymbol,
+  names: readonly string[],
+  message: string,
+): void {
+  assert.deepEqual(
+    symbol.children?.map((child) => child.name),
+    names,
+    message,
+  );
+}
+
+/** Asserts no child of `parent` is named `name`. */
+export function assertLacksChild(
+  parent: { readonly children?: readonly { readonly name: string }[] },
+  name: string,
+  message: string,
+): void {
+  assert.ok(!parent.children?.some((child) => child.name === name), message);
+}
+
+/** Subscribes to the live Solution Explorer's change events through the extension exports. */
+export function subscribeToTreeChanges(
+  exportMessage: string,
+  onEvent: () => void,
+): vscode.Disposable {
+  const api = requireExtensionExports('explorerProvider') as {
+    explorerProvider?: { onDidChangeTreeData: vscode.Event<unknown> };
+  };
+  assert.ok(api.explorerProvider, exportMessage);
+  return api.explorerProvider.onDidChangeTreeData(() => {
+    onEvent();
+  });
+}
+
+/**
+ * Writes a one-project solution named `project`, opens `file` in it with
+ * `source`, waits for its symbols, and returns the live provider, paths,
+ * document and symbols.
+ */
+export async function openSolutionFile(
+  tmpDir: string,
+  project: string,
+  file: string,
+  source: string,
+): Promise<{
+  provider: ExplorerProvider;
+  projDir: string;
+  slnPath: string;
+  doc: vscode.TextDocument;
+  symbols: vscode.DocumentSymbol[];
+}> {
+  const provider = activeExplorerProvider();
+  const { projDir, slnPath } = writeOneProjectSolution(tmpDir, project);
+  const { doc } = await openCSharpFile(projDir, file, source);
+  const symbols = await waitForDocumentSymbols(doc.uri);
+  return { provider, projDir, slnPath, doc, symbols };
+}
+
+/** Opens a C# scratch file via the outline helper and resolves its namespace child. */
+export async function openOutlineNs(
+  dir: string,
+  file: string,
+  source: string,
+  nsName: string,
+  nsKind?: vscode.SymbolKind,
+): Promise<{
+  uri: vscode.Uri;
+  doc: vscode.TextDocument;
+  symbols: vscode.DocumentSymbol[];
+  ns: vscode.DocumentSymbol;
+}> {
+  const opened = await openCSharpOutline(dir, file, source);
+  return { ...opened, ns: childNamed(opened.symbols, nsName, nsKind) };
 }

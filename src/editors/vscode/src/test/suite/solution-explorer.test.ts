@@ -16,12 +16,21 @@ import {
 import { toSolutionSelections } from '../../solution';
 import {
   activeExplorerProvider,
+  assertChildNames,
+  assertLacksChild,
+  assertRegisteredCommand,
+  assertShapesAndTreeFor,
+  assertTreeFor,
+  openOutlineNs,
+  openSolutionFile,
+  subscribeToTreeChanges,
   treeContains,
   writeOneProjectSolution,
   csprojText,
   pollTreeFor,
 } from './explorer-kit';
-import { assertReachableCommand, commandEntries } from './extension-manifest-kit';
+import { expectResolved } from './nuget-deps-kit';
+import { commandEntries } from './extension-manifest-kit';
 import { assertSymbolShape, assertSymbolTree, childNamed } from './lsp-invariants-kit';
 import { COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
@@ -44,6 +53,32 @@ const SORT_WHEN: Record<string, string> = {
 /** Whether the extension is still activated — a refresh must not unload it. */
 function sharpLspIsActive(): boolean {
   return vscode.extensions.getExtension(EXTENSION_ID)?.isActive === true;
+}
+
+/** Asserts the picker rows carry exactly `expected` in their `field`, in order. */
+function assertSelectionField(
+  selections: ReturnType<typeof toSolutionSelections>,
+  field: 'name' | 'path',
+  expected: readonly string[],
+  message?: string,
+): void {
+  assert.deepEqual(
+    selections.map((selection) => selection[field]),
+    expected,
+    message ?? `the picker rows' ${field}s differ`,
+  );
+}
+
+/** Asserts `paths` sort to exactly `expectedNames` and every row survives as a distinct selection. */
+function assertSortedDistinctSelections(
+  paths: readonly string[],
+  expectedNames: readonly string[],
+  message: string,
+): ReturnType<typeof toSolutionSelections> {
+  const selections = toSolutionSelections(paths);
+  assertSelectionField(selections, 'name', expectedNames);
+  assert.strictEqual(selections.length, expectedNames.length, message);
+  return selections;
 }
 
 /** Every `view/title` menu entry the manifest contributes, as authored. */
@@ -171,9 +206,7 @@ suite('Solution Explorer & Workspace Symbols', () => {
   for (const { id, title, icon } of ALWAYS_IN_TITLE_BAR) {
     test(`${id} command is registered`, async () => {
       // Interaction 1 - reachable: registered, declared once, titled, categorised.
-      const allCommands = await vscode.commands.getCommands(true);
-      assert.ok(allCommands.includes(id), `${id} should be registered`);
-      const entry = assertReachableCommand(id, allCommands);
+      const entry = await assertRegisteredCommand(id);
 
       // Interaction 2 - the spec's title and codicon, under the SharpLsp category.
       assert.strictEqual(entry.title, title, 'the spec fixes the title');
@@ -199,9 +232,7 @@ suite('Solution Explorer & Workspace Symbols', () => {
     test(`${cmd} command is registered`, async function () {
       this.timeout(COMMAND_MS);
       // Interaction 1 - reachable, and reachable exactly once.
-      const allCommands = await vscode.commands.getCommands(true);
-      assert.ok(allCommands.includes(cmd), `${cmd} should be registered`);
-      const entry = assertReachableCommand(cmd, allCommands);
+      const entry = await assertRegisteredCommand(cmd);
       assert.ok((entry.title ?? '').startsWith('Sort'), `${cmd} is titled as a sort mode`);
 
       // Interaction 2 - [SE-SORT-CONTEXT]: each sort command's toolbar icon is
@@ -214,12 +245,8 @@ suite('Solution Explorer & Workspace Symbols', () => {
 
       // Interaction 3 - all three commands CYCLE, so running this one must not
       // throw whichever mode the tree happens to be in.
-      await assert.doesNotReject(async () => {
-        await vscode.commands.executeCommand(cmd);
-      }, `${cmd} must cycle the sort order without throwing`);
-      await assert.doesNotReject(async () => {
-        await vscode.commands.executeCommand(cmd);
-      }, `${cmd} must stay runnable after it has already cycled once`);
+      await expectResolved(cmd, `${cmd} must cycle the sort order without throwing`);
+      await expectResolved(cmd, `${cmd} must stay runnable after it has already cycled once`);
 
       // Interaction 4 - the three modes are DISTINCT commands with distinct
       // icons: a shared icon makes the toolbar unable to show the active mode.
@@ -259,9 +286,10 @@ suite('Solution Explorer & Workspace Symbols', () => {
 
     // Interaction 3 - the container id is openable, so the id in the manifest
     // and the id the workbench opens are the same string.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('workbench.view.extension.sharplsp-explorer');
-    }, 'the container id must be openable as workbench.view.extension.<id>');
+    await expectResolved(
+      'workbench.view.extension.sharplsp-explorer',
+      'the container id must be openable as workbench.view.extension.<id>',
+    );
     const views: Record<string, unknown> = ext.packageJSON.contributes?.views ?? {};
     assert.ok(
       Object.prototype.hasOwnProperty.call(views, 'sharplsp-explorer'),
@@ -460,9 +488,7 @@ EndGlobal`,
   test('LSP parses multiple classes in the same file', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { symbols } = await openCSharpOutline(tmpDir(), 'Models.cs', MODELS_CS);
-
-    const ns = childNamed(symbols, 'Models');
+    const { ns } = await openOutlineNs(tmpDir(), 'Models.cs', MODELS_CS, 'Models');
 
     childNamed(ns, 'User', vscode.SymbolKind.Class);
 
@@ -479,9 +505,7 @@ EndGlobal`,
   test('LSP handles deeply nested namespaces and classes', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri, symbols } = await openCSharpOutline(tmpDir(), 'Nested.cs', NESTED_CS);
-
-    const ns = childNamed(symbols, 'Outer');
+    const { uri, symbols, ns } = await openOutlineNs(tmpDir(), 'Nested.cs', NESTED_CS, 'Outer');
 
     const outerClass = childNamed(ns, 'OuterClass');
 
@@ -494,16 +518,18 @@ EndGlobal`,
     // Interaction 2 - [SE-SYMBOL-KINDS]: every level carries the kind its tree
     // icon is drawn from. A class reported as a namespace draws the wrong icon
     // at every depth of the tree.
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolShape(ns, vscode.SymbolKind.Namespace, doc);
-    assertSymbolShape(outerClass, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(innerClass, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(outerMethod, vscode.SymbolKind.Method, doc);
-
+    // Interaction 2 - [SE-SYMBOL-KINDS]: every level carries the kind its tree
+    // icon is drawn from. A class reported as a namespace draws the wrong icon
+    // at every depth of the tree.
     // Interaction 3 - [SE-TREE]: the nesting is CONTAINMENT, all the way down.
     // A flattened level lets the tree offer "Sort Members" on a node whose
     // members live somewhere else.
-    assertSymbolTree(symbols, doc);
+    await assertShapesAndTreeFor(uri, symbols, [
+      [ns, vscode.SymbolKind.Namespace],
+      [outerClass, vscode.SymbolKind.Class],
+      [innerClass, vscode.SymbolKind.Class],
+      [outerMethod, vscode.SymbolKind.Method],
+    ]);
     assert.ok(ns.range.contains(outerClass.range), 'Outer contains OuterClass');
     assert.ok(outerClass.range.contains(innerClass.range), 'OuterClass contains InnerClass');
     assert.ok(innerClass.range.contains(innerMethod.range), 'InnerClass contains InnerMethod');
@@ -518,9 +544,12 @@ EndGlobal`,
   test('LSP handles interface with method declarations', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri, symbols } = await openCSharpOutline(tmpDir(), 'Services.cs', SERVICES_CS);
-
-    const ns = childNamed(symbols, 'Services');
+    const { uri, symbols, ns } = await openOutlineNs(
+      tmpDir(),
+      'Services.cs',
+      SERVICES_CS,
+      'Services',
+    );
 
     const repo = childNamed(ns, 'IRepository', vscode.SymbolKind.Interface);
 
@@ -536,16 +565,15 @@ EndGlobal`,
     // icon column exists to make.
     assert.notStrictEqual(delegate.kind, repo.kind, 'a delegate is not an interface');
     assert.notStrictEqual(delegate.kind, vscode.SymbolKind.Class, 'nor a class');
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolShape(repo, vscode.SymbolKind.Interface, doc);
-    assertSymbolShape(save, vscode.SymbolKind.Method, doc);
-
     // Interaction 3 - a delegate has no members, and the interface owns both of
     // its methods in source order.
-    assertSymbolTree(symbols, doc);
+    await assertShapesAndTreeFor(uri, symbols, [
+      [repo, vscode.SymbolKind.Interface],
+      [save, vscode.SymbolKind.Method],
+    ]);
     assert.deepEqual(delegate.children ?? [], [], 'a delegate declares no members');
-    assert.deepEqual(
-      repo.children?.map((child) => child.name),
+    assertChildNames(
+      repo,
       ['Save', 'Delete'],
       'the interface owns both methods, in declaration order',
     );
@@ -559,9 +587,13 @@ EndGlobal`,
   test('LSP returns correct hierarchy for file-scoped namespace', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri, symbols } = await openCSharpOutline(tmpDir(), 'Api.cs', API_CS);
-
-    const ns = childNamed(symbols, 'Api', vscode.SymbolKind.Namespace);
+    const { uri, symbols, ns } = await openOutlineNs(
+      tmpDir(),
+      'Api.cs',
+      API_CS,
+      'Api',
+      vscode.SymbolKind.Namespace,
+    );
 
     const controller = childNamed(ns, 'ApiController', vscode.SymbolKind.Class);
 
@@ -581,8 +613,7 @@ EndGlobal`,
     // host reparents them. The proof is containment, not mere membership: a
     // reparented node whose range still sits outside its new parent breaks
     // every range-based feature hung off the tree.
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolTree(symbols, doc);
+    const doc = await assertTreeFor(uri, symbols);
     assert.ok(ns.range.contains(controller.range), 'the namespace really contains the class');
     assert.ok(controller.range.contains(get.range), 'and the class contains its method');
 
@@ -591,11 +622,7 @@ EndGlobal`,
     assertSymbolShape(controller, vscode.SymbolKind.Class, doc);
     assertSymbolShape(get, vscode.SymbolKind.Method, doc);
     assert.strictEqual(symbols.length, 1, 'the file-scoped namespace is the only root');
-    assert.deepEqual(
-      controller.children?.map((child) => child.name),
-      ['Get', 'Post'],
-      'the class owns both methods, in source order',
-    );
+    assertChildNames(controller, ['Get', 'Post'], 'the class owns both methods, in source order');
   });
 
   test('file-scoped namespace: multiple types all nested inside namespace', async function () {
@@ -652,19 +679,18 @@ EndGlobal`,
     // Interaction 2 - a BASE LIST must not confuse the reparenting. The base
     // type name sits between the class name and its body, and a reader that
     // stops at the first identifier reparents `ControllerBase` instead.
-    assert.ok(
-      !ns.children?.some((child) => child.name === 'ControllerBase'),
+    assertLacksChild(
+      ns,
+      'ControllerBase',
       'the base type is a reference, not a declaration in this file',
     );
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolShape(controller, vscode.SymbolKind.Class, doc);
-    assertSymbolTree(symbols, doc);
+    await assertShapesAndTreeFor(uri, symbols, [[controller, vscode.SymbolKind.Class]]);
 
     // Interaction 3 - the class keeps its own members, and the positional
     // record beside it is a type rather than a member ([SE-SYMBOL-KINDS] maps
     // `record_declaration` to Class).
-    assert.deepEqual(
-      controller.children?.map((child) => child.name),
+    assertChildNames(
+      controller,
       ['Index', 'About'],
       'the derived class owns its own members, in source order',
     );
@@ -682,17 +708,13 @@ EndGlobal`,
     // Interaction 1 - refresh is the user's manual escape hatch when the
     // reactive tree has not caught up. It must run with no solution loaded,
     // which is the state a fresh window is in.
-    await assert.doesNotReject(async () => {
-      await vscode.commands.executeCommand('sharplsp.refreshExplorer');
-    }, 'refreshExplorer command should not throw');
+    await expectResolved('sharplsp.refreshExplorer', 'refreshExplorer command should not throw');
 
     // Interaction 2 - and it must be REPEATABLE. A refresh that only works
     // once is a refresh the user cannot lean on.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await assert.doesNotReject(
-        async () => {
-          await vscode.commands.executeCommand('sharplsp.refreshExplorer');
-        },
+      await expectResolved(
+        'sharplsp.refreshExplorer',
         `refresh attempt ${attempt + 1} must not throw`,
       );
     }
@@ -700,15 +722,13 @@ EndGlobal`,
     // Interaction 3 - it fires the tree's change event, which is the entire
     // point: a refresh that mutates state without telling the view leaves the
     // stale rows on screen ([SE-ARCHITECTURE]).
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'the extension must be active');
-    const api = ext.exports as
-      { explorerProvider?: { onDidChangeTreeData: vscode.Event<unknown> } } | undefined;
-    assert.ok(api?.explorerProvider, 'the extension must export explorerProvider');
     let fired = 0;
-    const subscription = api.explorerProvider.onDidChangeTreeData(() => {
-      fired += 1;
-    });
+    const subscription = subscribeToTreeChanges(
+      'the extension must export explorerProvider',
+      () => {
+        fired += 1;
+      },
+    );
     try {
       await vscode.commands.executeCommand('sharplsp.refreshExplorer');
       const observed = await pollUntilResult(
@@ -828,14 +848,14 @@ EndGlobal`,
     // Interaction 1 - two solutions, two rows, SORTED. An unsorted picker
     // reorders itself between invocations and the user's muscle memory picks
     // the wrong solution.
-    const selections = toSolutionSelections(['/repo/B.slnx', '/repo/A.slnx']);
-    assert.deepEqual(
-      selections.map((selection) => selection.name),
+    const selections = assertSortedDistinctSelections(
+      ['/repo/B.slnx', '/repo/A.slnx'],
       ['A.slnx', 'B.slnx'],
+      'both solutions survive',
     );
-    assert.strictEqual(selections.length, 2, 'both solutions survive');
-    assert.deepEqual(
-      selections.map((selection) => selection.path),
+    assertSelectionField(
+      selections,
+      'path',
       ['/repo/A.slnx', '/repo/B.slnx'],
       'and each row keeps the path it will open',
     );
@@ -854,13 +874,15 @@ EndGlobal`,
     // distinct rows: a monorepo has App.slnx more than once.
     const sameName = toSolutionSelections(['/repo/two/App.slnx', '/repo/one/App.slnx']);
     assert.strictEqual(sameName.length, 2, 'both are offered');
-    assert.deepEqual(
-      sameName.map((selection) => selection.path),
+    assertSelectionField(
+      sameName,
+      'path',
       ['/repo/one/App.slnx', '/repo/two/App.slnx'],
       'ordered by path when the names tie, so the order is deterministic',
     );
-    assert.deepEqual(
-      sameName.map((selection) => selection.name),
+    assertSelectionField(
+      sameName,
+      'name',
       ['App.slnx', 'App.slnx'],
       'even though both carry the same label',
     );
@@ -890,17 +912,17 @@ EndGlobal`,
     // Interaction 1 - a repository mid-migration holds both formats of the same
     // solution. Truncating the extension would collapse them into one
     // indistinguishable row ([SE-SOLUTION]).
-    const selections = toSolutionSelections(['/repo/App.slnx', '/repo/App.sln']);
-    assert.deepEqual(
-      selections.map((selection) => selection.name),
+    const selections = assertSortedDistinctSelections(
+      ['/repo/App.slnx', '/repo/App.sln'],
       ['App.sln', 'App.slnx'],
+      'both formats are offered',
     );
-    assert.strictEqual(selections.length, 2, 'both formats are offered');
     assert.strictEqual(new Set(selections.map((s) => s.name)).size, 2, 'under distinct labels');
 
     // Interaction 2 - and under distinct paths, each ending in its own label.
-    assert.deepEqual(
-      selections.map((selection) => selection.path),
+    assertSelectionField(
+      selections,
+      'path',
       ['/repo/App.sln', '/repo/App.slnx'],
       'sorted by label, with the path each row opens',
     );
@@ -912,10 +934,9 @@ EndGlobal`,
     // order produces the same rows, so the picker never reshuffles itself.
     const reversed = toSolutionSelections(['/repo/App.sln', '/repo/App.slnx']);
     assert.deepEqual(reversed, selections, 'input order does not change the offered order');
-    assert.deepEqual(
-      toSolutionSelections(['/repo/App.slnx', '/repo/App.sln', '/repo/Other.sln']).map(
-        (selection) => selection.name,
-      ),
+    assertSelectionField(
+      toSolutionSelections(['/repo/App.slnx', '/repo/App.sln', '/repo/Other.sln']),
+      'name',
       ['App.sln', 'App.slnx', 'Other.sln'],
       'and a third solution slots into the same ordering',
     );
@@ -924,8 +945,9 @@ EndGlobal`,
     // plain string comparison, and every row still points at its own file.
     const three = toSolutionSelections(['/repo/App.slnx', '/repo/App.sln', '/repo/Other.sln']);
     assert.strictEqual(three.length, 3, 'all three solutions are offered');
-    assert.deepEqual(
-      three.map((selection) => selection.path),
+    assertSelectionField(
+      three,
+      'path',
       ['/repo/App.sln', '/repo/App.slnx', '/repo/Other.sln'],
       'each row keeps the path it opens',
     );
@@ -939,9 +961,7 @@ EndGlobal`,
   test('LSP handles C# record types', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri, symbols } = await openCSharpOutline(tmpDir(), 'Records.cs', RECORDS_CS);
-
-    const ns = childNamed(symbols, 'Domain');
+    const { uri, symbols, ns } = await openOutlineNs(tmpDir(), 'Records.cs', RECORDS_CS, 'Domain');
 
     const person = childNamed(ns, 'Person', vscode.SymbolKind.Class);
 
@@ -952,10 +972,10 @@ EndGlobal`,
     // Interaction 2 - [SE-SYMBOL-KINDS] maps `record_declaration` to Class, and
     // its members keep their own kinds. A record drawn as a method puts the
     // wrong icon on the most common type in a modern C# domain model.
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolShape(address, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(street, vscode.SymbolKind.Property, doc);
-    assertSymbolTree(symbols, doc);
+    const doc = await assertShapesAndTreeFor(uri, symbols, [
+      [address, vscode.SymbolKind.Class],
+      [street, vscode.SymbolKind.Property],
+    ]);
 
     // Interaction 3 - both record SHAPES land in the tree: the positional
     // one-liner and the braced body. A reader that only handles the braced form
@@ -963,8 +983,8 @@ EndGlobal`,
     assert.strictEqual(ns.children?.length, 2, 'both records are children of the namespace');
     assert.ok(ns.range.contains(person.range), 'the positional record sits inside the namespace');
     assert.ok(ns.range.contains(address.range), 'and so does the braced one');
-    assert.deepEqual(
-      address.children?.map((child) => child.name),
+    assertChildNames(
+      address,
       ['Street', 'City'],
       'the braced record owns both properties, in source order',
     );
@@ -979,9 +999,7 @@ EndGlobal`,
   test('LSP handles events and fields', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri, symbols } = await openCSharpOutline(tmpDir(), 'Events.cs', EVENTS_CS);
-
-    const ns = childNamed(symbols, 'Events');
+    const { uri, symbols, ns } = await openOutlineNs(tmpDir(), 'Events.cs', EVENTS_CS, 'Events');
 
     const source = childNamed(ns, 'EventSource');
 
@@ -993,18 +1011,18 @@ EndGlobal`,
     // separate icons and separate theme colours. An event drawn as a field is
     // the difference between "subscribe here" and "read this value".
     assert.notStrictEqual(evt.kind, counter.kind, 'an event is not a field');
-    const doc = await vscode.workspace.openTextDocument(uri);
-    assertSymbolShape(evt, vscode.SymbolKind.Event, doc);
-    assertSymbolShape(counter, vscode.SymbolKind.Field, doc);
-    assertSymbolTree(symbols, doc);
+    await assertShapesAndTreeFor(uri, symbols, [
+      [evt, vscode.SymbolKind.Event],
+      [counter, vscode.SymbolKind.Field],
+    ]);
 
     // Interaction 3 - a `static readonly` field is still a Field, and every
     // member is a CHILD of the class rather than a sibling of it. Private and
     // static members must not be filtered out of the tree: [SE-SORT-ACCESS]
     // sorts by access, which presupposes they are all present.
     childNamed(source, 'DefaultName');
-    assert.deepEqual(
-      source.children?.map((child) => child.name),
+    assertChildNames(
+      source,
       ['OnChanged', '_counter', 'DefaultName'],
       'all three members, in source order, public and private alike',
     );
@@ -1017,27 +1035,14 @@ EndGlobal`,
   test('tree auto-refreshes when C# document content changes', async function () {
     this.timeout(LSP_RESPONSE_MS);
 
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
-
-    // Extension must export its API for reactive tree testing.
-    const api = ext.exports as
-      | {
-          explorerProvider?: {
-            onDidChangeTreeData: vscode.Event<unknown>;
-          };
-        }
-      | undefined;
-    assert.ok(
-      api?.explorerProvider,
-      'Extension must export explorerProvider — tree nodes must be reactive',
-    );
-
     // Subscribe to tree data change events.
     let treeChangeCount = 0;
-    const disposable = api.explorerProvider.onDidChangeTreeData(() => {
-      treeChangeCount++;
-    });
+    const disposable = subscribeToTreeChanges(
+      'Extension must export explorerProvider — tree nodes must be reactive',
+      () => {
+        treeChangeCount++;
+      },
+    );
 
     try {
       // Open a C# file.
@@ -1115,8 +1120,7 @@ EndGlobal`,
 
     // Write initial content to disk and open it.
     const content = 'namespace Vfs;\n\npublic class Original\n{\n    public void Foo() { }\n}';
-    const { doc, uri, symbols: before } = await openCSharpOutline(tmpDir(), 'VfsTest.cs', content);
-    const nsBefore = childNamed(before, 'Vfs');
+    const { doc, uri, ns: nsBefore } = await openOutlineNs(tmpDir(), 'VfsTest.cs', content, 'Vfs');
     childNamed(nsBefore, 'Original');
 
     // Edit the buffer WITHOUT saving — rename class.
@@ -1140,10 +1144,7 @@ EndGlobal`,
     // Interaction 3 - the OLD name is gone. "The new name appeared" is only
     // half of [SE-LIVE-BUFFER]: a VFS that appends without replacing shows both
     // classes, and Go to Symbol then offers one that no longer exists.
-    assert.ok(
-      !nsAfter.children?.some((child) => child.name === 'Original'),
-      'the pre-edit class name must not survive the rename',
-    );
+    assertLacksChild(nsAfter, 'Original', 'the pre-edit class name must not survive the rename');
     assert.ok(doc.isDirty, 'and the buffer is still unsaved');
     assert.ok(
       fs.readFileSync(uri.fsPath, 'utf8').includes('Original'),
@@ -1154,11 +1155,7 @@ EndGlobal`,
     // rename of its containing type.
     assertSymbolTree(after, doc);
     assertSymbolShape(renamedClass, vscode.SymbolKind.Class, doc);
-    assert.deepEqual(
-      renamedClass.children?.map((child) => child.name),
-      ['Foo'],
-      'the method inside the renamed class is untouched',
-    );
+    assertChildNames(renamedClass, ['Foo'], 'the method inside the renamed class is untouched');
     assert.strictEqual(after.length, 1, 'and the namespace is still the only root');
   });
 
@@ -1210,14 +1207,14 @@ EndGlobal`,
   test('tree tracks rapid successive renames without lagging behind', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const provider = activeExplorerProvider();
-
-    const { projDir, slnPath } = writeOneProjectSolution(tmpDir(), 'RapidRenameTest');
-
     const initial =
       'namespace RapidRenameTest;\n\npublic class Step0\n{\n    public void Go() { }\n}';
-    const { doc } = await openCSharpFile(projDir, 'Rapid.cs', initial);
-    await waitForDocumentSymbols(doc.uri);
+    const { provider, slnPath, doc } = await openSolutionFile(
+      tmpDir(),
+      'RapidRenameTest',
+      'Rapid.cs',
+      initial,
+    );
 
     await provider.loadSolution(slnPath);
 
@@ -1249,15 +1246,14 @@ EndGlobal`,
   test('tree shows updated class name after rename, not stale data', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const provider = activeExplorerProvider();
-
-    // Build a mini solution with class "Alpha".
-    const { projDir, slnPath } = writeOneProjectSolution(tmpDir(), 'StaleDataTest');
-
     const initial =
       'namespace StaleDataTest;\n\npublic sealed class Alpha\n{\n    public string Name { get; set; }\n}';
-    const { doc } = await openCSharpFile(projDir, 'Thing.cs', initial);
-    const opened = await waitForDocumentSymbols(doc.uri);
+    const {
+      provider,
+      slnPath,
+      doc,
+      symbols: opened,
+    } = await openSolutionFile(tmpDir(), 'StaleDataTest', 'Thing.cs', initial);
     assert.ok(opened.length > 0, 'the source the tree will read really has symbols');
     assert.ok(
       flattenSymbolNames(opened).includes('Alpha'),

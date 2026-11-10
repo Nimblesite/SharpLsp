@@ -114,6 +114,22 @@ export async function shootWalkthrough({ demo, out, scenes, settings = WORKSPACE
   });
 }
 
+/**
+ * A film that only shoots: the reel's page, voice and score are rendered by the TikTok factory's
+ * screen-film pipeline, so `publish` only proves every clip was shot and there is nothing to preview.
+ */
+export const shootOnlyFilm = ({ name, demo, scenes, settings }) => ({
+  name,
+  shoot: (out) => shootWalkthrough({ demo, out, scenes, settings }),
+  publish: async (out) => {
+    const clips = scenes.filter((each) => each.clip).map((each) => path.join(out, 'clips', `${each.clip}.mp4`));
+    const missing = clips.filter((clip) => !fs.existsSync(clip));
+    if (missing.length) throw new Error(`not shot: ${missing.join(', ')}`);
+    return 0;
+  },
+  preview: async () => 0,
+});
+
 /** Each shot scene with its clip, its track and its length on screen, in seconds, at its speed. */
 const shotsOf = (out, scenes) =>
   scenes

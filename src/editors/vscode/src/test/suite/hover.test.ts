@@ -3,43 +3,30 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
-  EXTENSION_ID,
   closeAllEditors,
   warmSemanticEngine,
   pollUntilResult,
   replaceDocumentContent,
   setupLspTestSuite,
   teardownLspTestSuite,
+  openExistingFile,
   waitForDocumentSymbols,
   waitForHoverResult,
   assertContainsAll,
   assertContainsNone,
 } from './test-helpers';
+import { requireExtensionExports } from './extension-manifest-kit';
 import { COMMAND_MS, FIXTURE_BUILD_MS, LSP_RESPONSE_MS, LSP_SWEEP_MS } from './test-timeouts';
 import { hoverText } from './fsharp-helpers';
 import { MEMBER_CARET } from './completion-shot-kit';
-
-/**
- * [HOVER-PROTOCOL-RESPONSE]: every content entry MUST be Markdown.
- *
- * "Plain-text fallback is not supported — all LSP 3.17 clients support
- * Markdown." A hover that arrives as a bare string renders its backticks and
- * its fenced code block as literal characters, which is the difference between
- * a signature and a line of punctuation.
- */
-function assertMarkdownContents(hovers: readonly vscode.Hover[], where: string): void {
-  assert.ok(hovers.length > 0, `${where}: a hover must have been returned`);
-  for (const hover of hovers) {
-    assert.ok(hover.contents.length > 0, `${where}: a hover must carry content entries`);
-    for (const entry of hover.contents) {
-      assert.ok(
-        entry instanceof vscode.MarkdownString,
-        `${where}: every content entry must be Markdown, got ${typeof entry}`,
-      );
-      assert.ok(entry.value.trim().length > 0, `${where}: no content entry may be blank`);
-    }
-  }
-}
+import {
+  assertMarkdownContents,
+  assertMentionsAll,
+  assertMentionsAny,
+  hoverReplyAt,
+  hoverTextAt,
+  markdownHoverAt,
+} from './lsp-symbol-kit';
 
 suite('Hover / Quick Info', () => {
   let tmpDir: string;
@@ -77,14 +64,13 @@ suite('Hover / Quick Info', () => {
     await closeAllEditors();
   });
 
-  /** Open a fixture file from the workspace (part of the project). */
+  /** Open a workspace fixture from the project, show it, and wait for its outline. */
   async function openFixture(name: string): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
     const filePath = path.join(workspaceRoot, name);
     assert.ok(fs.existsSync(filePath), `${name} fixture must exist`);
-    const uri = vscode.Uri.file(filePath);
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
-    return { doc, uri };
+    const opened = await openExistingFile(workspaceRoot, name);
+    await waitForDocumentSymbols(opened.uri);
+    return opened;
   }
 
   // ── Multi-Symbol Hover ──────────────────────────────────────────
@@ -93,26 +79,24 @@ suite('Hover / Quick Info', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverMulti.cs');
-    await waitForDocumentSymbols(uri);
 
     // Hover on class "Calculator" (line 2, char 18).
-    const classMd = await hoverAt(uri, 2, 18, 'Must return hover for class');
+    const classMd = await hoverTextAt(uri, 2, 18, 'Must return hover for class');
     assertContainsAll(classMd, ['Calculator', 'class', '```'], 'Class hover must contain');
 
     // Hover on method "Add" (line 6, char 20).
-    const methodMd = await hoverAt(uri, 6, 20, 'Must return hover for method');
+    const methodMd = await hoverTextAt(uri, 6, 20, 'Must return hover for method');
     assertContainsAll(methodMd, ['Add', 'int'], 'Method hover must contain');
 
     // Hover on property "Name" (line 5, char 23).
-    const propMd = await hoverAt(uri, 5, 23, 'Must return hover for property');
+    const propMd = await hoverTextAt(uri, 5, 23, 'Must return hover for property');
     assertContainsAll(propMd, ['Name', 'string'], 'Property hover must contain');
 
     // Hover on field "_count" (line 4, char 21).
-    const fieldMd = await hoverAt(uri, 4, 21, 'Must return hover for field');
+    const fieldMd = await hoverTextAt(uri, 4, 21, 'Must return hover for field');
     assert.ok(fieldMd.includes('_count'), "Field hover must contain '_count'");
 
     const { uri: completionUri } = await openFixture('CompletionShot.cs');
-    await waitForDocumentSymbols(completionUri);
     const completions = await vscode.commands.executeCommand<vscode.CompletionList>(
       'vscode.executeCompletionItemProvider',
       completionUri,
@@ -179,10 +163,8 @@ suite('Hover / Quick Info', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverRange.cs');
-    await waitForDocumentSymbols(uri);
 
-    const hovers = await waitForHoverResult(uri, new vscode.Position(2, 18));
-    assert.ok(hovers.length > 0, 'Must return hover');
+    const [hovers] = await hoverReplyAt(uri, 2, 18, 'Must return hover');
 
     // Verify range is present and reasonable.
     const firstHover = hovers[0];
@@ -234,8 +216,7 @@ suite('Hover / Quick Info', () => {
   test('hover on comments and whitespace returns empty across many positions', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openFixture('HoverReject.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri, doc } = await openFixture('HoverReject.cs');
 
     // All these positions are on non-symbol tokens.
     const nullPositions = [
@@ -259,9 +240,7 @@ suite('Hover / Quick Info', () => {
     }
 
     // But hovering on the actual class MUST return results.
-    const classHover = await waitForHoverResult(uri, new vscode.Position(7, 18));
-    assert.ok(classHover.length > 0, 'Class hover must not be empty');
-    const md = hoverText(classHover);
+    const [classHover, md] = await hoverReplyAt(uri, 7, 18, 'Class hover must not be empty');
     assert.ok(md.includes('Bar'), "Class hover must mention 'Bar'");
 
     // Interaction 3 — BLANK positions are rejected too. [HOVER-ERRORS] lists
@@ -270,7 +249,6 @@ suite('Hover / Quick Info', () => {
     // rejection instead of a sidecar round trip on every mouse move.
     // Line 4 is the empty line before the namespace; 7:2 is inside the
     // indentation of the class line. Line 5 is the `namespace` keyword itself.
-    const document = await vscode.workspace.openTextDocument(uri);
     for (const blank of [new vscode.Position(4, 0), new vscode.Position(7, 2)]) {
       const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
         'vscode.executeHoverProvider',
@@ -287,8 +265,9 @@ suite('Hover / Quick Info', () => {
     // very same document answers for its declaration, with Markdown contents
     // and a range over the identifier.
     assertMarkdownContents(classHover, 'HoverReject Bar');
-    assert.strictEqual(
-      document.getText(classHover[0]?.range ?? new vscode.Range(0, 0, 0, 0)),
+    assertHoverCoversToken(
+      doc,
+      classHover,
       'Bar',
       'the class hover ranges over its own identifier',
     );
@@ -302,10 +281,9 @@ suite('Hover / Quick Info', () => {
 
     // Open fixture with class Alpha.
     const { doc, uri } = await openFixture('HoverEdit.cs');
-    await waitForDocumentSymbols(uri);
 
     // Hover on Alpha.
-    const alphaMd = await hoverAt(uri, 2, 18, 'Alpha hover must return results');
+    const alphaMd = await hoverTextAt(uri, 2, 18, 'Alpha hover must return results');
     assert.ok(alphaMd.includes('Alpha'), 'Must see Alpha in hover');
 
     // Edit: rename to Bravo, add a method.
@@ -319,15 +297,16 @@ suite('Hover / Quick Info', () => {
     assert.ok(bravoSymbols.length > 0, 'Symbols must update after edit');
 
     // Hover on Bravo.
-    const bravoHover = await waitForHoverResult(uri, new vscode.Position(2, 18));
-    assert.ok(bravoHover.length > 0, 'Bravo hover must return results');
-    const bravoMd = hoverText(bravoHover);
+    const [bravoHover, bravoMd] = await hoverReplyAt(uri, 2, 18, 'Bravo hover must return results');
     assert.ok(bravoMd.includes('Bravo'), 'Must see Bravo in hover after edit');
 
     // Hover on Run method.
-    const runHover = await waitForHoverResult(uri, new vscode.Position(4, 22));
-    assert.ok(runHover.length > 0, 'Run method hover must return results');
-    const runMd = hoverText(runHover);
+    const [runHover, runMd] = await hoverReplyAt(
+      uri,
+      4,
+      22,
+      'Run method hover must return results',
+    );
     assert.ok(runMd.includes('Run'), 'Must see Run in method hover');
 
     // Interaction 4 — the OLD name is gone. "The new name appeared" is only
@@ -345,8 +324,9 @@ suite('Hover / Quick Info', () => {
     assertMarkdownContents(bravoHover, 'HoverEdit Bravo');
     assertMarkdownContents(runHover, 'HoverEdit Run');
     assert.ok(bravoMd.includes('```'), 'the type tooltip carries a fenced signature');
-    assert.strictEqual(
-      doc.getText(runHover[0]?.range ?? new vscode.Range(0, 0, 0, 0)),
+    assertHoverCoversToken(
+      doc,
+      runHover,
       'Run',
       'and the method tooltip ranges over the method name',
     );
@@ -363,18 +343,17 @@ suite('Hover / Quick Info', () => {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
     const { uri } = await openFixture('HoverKinds.cs');
-    await waitForDocumentSymbols(uri);
 
     // Hover on struct "Point" (line 2, char 19).
-    const structMd = await hoverAt(uri, 2, 19, 'Struct hover must return results');
+    const structMd = await hoverTextAt(uri, 2, 19, 'Struct hover must return results');
     assertContainsAll(structMd, ['Point', 'struct'], 'Struct hover must contain');
 
     // Hover on enum "Color" (line 3, char 17).
-    const enumMd = await hoverAt(uri, 3, 17, 'Enum hover must return results');
+    const enumMd = await hoverTextAt(uri, 3, 17, 'Enum hover must return results');
     assertContainsAll(enumMd, ['Color', 'enum'], 'Enum hover must contain');
 
     // Hover on interface "IShape" (line 4, char 22).
-    const ifaceMd = await hoverAt(uri, 4, 22, 'Interface hover must return results');
+    const ifaceMd = await hoverTextAt(uri, 4, 22, 'Interface hover must return results');
     assertContainsAll(ifaceMd, ['IShape', 'interface'], 'Interface hover must contain');
   });
 
@@ -383,13 +362,10 @@ suite('Hover / Quick Info', () => {
   test('hover on var keyword shows inferred type', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openFixture('HoverVar.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri, doc } = await openFixture('HoverVar.cs');
 
     // Hover on `var` at line 7 char 12 ("var g = new Gadget()").
-    const varHover = await waitForHoverResult(uri, new vscode.Position(7, 12));
-    assert.ok(varHover.length > 0, 'var hover must return results');
-    const md = hoverText(varHover);
+    const [varHover, md] = await hoverReplyAt(uri, 7, 12, 'var hover must return results');
     assert.ok(md.includes('```'), 'var hover must have code block');
     assert.ok(
       md.includes('Gadget') || md.toLowerCase().includes('inferred'),
@@ -401,9 +377,9 @@ suite('Hover / Quick Info', () => {
     // back tells the reader nothing they could not already see.
     assertMarkdownContents(varHover, 'HoverVar var');
     assert.ok(md.includes('Gadget'), `the inferred type must be named outright: ${md}`);
-    const document = await vscode.workspace.openTextDocument(uri);
-    assert.strictEqual(
-      document.getText(varHover[0]?.range ?? new vscode.Range(0, 0, 0, 0)),
+    assertHoverCoversToken(
+      doc,
+      varHover,
       'var',
       'and the range covers the keyword the user pointed at',
     );
@@ -411,20 +387,14 @@ suite('Hover / Quick Info', () => {
     // Interaction 3 — a SECOND `var`, inferred from a property rather than a
     // constructor, resolves to that property's type. One working case is a
     // special case; two is inference.
-    const propertyVar = await waitForHoverResult(uri, new vscode.Position(8, 12));
-    assertMarkdownContents(propertyVar, 'HoverVar second var');
-    const propertyMd = hoverText(propertyVar);
+    const propertyMd = await markdownHoverAt(uri, 8, 12, 'HoverVar second var');
     assert.ok(propertyMd.includes('int'), `var over 'g.Size' must infer int, got: ${propertyMd}`);
     assert.notStrictEqual(propertyMd, md, 'two different inferences give two different tooltips');
 
     // Interaction 4 — hovering the initialiser itself names the same type, so
     // the keyword and the expression agree about what is being declared.
-    const constructed = await waitForHoverResult(uri, new vscode.Position(7, 28));
-    assertMarkdownContents(constructed, 'HoverVar new Gadget()');
-    assert.ok(
-      hoverText(constructed).includes('Gadget'),
-      'the constructed type resolves to Gadget as well',
-    );
+    const constructedMd = await markdownHoverAt(uri, 7, 28, 'HoverVar new Gadget()');
+    assert.ok(constructedMd.includes('Gadget'), 'the constructed type resolves to Gadget as well');
   });
 
   // ── XML documentation rendering ──────────────────────────────
@@ -432,27 +402,15 @@ suite('Hover / Quick Info', () => {
   test('hover renders XML doc summary, param, and returns tags', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openFixture('HoverXmlDoc.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri, doc } = await openFixture('HoverXmlDoc.cs');
 
     // Hover on Factorial method (line 7, char 21).
-    const hovers = await waitForHoverResult(uri, new vscode.Position(7, 21));
-    assert.ok(hovers.length > 0, 'Method with XML doc must return hover');
-    const md = hoverText(hovers);
+    const [hovers, md] = await hoverReplyAt(uri, 7, 21, 'Method with XML doc must return hover');
     assertContainsAll(md, ['Factorial', '```'], 'md');
     // XML doc sections.
-    assert.ok(
-      md.toLowerCase().includes('factorial') && md.toLowerCase().includes('computes'),
-      `Must render <summary>: ${md}`,
-    );
-    assert.ok(
-      md.toLowerCase().includes('non-negative') || md.toLowerCase().includes('input'),
-      `Must render <param>: ${md}`,
-    );
-    assert.ok(
-      md.toLowerCase().includes('result') || md.toLowerCase().includes('return'),
-      `Must render <returns>: ${md}`,
-    );
+    assertMentionsAll(md, ['factorial', 'computes'], 'Must render <summary>', true);
+    assertMentionsAny(md, ['non-negative', 'input'], 'Must render <param>', true);
+    assertMentionsAny(md, ['result', 'return'], 'Must render <returns>', true);
 
     // Interaction 2 — the rendered documentation is MARKDOWN, and the raw XML
     // tags are gone. [HOVER-CSHARP-RENDERING-XML] renders `<summary>` as a
@@ -470,12 +428,7 @@ suite('Hover / Quick Info', () => {
 
     // Interaction 4 — the parameter's own name reaches the reader, so the
     // `<param name="n">` description is attached to something.
-    const document = await vscode.workspace.openTextDocument(uri);
-    assert.strictEqual(
-      document.getText(hovers[0]?.range ?? new vscode.Range(0, 0, 0, 0)),
-      'Factorial',
-      'the hover ranges over the method name',
-    );
+    assertHoverCoversToken(doc, hovers, 'Factorial', 'the hover ranges over the method name');
     assert.ok(md.includes('n'), 'and the parameter name appears in the rendered documentation');
   });
 
@@ -484,15 +437,12 @@ suite('Hover / Quick Info', () => {
   test('hover on [Obsolete] method shows deprecation warning', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
 
-    const { uri } = await openFixture('HoverObsolete.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri, doc } = await openFixture('HoverObsolete.cs');
 
     // Hover on OldMethod (line 5, char 21).
-    const hovers = await waitForHoverResult(uri, new vscode.Position(5, 21));
-    assert.ok(hovers.length > 0, 'Obsolete method must return hover');
-    const md = hoverText(hovers);
+    const [hovers, md] = await hoverReplyAt(uri, 5, 21, 'Obsolete method must return hover');
     assertContainsAll(md, ['OldMethod', '```'], 'md');
-    assert.ok(md.includes('Deprecated') || md.includes('Obsolete'), `Must show deprecation: ${md}`);
+    assertMentionsAny(md, ['Deprecated', 'Obsolete'], 'Must show deprecation');
     assert.ok(md.includes('Use NewMethod instead'), `Must include obsolete message: ${md}`);
 
     // Interaction 2 — [HOVER-CSHARP-RENDERING] lists deprecation as a REQUIRED
@@ -500,19 +450,12 @@ suite('Hover / Quick Info', () => {
     // reading the attribute, so the tooltip carries the signature too.
     assertMarkdownContents(hovers, 'HoverObsolete OldMethod');
     assertContainsAll(md, ['Legacy', 'void'], 'md');
-    const document = await vscode.workspace.openTextDocument(uri);
-    assert.strictEqual(
-      document.getText(hovers[0]?.range ?? new vscode.Range(0, 0, 0, 0)),
-      'OldMethod',
-      'and ranges over the deprecated method name',
-    );
+    assertHoverCoversToken(doc, hovers, 'OldMethod', 'and ranges over the deprecated method name');
 
     // Interaction 3 — the NON-deprecated sibling shows no deprecation. A
     // tooltip that marks everything obsolete is as useless as one that marks
     // nothing, and only the pair can tell them apart.
-    const healthy = await waitForHoverResult(uri, new vscode.Position(6, 21));
-    assertMarkdownContents(healthy, 'HoverObsolete NewMethod');
-    const healthyMd = hoverText(healthy);
+    const healthyMd = await markdownHoverAt(uri, 6, 21, 'HoverObsolete NewMethod');
     assert.ok(healthyMd.includes('NewMethod'), `the sibling tooltip names it: ${healthyMd}`);
     assert.ok(
       !healthyMd.includes('Use NewMethod instead'),
@@ -526,28 +469,7 @@ suite('Hover / Quick Info', () => {
   test('ExplorerNode carries symbolUri and symbolPosition on symbol nodes', async function () {
     this.timeout(COMMAND_MS);
 
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext !== undefined, 'Extension must exist');
-    assert.ok(ext.isActive, 'Extension must be active');
-
-    interface TreeNode {
-      readonly label?: string | { label: string };
-      readonly symbolUri?: string;
-      readonly symbolPosition?: { line: number; character: number };
-      readonly nodeType?: string;
-      readonly children?: TreeNode[];
-    }
-    interface ExplorerApi {
-      explorerProvider: {
-        loadSolution(slnPath: string): Promise<void>;
-        clear(): void;
-        getChildren(element?: unknown): TreeNode[] | undefined;
-        onDidChangeTreeData: vscode.Event<unknown>;
-      };
-    }
-    const api = ext.exports as ExplorerApi | undefined;
-    assert.ok(api !== undefined, 'Extension must export API');
-    assert.ok(api.explorerProvider !== undefined, 'Must export explorerProvider');
+    const api = explorerApi();
 
     // Verify provider has the reactive event.
     assert.ok(
@@ -556,11 +478,7 @@ suite('Hover / Quick Info', () => {
     );
 
     // Verify root shape.
-    const roots = api.explorerProvider.getChildren();
-    assert.ok(
-      Array.isArray(roots) || roots === undefined,
-      'getChildren() must return array or undefined',
-    );
+    const roots = explorerRoots(api, 'getChildren() must return array or undefined');
 
     // If tree is loaded, walk it and verify symbol nodes have hover data.
     if (Array.isArray(roots)) {
@@ -604,43 +522,14 @@ suite('Hover / Quick Info', () => {
   test('resolveTreeItem uses LSP hover — same content as code hover', async function () {
     this.timeout(LSP_SWEEP_MS);
 
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
-
-    interface TooltipNode {
-      readonly label?: string | { label: string };
-      readonly symbolUri?: string;
-      readonly symbolPosition?: { line: number; character: number };
-      readonly symbolKind?: string;
-      readonly sortName?: string;
-      readonly access?: string;
-      readonly nodeType?: string;
-      readonly tooltip?: string | vscode.MarkdownString;
-      readonly children?: TooltipNode[];
-    }
-    interface ExplorerApi {
-      explorerProvider: {
-        loadSolution(slnPath: string): Promise<void>;
-        clear(): void;
-        getTreeItem(element: unknown): vscode.TreeItem;
-        getChildren(element?: unknown): TooltipNode[] | undefined;
-        resolveTreeItem(
-          item: vscode.TreeItem,
-          element: unknown,
-          token: vscode.CancellationToken,
-        ): Promise<vscode.TreeItem>;
-      };
-    }
-    const api = ext.exports as ExplorerApi | undefined;
-    assert.ok(api?.explorerProvider, 'Must export explorerProvider');
+    const api = explorerApi();
 
     // Use the workspace fixture project — it's already loaded by the sidecar.
     const slnPath = path.join(workspaceRoot, 'TestFixtures.sln');
     assert.ok(fs.existsSync(slnPath), 'TestFixtures.sln must exist');
 
     // Open Calculator.cs so the LSP has it parsed.
-    const { uri } = await openFixture('Calculator.cs');
-    await waitForDocumentSymbols(uri);
+    await openFixture('Calculator.cs');
     await api.explorerProvider.loadSolution(slnPath);
 
     // Wait for tree to populate.
@@ -688,28 +577,9 @@ suite('Hover / Quick Info', () => {
   test('resolveTreeItem returns undefined tooltip for non-symbol nodes', async function () {
     this.timeout(COMMAND_MS);
 
-    const ext = vscode.extensions.getExtension(EXTENSION_ID);
-    assert.ok(ext?.isActive, 'Extension must be active');
+    const api = explorerApi();
 
-    interface NodeApi {
-      explorerProvider: {
-        getTreeItem(element: unknown): vscode.TreeItem;
-        getChildren(element?: unknown): { nodeType?: string; sortName?: string }[] | undefined;
-        resolveTreeItem(
-          item: vscode.TreeItem,
-          element: unknown,
-          token: vscode.CancellationToken,
-        ): Promise<vscode.TreeItem>;
-      };
-    }
-    const api = ext.exports as NodeApi | undefined;
-    assert.ok(api?.explorerProvider, 'Must export explorerProvider');
-
-    const roots = api.explorerProvider.getChildren();
-    assert.ok(
-      Array.isArray(roots) || roots === undefined,
-      'getChildren returns an array or nothing',
-    );
+    const roots = explorerRoots(api, 'getChildren returns an array or nothing');
     if (roots === undefined || roots.length === 0) return;
     assert.ok(roots.length > 0, 'the loaded tree has at least one root');
     assert.ok(
@@ -775,22 +645,14 @@ suite('Hover / Quick Info', () => {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-/** The hover text at `line:character`, asserted to exist (`why` says what for). */
-async function hoverAt(
-  uri: vscode.Uri,
-  line: number,
-  character: number,
+/** Assert the first hover's range (or the document origin when absent) covers exactly `token`. */
+function assertHoverCoversToken(
+  doc: vscode.TextDocument,
+  hovers: readonly vscode.Hover[],
+  token: string,
   why: string,
-): Promise<string> {
-  const hovers = await waitForHoverResult(uri, new vscode.Position(line, character));
-  assert.ok(hovers.length > 0, why);
-  return hoverText(hovers);
-}
-
-interface TreeNode {
-  readonly symbolUri?: string;
-  readonly nodeType?: string;
-  readonly children?: TreeNode[];
+): void {
+  assert.strictEqual(doc.getText(hovers[0]?.range ?? new vscode.Range(0, 0, 0, 0)), token, why);
 }
 
 interface SymbolTreeNode {
@@ -802,14 +664,34 @@ interface SymbolTreeNode {
   readonly children?: SymbolTreeNode[];
 }
 
-/** The slice of the explorer provider a tooltip walk needs. */
-interface TooltipProvider {
-  getTreeItem(element: unknown): vscode.TreeItem;
-  resolveTreeItem(
-    item: vscode.TreeItem,
-    element: unknown,
-    token: vscode.CancellationToken,
-  ): Promise<vscode.TreeItem>;
+/** The slice of the explorer provider the hover suites drive. */
+interface ExplorerApi {
+  explorerProvider: {
+    loadSolution(slnPath: string): Promise<void>;
+    clear(): void;
+    getTreeItem(element: unknown): vscode.TreeItem;
+    getChildren(element?: unknown): SymbolTreeNode[] | undefined;
+    onDidChangeTreeData: vscode.Event<unknown>;
+    resolveTreeItem(
+      item: vscode.TreeItem,
+      element: unknown,
+      token: vscode.CancellationToken,
+    ): Promise<vscode.TreeItem>;
+  };
+}
+
+/** The active extension's exported explorer provider, asserted present and active. */
+function explorerApi(): ExplorerApi {
+  const api = requireExtensionExports('explorerProvider') as Partial<ExplorerApi> | undefined;
+  assert.ok(api?.explorerProvider !== undefined, 'Must export explorerProvider');
+  return api as ExplorerApi;
+}
+
+/** The explorer's root nodes, asserted to be a list or absent (`why` says what it is for). */
+function explorerRoots(api: ExplorerApi, why: string): SymbolTreeNode[] | undefined {
+  const roots = api.explorerProvider.getChildren();
+  assert.ok(Array.isArray(roots) || roots === undefined, why);
+  return roots;
 }
 
 /** The distinct files the symbol nodes point into. */
@@ -825,7 +707,7 @@ function symbolFiles(nodes: readonly SymbolTreeNode[]): string[] {
  * declarations, say), so the caller counts the ones that did.
  */
 async function assertTooltipMatchesHover(
-  provider: TooltipProvider,
+  provider: ExplorerApi['explorerProvider'],
   node: SymbolTreeNode,
   token: vscode.CancellationToken,
 ): Promise<boolean> {
@@ -857,7 +739,7 @@ function collectSymbolNodes(nodes: SymbolTreeNode[]): SymbolTreeNode[] {
 }
 
 /** Recursively assert non-symbol nodes lack symbolUri. */
-function assertNonSymbolNodesLackHoverData(nodes: TreeNode[]): void {
+function assertNonSymbolNodesLackHoverData(nodes: SymbolTreeNode[]): void {
   for (const node of nodes) {
     if (
       node.nodeType === 'solution' ||

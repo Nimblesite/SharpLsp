@@ -4,6 +4,7 @@
 
 use lsp_types::{SymbolKind, TypeHierarchyItem};
 
+use crate::document_symbols::hierarchy_symbol_kind;
 use crate::hierarchy::{hierarchy_item_location, SidecarHierarchyItem};
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ pub fn map_type_hierarchy_item(item: &SidecarHierarchyItem) -> Option<TypeHierar
     let (uri, range, selection_range) = hierarchy_item_location(item)?;
     Some(TypeHierarchyItem {
         name: item.name.clone(),
-        kind: parse_symbol_kind(&item.kind),
+        kind: hierarchy_symbol_kind(&item.kind, SymbolKind::CLASS),
         tags: None,
         detail: None,
         uri,
@@ -21,15 +22,4 @@ pub fn map_type_hierarchy_item(item: &SidecarHierarchyItem) -> Option<TypeHierar
         selection_range,
         data: None,
     })
-}
-
-/// Parse a sidecar symbol kind string into an LSP `SymbolKind`.
-fn parse_symbol_kind(kind: &str) -> SymbolKind {
-    match kind {
-        "Interface" => SymbolKind::INTERFACE,
-        "Struct" => SymbolKind::STRUCT,
-        "Enum" => SymbolKind::ENUM,
-        "Module" | "Namespace" => SymbolKind::MODULE,
-        _ => SymbolKind::CLASS,
-    }
 }

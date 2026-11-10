@@ -151,8 +151,9 @@ fn flatten_workspace_symbol(
     }
 }
 
-/// Parse a sidecar symbol-kind string into an LSP [`SymbolKind`].
-fn parse_document_symbol_kind(kind: &str) -> SymbolKind {
+/// The LSP [`SymbolKind`] a sidecar names `kind`, or `fallback` for a name it does not use:
+/// one table for document symbols and both hierarchies.
+pub(crate) fn symbol_kind_named(kind: &str, fallback: SymbolKind) -> SymbolKind {
     match kind {
         "Module" => SymbolKind::MODULE,
         "Namespace" => SymbolKind::NAMESPACE,
@@ -166,11 +167,26 @@ fn parse_document_symbol_kind(kind: &str) -> SymbolKind {
         "Method" => SymbolKind::METHOD,
         "Key" => SymbolKind::KEY,
         "Property" => SymbolKind::PROPERTY,
+        "Field" => SymbolKind::FIELD,
+        "Event" => SymbolKind::EVENT,
         "Constant" => SymbolKind::CONSTANT,
         "Variable" => SymbolKind::VARIABLE,
         "TypeParameter" => SymbolKind::TYPE_PARAMETER,
-        _ => SymbolKind::FIELD,
+        _ => fallback,
     }
+}
+
+/// A call or type hierarchy item's kind: hierarchies draw a namespace as a module.
+pub(crate) fn hierarchy_symbol_kind(kind: &str, fallback: SymbolKind) -> SymbolKind {
+    match kind {
+        "Namespace" => SymbolKind::MODULE,
+        _ => symbol_kind_named(kind, fallback),
+    }
+}
+
+/// A document symbol's kind; an unnamed kind is a field.
+fn parse_document_symbol_kind(kind: &str) -> SymbolKind {
+    symbol_kind_named(kind, SymbolKind::FIELD)
 }
 
 // ── Wire types ────────────────────────────────────────────────────

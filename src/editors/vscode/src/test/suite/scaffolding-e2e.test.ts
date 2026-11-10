@@ -30,7 +30,24 @@ import {
   pollUntilResult,
 } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
+import { assertNoToastIncludes } from './nuget-deps-kit';
 import { compileIncludes } from './project-xml-kit';
+import {
+  assertCancelledAtPicker,
+  assertSolutionReferences,
+  createSolutionProjectPair,
+  firstExisting,
+  firstPickLabels,
+  pickProjectNamed,
+  runCancelledCommand,
+  scaffoldName,
+  scaffoldProjectViaCommand,
+  trackSlnCandidates,
+  trackedNewFile,
+  trackedProjectDir,
+  waitForWorkspaceProject,
+  workspaceFolder,
+} from './scaffolding-kit';
 import {
   newSolutionArgs,
   newProjectArgs,
@@ -76,38 +93,6 @@ function getProvider(): ExplorerApi['explorerProvider'] {
     throw new Error('Extension does not export explorerProvider');
   }
   return api.explorerProvider;
-}
-
-/** Resolve the committed workspace folder the scaffolding commands write into. */
-function workspaceFolder(): string {
-  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  assert.ok(folder !== undefined && folder !== '', 'a workspace folder must be open');
-  return folder;
-}
-
-/** A short, collision-proof token for temp scaffolding names. */
-function uniqueToken(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-/**
- * Wait until `vscode.workspace.findFiles` indexes a project file written to disk
- * outside the workspace edit API (e.g. by `dotnet new`). The file watcher may lag
- * a beat behind the disk write, so we poll briefly before driving a command that
- * relies on workspace discovery.
- */
-async function waitForWorkspaceProject(basename: string): Promise<void> {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const uris = await vscode.workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-    if (uris.some((uri) => uri.fsPath.endsWith(basename))) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  assert.fail(
-    `the workspace never indexed ${basename}; the command under test would see no project`,
-  );
 }
 
 suite('Scaffolding E2E (drive real commands)', () => {
@@ -178,9 +163,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   for (const { template, snippet } of FILE_CASES) {
     test(`newFile creates a ${template} matching generateFileContent and opens it`, async function () {
       this.timeout(COMMAND_MS);
-      const folder = workspaceFolder();
-      const name = `ScaffTmp_${template}_${uniqueToken()}`;
-      const filePath = track(path.join(folder, `${name}.cs`));
+      const { name, filePath } = trackedNewFile(track, template);
 
       // The command shows a FILE_TEMPLATES QuickPick, then a name InputBox.
       stubs.queuePick(template).queueInput(name);
@@ -218,8 +201,13 @@ suite('Scaffolding E2E (drive real commands)', () => {
 
       // The QuickPick was shown and offered the five built-in templates.
       assert.ok(stubs.log.quickPickItems.length >= 1, 'a file-type QuickPick was shown');
-      const labels = (stubs.log.quickPickItems[0] as { label: string }[]).map((i) => i.label);
-      assert.deepStrictEqual(labels, ['Class', 'Interface', 'Enum', 'Struct', 'Record']);
+      assert.deepStrictEqual(firstPickLabels(stubs), [
+        'Class',
+        'Interface',
+        'Enum',
+        'Struct',
+        'Record',
+      ]);
       // The name prompt was shown exactly once.
       assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'one name prompt was shown');
     });
@@ -227,37 +215,40 @@ suite('Scaffolding E2E (drive real commands)', () => {
 
   test('newFile cancelled at the template picker writes no file and opens nothing', async function () {
     this.timeout(COMMAND_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_Cancelled_${uniqueToken()}`;
-    const filePath = track(path.join(folder, `${name}.cs`));
+    const { name, filePath } = trackedNewFile(track, 'Cancelled');
     const before = vscode.window.activeTextEditor?.document.uri.fsPath;
 
     // queuePick with no selector → QuickPick returns undefined → command bails.
-    stubs.queueInput(name); // queued but never consumed because the pick cancels first.
-    await vscode.commands.executeCommand(CMD_NEW_FILE);
-
-    assert.ok(!fs.existsSync(filePath), 'no file may be created when the picker is cancelled');
+    await runCancelledCommand(
+      stubs,
+      CMD_NEW_FILE,
+      undefined,
+      name,
+      filePath,
+      'no file may be created when the picker is cancelled',
+    );
     assert.strictEqual(
       vscode.window.activeTextEditor?.document.uri.fsPath,
       before,
       'no new editor may be opened on cancel',
     );
     // The picker was shown but the name prompt was never reached.
-    assert.strictEqual(stubs.log.quickPickItems.length, 1, 'the template picker was shown');
-    assert.strictEqual(stubs.log.inputBoxOptions.length, 0, 'the name prompt was NOT reached');
+    assertCancelledAtPicker(stubs);
   });
 
   test('newFile cancelled at the name prompt (empty name) writes no file', async function () {
     this.timeout(COMMAND_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_Empty_${uniqueToken()}`;
     // An empty string name is the documented cancel condition (`name === ''`).
-    const filePath = track(path.join(folder, `${name}.cs`));
+    const { filePath } = trackedNewFile(track, 'Empty');
 
-    stubs.queuePick('Class').queueInput('');
-    await vscode.commands.executeCommand(CMD_NEW_FILE);
-
-    assert.ok(!fs.existsSync(filePath), 'empty name must abort file creation');
+    await runCancelledCommand(
+      stubs,
+      CMD_NEW_FILE,
+      'Class',
+      '',
+      filePath,
+      'empty name must abort file creation',
+    );
     // Empty-name path is reached: both prompts ran.
     assert.strictEqual(stubs.log.quickPickItems.length, 1);
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1);
@@ -269,8 +260,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newFile auto-adds to the explicit-compile csproj even past a comment trap', async function () {
     this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
-    const name = `ScaffTmp_Trap_${uniqueToken()}`;
-    track(path.join(folder, `${name}.cs`));
+    const { name } = trackedNewFile(track, 'Trap');
     const trapPath = track(path.join(folder, `${name}.csproj`));
     fs.writeFileSync(
       trapPath,
@@ -360,16 +350,16 @@ suite('Scaffolding E2E (drive real commands)', () => {
 
   test('newProject scaffolds a real C# console project the workspace folder', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_Cs_${uniqueToken()}`;
-    const projDir = track(path.join(folder, name));
-
+    const name = scaffoldName('Cs');
     // PROJECT_TEMPLATES QuickPick → 'Console App', then a project-name InputBox.
-    stubs.queuePick('Console App').queueInput(name).queueInfo(undefined);
-    await vscode.commands.executeCommand(CMD_NEW_PROJECT);
-
-    assert.ok(fs.existsSync(projDir), 'the project directory must be created');
-    const projFile = findProjectFile(projDir, name);
+    const { projDir, projFile } = await scaffoldProjectViaCommand(
+      stubs,
+      track,
+      CMD_NEW_PROJECT,
+      'Console App',
+      name,
+      'the project directory must be created',
+    );
     assert.ok(projFile, 'a C# project file must be found');
     assert.ok(projFile.endsWith(`${name}.csproj`), 'the project file must be a .csproj');
     assert.ok(fs.existsSync(projFile), 'the located project file must exist on disk');
@@ -377,7 +367,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     assert.ok(!fs.existsSync(path.join(projDir, `${name}.fsproj`)));
 
     // The template QuickPick was offered with both C# and F# entries.
-    const labels = (stubs.log.quickPickItems[0] as { label: string }[]).map((i) => i.label);
+    const labels = firstPickLabels(stubs);
     assert.ok(labels.includes('Console App'));
     assert.ok(
       labels.some((l) => l.startsWith('F#')),
@@ -387,44 +377,48 @@ suite('Scaffolding E2E (drive real commands)', () => {
 
   test('newProject scaffolds a real F# class library (--language branch)', async function () {
     this.timeout(DOTNET_CLI_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_Fs_${uniqueToken()}`;
-    const projDir = track(path.join(folder, name));
-
-    stubs.queuePick('F# Class Library').queueInput(name).queueInfo(undefined);
-    await vscode.commands.executeCommand(CMD_NEW_PROJECT);
-
-    assert.ok(fs.existsSync(projDir), 'the F# project directory must be created');
-    const projFile = findProjectFile(projDir, name);
+    const name = scaffoldName('Fs');
+    const { projDir, projFile } = await scaffoldProjectViaCommand(
+      stubs,
+      track,
+      CMD_NEW_PROJECT,
+      'F# Class Library',
+      name,
+      'the F# project directory must be created',
+    );
     assert.ok(projFile?.endsWith(`${name}.fsproj`), 'an F# .fsproj must be found');
     assert.ok(!fs.existsSync(path.join(projDir, `${name}.csproj`)));
   });
 
   test('newProject cancels cleanly when no template is picked', async function () {
     this.timeout(COMMAND_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_NoTpl_${uniqueToken()}`;
-    const projDir = track(path.join(folder, name));
+    const name = scaffoldName('NoTpl');
+    const projDir = trackedProjectDir(track, name);
 
     // No queuePick → the template QuickPick returns undefined → command bails.
-    stubs.queueInput(name);
-    await vscode.commands.executeCommand(CMD_NEW_PROJECT);
-
-    assert.ok(!fs.existsSync(projDir), 'no project dir on template cancel');
-    assert.strictEqual(stubs.log.quickPickItems.length, 1, 'the template picker was shown');
-    assert.strictEqual(stubs.log.inputBoxOptions.length, 0, 'the name prompt was NOT reached');
+    await runCancelledCommand(
+      stubs,
+      CMD_NEW_PROJECT,
+      undefined,
+      name,
+      projDir,
+      'no project dir on template cancel',
+    );
+    assertCancelledAtPicker(stubs);
   });
 
   test('newProject cancels when the project name is empty', async function () {
     this.timeout(COMMAND_MS);
-    const folder = workspaceFolder();
-    const name = `ScaffTmp_EmptyName_${uniqueToken()}`;
-    const projDir = track(path.join(folder, name));
+    const projDir = trackedProjectDir(track, 'EmptyName');
 
-    stubs.queuePick('Class Library').queueInput('');
-    await vscode.commands.executeCommand(CMD_NEW_PROJECT);
-
-    assert.ok(!fs.existsSync(projDir), 'no project dir when name is empty');
+    await runCancelledCommand(
+      stubs,
+      CMD_NEW_PROJECT,
+      'Class Library',
+      '',
+      projDir,
+      'no project dir when name is empty',
+    );
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'the name prompt WAS reached');
   });
 
@@ -433,10 +427,9 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newSolution creates a real solution and declines the first-project offer', async function () {
     this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
-    const name = `ScaffTmp_Sln_${uniqueToken()}`;
+    const name = scaffoldName('Sln');
     // The SDK chooses .sln or .slnx — track both candidates so cleanup is total.
-    track(path.join(folder, `${name}.sln`));
-    track(path.join(folder, `${name}.slnx`));
+    const { slnPath, slnxPath } = trackSlnCandidates(track, folder, name);
 
     // newSolution opens the new solution (CMD_OPEN_SOLUTION → loadSolution sets the
     // bundled solutionPath); teardown's getProvider().clear() resets it afterwards.
@@ -446,13 +439,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     await vscode.commands.executeCommand(CMD_NEW_SOLUTION);
 
     // Exactly one of the two candidate solution files must now exist.
-    const slnxPath = path.join(folder, `${name}.slnx`);
-    const slnPath = path.join(folder, `${name}.sln`);
-    const producedPath = fs.existsSync(slnxPath)
-      ? slnxPath
-      : fs.existsSync(slnPath)
-        ? slnPath
-        : undefined;
+    const producedPath = firstExisting([slnxPath, slnPath]);
     assert.ok(producedPath, 'a .sln or .slnx solution file must be created');
     assert.match(path.basename(producedPath), new RegExp(`^${name}\\.slnx?$`));
 
@@ -466,10 +453,9 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newSolution accepts the first-project offer and wires the project into the solution', async function () {
     this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
-    const slnName = `ScaffTmp_SlnAdd_${uniqueToken()}`;
-    const projName = `ScaffTmp_FirstProj_${uniqueToken()}`;
-    track(path.join(folder, `${slnName}.sln`));
-    track(path.join(folder, `${slnName}.slnx`));
+    const slnName = scaffoldName('SlnAdd');
+    const projName = scaffoldName('FirstProj');
+    const { slnPath, slnxPath } = trackSlnCandidates(track, folder, slnName);
     track(path.join(folder, projName));
 
     // newSolution opens the new solution (sets the bundled solutionPath);
@@ -482,9 +468,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       .queuePick('Class Library');
     await vscode.commands.executeCommand(CMD_NEW_SOLUTION);
 
-    const slnxPath = path.join(folder, `${slnName}.slnx`);
-    const slnPath = path.join(folder, `${slnName}.sln`);
-    const producedSln = fs.existsSync(slnxPath) ? slnxPath : slnPath;
+    const producedSln = firstExisting([slnxPath, slnPath]) ?? '';
     assert.ok(fs.existsSync(producedSln), 'the solution file must exist');
 
     // The project was created and added to the brand-new solution (explicit-solution path).
@@ -492,9 +476,9 @@ suite('Scaffolding E2E (drive real commands)', () => {
     const projFile = findProjectFile(projDir, projName);
     assert.ok(projFile?.endsWith(`${projName}.csproj`), 'the first project must be created');
 
-    const slnText = fs.readFileSync(producedSln, 'utf-8');
-    assert.ok(
-      slnText.includes(`${projName}.csproj`),
+    assertSolutionReferences(
+      producedSln,
+      `${projName}.csproj`,
       'the new solution must reference the first project',
     );
   });
@@ -502,19 +486,20 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('newSolution is cancelled by an empty solution name (no solution created)', async function () {
     this.timeout(COMMAND_MS);
     const folder = workspaceFolder();
-    const name = `ScaffTmp_SlnCancel_${uniqueToken()}`;
-    track(path.join(folder, `${name}.sln`));
-    track(path.join(folder, `${name}.slnx`));
+    const name = scaffoldName('SlnCancel');
+    const { slnPath, slnxPath } = trackSlnCandidates(track, folder, name);
 
     stubs.queueInput('');
     await vscode.commands.executeCommand(CMD_NEW_SOLUTION);
 
-    assert.ok(!fs.existsSync(path.join(folder, `${name}.sln`)));
-    assert.ok(!fs.existsSync(path.join(folder, `${name}.slnx`)));
+    assert.ok(!fs.existsSync(slnPath));
+    assert.ok(!fs.existsSync(slnxPath));
     // The name prompt was shown but the first-project offer was never reached.
     assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'name prompt was shown');
-    assert.ok(
-      !stubs.log.infoMessages.some((m) => m.includes('Add a project now?')),
+    assertNoToastIncludes(
+      stubs,
+      'info',
+      'Add a project now?',
       'the first-project offer must NOT appear when cancelled',
     );
   });
@@ -529,15 +514,17 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('addProjectToSolution wires the picked project into the picked solution', async function () {
     this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
-    const projName = `ScaffTmp_AddProj_${uniqueToken()}`;
-    const slnName = `ScaffTmp_AddSln_${uniqueToken()}`;
+    const projName = scaffoldName('AddProj');
+    const slnName = scaffoldName('AddSln');
 
     // Create a real solution + project inside the workspace via the pure helpers.
-    const slnPath = await createSolution(folder, slnName);
+    const { slnPath, projDir, projFile } = await createSolutionProjectPair(
+      folder,
+      slnName,
+      projName,
+    );
     track(slnPath);
-    const projDir = await createProject(folder, projName, 'classlib');
     track(projDir);
-    const projFile = findProjectFile(projDir, projName);
     assert.ok(projFile, 'the project file must be locatable before adding it');
 
     // Ensure NO active solution is pinned so the dist pickSolutionFile shows the
@@ -552,20 +539,16 @@ suite('Scaffolding E2E (drive real commands)', () => {
     // The command finds *.csproj/*.fsproj across the workspace → pick ours by name;
     // then pickSolutionFile shows a QuickPick (multiple solutions) → pick ours.
     stubs
-      .queuePick(
-        (items) =>
-          (items as { label: string; uri: vscode.Uri }[]).find((i) =>
-            i.uri.fsPath.endsWith(`${projName}.csproj`),
-          ),
-        (items) => (items as { label: string; path: string }[]).find((i) => i.path === slnPath),
+      .queuePick(pickProjectNamed(projName), (items) =>
+        (items as { label: string; path: string }[]).find((i) => i.path === slnPath),
       )
       .queueInfo(undefined);
     await vscode.commands.executeCommand(CMD_ADD_PROJECT_TO_SOLUTION);
 
     // addProjectToSolutionFile ran: the solution now references the project (no throw).
-    const slnText = fs.readFileSync(slnPath, 'utf-8');
-    assert.ok(
-      slnText.includes(`${projName}.csproj`),
+    assertSolutionReferences(
+      slnPath,
+      `${projName}.csproj`,
       'the solution must reference the added project',
     );
     assert.ok(
@@ -577,12 +560,11 @@ suite('Scaffolding E2E (drive real commands)', () => {
   test('addProjectToSolution uses the active solution selection without a second pick', async function () {
     this.timeout(DOTNET_CLI_MS);
     const folder = workspaceFolder();
-    const projName = `ScaffTmp_AddProj2_${uniqueToken()}`;
-    const slnName = `ScaffTmp_AddSln2_${uniqueToken()}`;
+    const projName = scaffoldName('AddProj2');
+    const slnName = scaffoldName('AddSln2');
 
-    const slnPath = await createSolution(folder, slnName);
+    const { slnPath, projDir } = await createSolutionProjectPair(folder, slnName, projName);
     track(slnPath);
-    const projDir = await createProject(folder, projName, 'classlib');
     track(projDir);
 
     // Pin the active solution via the LIVE command so the dist pickSolutionFile
@@ -594,17 +576,14 @@ suite('Scaffolding E2E (drive real commands)', () => {
     // The workspace index must see the freshly-written project before the command runs.
     await waitForWorkspaceProject(`${projName}.csproj`);
 
-    stubs
-      .queuePick((items) =>
-        (items as { label: string; uri: vscode.Uri }[]).find((i) =>
-          i.uri.fsPath.endsWith(`${projName}.csproj`),
-        ),
-      )
-      .queueInfo(undefined);
+    stubs.queuePick(pickProjectNamed(projName)).queueInfo(undefined);
     await vscode.commands.executeCommand(CMD_ADD_PROJECT_TO_SOLUTION);
 
-    const slnText = fs.readFileSync(slnPath, 'utf-8');
-    assert.ok(slnText.includes(`${projName}.csproj`), 'the active solution must gain the project');
+    assertSolutionReferences(
+      slnPath,
+      `${projName}.csproj`,
+      'the active solution must gain the project',
+    );
     // Only ONE QuickPick (the project picker) — the active solution was taken from
     // the bundled state, so pickSolutionFile never prompted for a solution.
     assert.strictEqual(
@@ -632,7 +611,11 @@ suite('Scaffolding E2E (drive real commands)', () => {
       // A throwaway solution wires the project — exercises addProjectToSolutionFile too.
       const slnPath = await createSolution(isolated, 'FindSln');
       await addProjectToSolutionFile(slnPath, located);
-      assert.ok(fs.readFileSync(slnPath, 'utf-8').includes('Found.csproj'));
+      assertSolutionReferences(
+        slnPath,
+        'Found.csproj',
+        'the throwaway solution references the project',
+      );
     } finally {
       removeDirRecursive(isolated);
     }

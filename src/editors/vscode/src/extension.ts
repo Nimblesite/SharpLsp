@@ -1,5 +1,5 @@
 /** Implements [SE-COMMANDS], [SE-ACTIONS], [SE-SOLUTION], and [SE-NAVIGATION]. */
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import { type ExtensionContext, commands, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { getErrorMessage } from './utils.js';
@@ -13,23 +13,8 @@ import {
   CMD_SORT_NATURAL,
   CMD_SORT_ALPHABETICAL,
   CMD_SORT_ACCESSIBILITY,
-  CMD_REMOVE_NUGET_PACKAGE,
-  CMD_REMOVE_PROJECT_REFERENCE,
-  CMD_REMOVE_UNUSED_PACKAGES,
-  CMD_CONSOLIDATE_PACKAGES,
-  CMD_BROWSE_NUGET_PACKAGES,
-  CMD_SORT_MEMBERS,
-  CMD_COPY_QUALIFIED_NAME,
-  CMD_COPY_NAME,
-  CMD_REVEAL_IN_EXPLORER,
   CMD_OPEN_SOLUTION,
-  CMD_OPEN_PROJECT_FILE,
-  CMD_ADD_PROJECT_REFERENCE,
-  CMD_ADD_FSHARP_FILE,
-  CMD_REMOVE_FSHARP_FILE,
-  CMD_ADD_REFERENCE_AND_IMPORT,
   CONTEXT_FS_PROJECT_SELECTED,
-  CMD_NUGET_ADD_FROM_EXPLORER,
   VIEW_SOLUTION_EXPLORER,
 } from './constants.js';
 import { configureDotnet } from './dotnet-process.js';
@@ -37,21 +22,18 @@ import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRunt
 import { verifyDeployment } from './deployment.js';
 import * as client from './client.js';
 import * as sharedState from './state.js';
-import * as deps from './dependencies.js';
+import { registerExplorerCommands } from './explorer-commands.js';
+import { solutionLoader } from './solution-load.js';
 import * as log from './log.js';
 import { registerProfiler, type SharpLspProfiler } from './profiler-host.js';
-import * as solution from './solution.js';
 import { SharpLspStatusBar, ServerState } from './status.js';
-import { type ExplorerNode, SolutionExplorerProvider, buildQualifiedName } from './tree.js';
 import { registerNamespaceLayout } from './tree-namespaces.js';
-import { NuGetBrowserPanel } from './nuget-browser.js';
-import * as pkgMaint from './package-maintenance.js';
 import { registerBuildCommands } from './build.js';
-import { registerNuGetCommands, addNuGetPackageToProject } from './nuget.js';
+import { registerNuGetCommands } from './nuget.js';
+import { fsharpProjectOfNode } from './add-source-file.js';
+import { SolutionExplorerProvider } from './tree.js';
+import { type ExplorerNode } from './tree-nodes.js';
 import { registerScaffoldingCommands } from './scaffolding.js';
-import { addFSharpSourceFile, fsharpProjectOfNode } from './add-source-file.js';
-import { removeFSharpSourceFile } from './remove-source-file.js';
-import { addReferenceAndImport } from './reference-import-command.js';
 import { registerFsiCommands } from './fsi.js';
 import { registerHotReloadCommands } from './hot-reload.js';
 import { registerDebugAdapter } from './debug.js';
@@ -63,8 +45,6 @@ import {
   type TargetFrameworkUi,
 } from './target-framework.js';
 import { initProjectDepsStore } from './project-deps-store.js';
-import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
-import { samePath } from './paths';
 import { registerTutorial, type TutorialApi } from './tutorial/register.js';
 
 /** Public API exported from activate() for tests and other extensions. */
@@ -94,6 +74,13 @@ let profilerUi: SharpLspProfiler | undefined;
 let testController: SharpLspTestController | undefined;
 let targetFrameworks: TargetFrameworkUi | undefined;
 let tutorial: TutorialApi | undefined;
+
+/** Accessors the command modules use; the client and explorer appear during activation. */
+const explorerDeps = {
+  client: (): LanguageClient | undefined => lspClient,
+  explorer: (): SolutionExplorerProvider | undefined => explorerProvider,
+};
+const solutions = solutionLoader(explorerDeps);
 
 interface DeploymentDiagnostic {
   readonly componentId: string;
@@ -191,107 +178,153 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
   log.info('step 1: SharpLspStatusBar');
   statusBar = new SharpLspStatusBar();
   context.subscriptions.push(statusBar);
+  const { provider, solutionTreeView } = createSolutionExplorer(context);
+  log.info('step 4: profiler UI');
+  profilerUi = registerProfiler(context);
+  const features = registerFeatureModules(context, solutionTreeView);
 
+  log.info('step 10c: acquireDotnet10Sdk');
+  const dotnetPath = await acquireSdk(statusBar);
+  if (dotnetPath === undefined) return degradedApi(context);
+
+  log.info('step 11: activateShipwright');
+  lspClient = await startLanguageServer(context, statusBar, dotnetPath);
+  if (lspClient === undefined) return degradedApi(context);
+
+  log.info('step 12: post-start wiring');
+  wirePostStart(context, lspClient);
+  log.info('step 13: activate complete');
+  return {
+    explorerProvider: provider,
+    profiler: profilerUi,
+    getLspClient: () => lspClient,
+    testController: features.testController,
+    logUri: context.logUri,
+    targetFrameworkStatus: features.targetFrameworks.status,
+    tutorial: features.tutorial,
+  };
+}
+
+/** The Solution Explorer view, its provider and the editor wiring around it. */
+function createSolutionExplorer(context: ExtensionContext): {
+  provider: SolutionExplorerProvider;
+  solutionTreeView: vscode.TreeView<ExplorerNode>;
+} {
   log.info('step 2: SolutionExplorerProvider');
-  explorerProvider = new SolutionExplorerProvider();
+  const provider = new SolutionExplorerProvider();
+  explorerProvider = provider;
   log.info('step 3: createTreeView SOLUTION_EXPLORER');
   const solutionTreeView = window.createTreeView<ExplorerNode>(VIEW_SOLUTION_EXPLORER, {
-    treeDataProvider: explorerProvider,
+    treeDataProvider: provider,
     showCollapseAll: true,
   });
   context.subscriptions.push(solutionTreeView);
-  wireActiveEditorReveal(context, solutionTreeView, explorerProvider);
+  wireActiveEditorReveal(context, solutionTreeView, provider);
   wireFsProjectContext(solutionTreeView);
-
-  log.info('step 4: profiler UI');
-  profilerUi = registerProfiler(context);
-
   log.info('step 7: initSortContext');
-  explorerProvider.initSortContext();
+  provider.initSortContext();
+  return { provider, solutionTreeView };
+}
+
+/** Every feature module's commands, providers and stores; none needs the server yet. */
+function registerFeatureModules(
+  context: ExtensionContext,
+  solutionTreeView: vscode.TreeView<ExplorerNode>,
+): {
+  testController: SharpLspTestController;
+  targetFrameworks: TargetFrameworkUi;
+  tutorial: TutorialApi;
+} {
   log.info('step 8: registerCommands');
   registerCommands(context);
-  tutorial = registerTutorial(context, solutionTreeView);
+  const tour = registerTutorial(context, solutionTreeView);
+  tutorial = tour;
   log.info('step 9: registerAllModuleCommands');
   registerBuildCommands(context);
   registerNuGetCommands(context, () => lspClient);
   registerScaffoldingCommands(context);
   registerFsiCommands(context);
   registerHotReloadCommands(context);
-  targetFrameworks = registerTargetFramework(context, () => lspClient);
-  registerDebugAdapter(context, targetFrameworks.answerFor);
-  testController = registerTestExplorer(context);
-  registerTestStatusLens(context, testController);
+  const frameworks = registerTargetFramework(context, () => lspClient);
+  targetFrameworks = frameworks;
+  registerDebugAdapter(context, frameworks.answerFor);
+  const controller = registerTestExplorer(context);
+  testController = controller;
+  registerTestStatusLens(context, controller);
   log.info('step 10: wireDocumentChangeRefresh');
-  wireDocumentChangeRefresh(context);
-
+  solutions.wireRefresh(context);
   log.info('step 10b: initProjectDepsStore');
   initProjectDepsStore(context);
+  return { testController: controller, targetFrameworks: frameworks, tutorial: tour };
+}
 
-  log.info('step 10c: acquireDotnet10Sdk');
-  // Implements [DIST-FAILURE-UX]: Result-based; never throws.
-  const dotnetResult = await acquireDotnet10Sdk(statusBar);
+/**
+ * The .NET 10 SDK every dotnet child runs on, published to the shared state
+ * and the process spawner; `undefined` once the failure has been shown.
+ * Implements [DIST-FAILURE-UX] and [DIST-RUNTIME-ACQUIRE].
+ */
+async function acquireSdk(bar: SharpLspStatusBar): Promise<string | undefined> {
+  const dotnetResult = await acquireDotnet10Sdk(bar);
   if (!dotnetResult.ok) {
-    statusBar.setState(ServerState.Error);
+    bar.setState(ServerState.Error);
     void showAcquireFailureNotification(dotnetResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-    return degradedApi(context);
+    return undefined;
   }
   const dotnetPath = dotnetResult.value;
-  // Publish the resolved SDK path so dotnet-spawning features (e.g. F#
-  // Interactive) use it even when `dotnet` is not on $PATH. See
-  // [DIST-RUNTIME-ACQUIRE].
+  // Features that spawn dotnet (e.g. F# Interactive) use the resolved SDK even
+  // when `dotnet` is not on $PATH, and builds, discovery and test runs point at
+  // it too: the PATH SDK may be exactly the one `global.json` rejects (exit 155).
   sharedState.dotnetPath.value = dotnetPath;
-  // Point builds, test discovery and test runs at the SDK that was actually
-  // resolved. Without this every `dotnet` child runs whatever is first on
-  // $PATH — which on a machine whose PATH SDK cannot satisfy the workspace
-  // `global.json` is precisely the SDK that fails with exit code 155.
   configureDotnet(dotnetPath);
+  return dotnetPath;
+}
 
-  log.info('step 11: activateShipwright');
-  // Implements [DIST-FAILURE-UX] and [BINARY-VSCODE]: deployment-toolkit failures surface a toast
-  // and return a degraded API instead of throwing out of activate().
+/**
+ * Verify the bundled binaries and start the language client; `undefined` once
+ * a failure has been shown. Implements [DIST-FAILURE-UX] and [BINARY-VSCODE].
+ */
+async function startLanguageServer(
+  context: ExtensionContext,
+  bar: SharpLspStatusBar,
+  dotnetPath: string,
+): Promise<LanguageClient | undefined> {
   const deployResult = await verifyDeployment(context.extensionPath, dotnetPath);
-  const blockingDiagnostics = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
-  if (blockingDiagnostics.length > 0) {
-    for (const diagnostic of blockingDiagnostics) {
+  const blocking = deployResult.diagnostics.filter((diagnostic) => diagnostic.blocking);
+  if (blocking.length > 0) {
+    for (const diagnostic of blocking) {
       log.error(`Deployment toolkit (${diagnostic.componentId}): ${diagnostic.message}`);
     }
-    statusBar.setState(ServerState.Error);
-    const detail = blockingDiagnostics.map((diagnostic) => diagnostic.message).join(' ');
+    bar.setState(ServerState.Error);
     void notifyActivationFailure(
       'SharpLsp could not start: required binaries are missing or version-mismatched.',
-      detail,
+      blocking.map((diagnostic) => diagnostic.message).join(' '),
     );
-    return degradedApi(context);
+    return undefined;
   }
   log.info('step 11b: client.start (await)');
-  // Implements [DIST-FAILURE-UX]: client.start failures also surface a toast.
   try {
-    lspClient = await client.start(context, statusBar, deploymentPaths(deployResult), dotnetPath);
-    log.info('step 11b: client.start returned');
+    return await client.start(context, bar, deploymentPaths(deployResult), dotnetPath);
   } catch (err: unknown) {
     const msg = getErrorMessage(err);
     log.error(`Failed to start server: ${msg}`);
-    statusBar.setState(ServerState.Error);
+    bar.setState(ServerState.Error);
     void notifyActivationFailure('SharpLsp could not start the language server.', msg);
-    return degradedApi(context);
+    return undefined;
   }
+}
 
-  log.info('step 12: post-start wiring');
-  if (lspClient !== undefined) {
-    explorerProvider.setClient(lspClient);
-    profilerUi.setClient(lspClient);
-    targetFrameworks.attach(lspClient);
-    // Fire-and-forget — don't block activation on solution loading.
-    void selectAndLoadSolution().catch((err: unknown) => {
-      const msg = getErrorMessage(err);
-      log.error(`Auto-select solution failed: ${msg}`);
-    });
-  }
-
-  // Implements [DIST-WORKSPACE-TRUST]: when the user grants trust, the
-  // previously-restricted executable-path/extra-args settings become active.
-  // Restart the client so a trusted custom server path/args take effect without
-  // requiring a manual window reload.
+/** Hand the started client to the views, load the solution, and restart on trust. */
+function wirePostStart(context: ExtensionContext, started: LanguageClient): void {
+  explorerProvider?.setClient(started);
+  profilerUi?.setClient(started);
+  targetFrameworks?.attach(started);
+  // Fire-and-forget — don't block activation on solution loading.
+  void solutions.selectAndLoad().catch((err: unknown) => {
+    log.error(`Auto-select solution failed: ${getErrorMessage(err)}`);
+  });
+  // Implements [DIST-WORKSPACE-TRUST]: granting trust activates the previously
+  // restricted executable-path/extra-args settings, so restart the client
+  // rather than require a window reload.
   context.subscriptions.push(
     workspace.onDidGrantWorkspaceTrust(() => {
       log.info(
@@ -302,17 +335,6 @@ async function activateInner(context: ExtensionContext): Promise<SharpLspExtensi
       });
     }),
   );
-
-  log.info('step 13: activate complete');
-  return {
-    explorerProvider,
-    profiler: profilerUi,
-    getLspClient: () => lspClient,
-    testController,
-    logUri: context.logUri,
-    targetFrameworkStatus: targetFrameworks.status,
-    tutorial,
-  };
 }
 
 function deploymentPaths(deployResult: DeploymentResult): client.DeploymentPaths {
@@ -382,442 +404,63 @@ export async function deactivate(): Promise<void> {
 }
 
 function registerCommands(context: ExtensionContext): void {
-  context.subscriptions.push(
-    commands.registerCommand(CMD_RESTART_SERVER, async () => {
-      if (statusBar === undefined) return;
-      log.info('Restarting server…');
-      statusBar.setState(ServerState.Starting);
-      try {
-        if (lspClient !== undefined) await client.restart(lspClient);
-        log.info('Server restarted.');
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        log.info(`Restart failed: ${msg}`);
-        statusBar.setState(ServerState.Error);
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_RETRY_DOTNET_ACQUISITION, async () => {
-      if (statusBar === undefined) return;
-      log.info('Retrying .NET 10 SDK acquisition…');
-      // Implements [DIST-FAILURE-UX]: Result-based retry with toast on failure.
-      const retryResult = await acquireDotnet10Sdk(statusBar);
-      if (!retryResult.ok) {
-        await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
-        return;
-      }
-      sharedState.dotnetPath.value = retryResult.value;
-      const reload = 'Reload Window';
-      const choice = await window.showInformationMessage(
-        'SharpLsp: .NET 10 SDK acquired. Reload the window to start the language server.',
-        reload,
-      );
-      if (choice === reload) {
-        await commands.executeCommand('workbench.action.reloadWindow');
-      }
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SHOW_OUTPUT, () => {
-      log.output().show();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SHOW_TRACE, () => {
-      log.trace().show();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SELECT_SOLUTION, async () => {
-      await selectAndLoadSolution();
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_OPEN_SOLUTION, async (solutionPath: string) => {
-      await loadSolution({ path: solutionPath, name: '' });
-    }),
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(CMD_REFRESH_EXPLORER, async () => {
-      await explorerProvider?.refresh();
-    }),
-  );
-
-  const cycleSortHandler = (): void => {
+  const cycleSort = (): void => {
     explorerProvider?.cycleSortOrder();
   };
-  context.subscriptions.push(
-    commands.registerCommand(CMD_SORT_NATURAL, cycleSortHandler),
-    commands.registerCommand(CMD_SORT_ALPHABETICAL, cycleSortHandler),
-    commands.registerCommand(CMD_SORT_ACCESSIBILITY, cycleSortHandler),
-  );
-
-  registerNamespaceLayout(context);
-  registerDependencyCommands(context);
-  registerContextMenuCommands(context);
-}
-
-function registerDependencyCommands(context: ExtensionContext): void {
-  context.subscriptions.push(
-    commands.registerCommand(CMD_REMOVE_NUGET_PACKAGE, async (node: ExplorerNode | undefined) => {
-      await confirmAndRemoveDependency(node, 'package');
-    }),
-    commands.registerCommand(
-      CMD_REMOVE_PROJECT_REFERENCE,
-      async (node: ExplorerNode | undefined) => {
-        await confirmAndRemoveDependency(node, 'reference');
-      },
-    ),
-    commands.registerCommand(CMD_BROWSE_NUGET_PACKAGES, (node: ExplorerNode | undefined) => {
-      browseNuGetPackages(node, context);
-    }),
-    commands.registerCommand(CMD_REMOVE_UNUSED_PACKAGES, async (node: ExplorerNode | undefined) => {
-      await pkgMaint.removeUnusedPackages(node, lspClient, refreshExplorer);
-    }),
-    commands.registerCommand(CMD_CONSOLIDATE_PACKAGES, async (node: ExplorerNode | undefined) => {
-      await pkgMaint.consolidatePackages(node, lspClient, refreshExplorer);
-    }),
-  );
-}
-
-/** Refresh the Solution Explorer tree, tolerating an unset provider. */
-async function refreshExplorer(): Promise<void> {
-  await (explorerProvider?.refresh() ?? Promise.resolve());
-}
-
-function browseNuGetPackages(node: ExplorerNode | undefined, context: ExtensionContext): void {
-  if (node?.projectFilePath === undefined) {
-    void window.showWarningMessage('No project file path available.');
-    return;
-  }
-  const projectName = node.sortName;
-  log.info(`Opening NuGet browser for ${projectName} (${node.projectFilePath})`);
-  NuGetBrowserPanel.open(context, node.projectFilePath, projectName, () => lspClient);
-}
-
-/** Tell the user why a context-menu command invoked with no row did nothing. */
-function warnNoSelection(): void {
-  void window.showWarningMessage('Select an item in the Solution Explorer first.');
-}
-
-function registerContextMenuCommands(context: ExtensionContext): void {
-  context.subscriptions.push(
-    commands.registerCommand(CMD_COPY_QUALIFIED_NAME, async (node?: ExplorerNode) => {
-      if (node === undefined) {
-        warnNoSelection();
-        return;
-      }
-      const name = buildQualifiedName(node);
-      await vscode.env.clipboard.writeText(name);
-      void window.showInformationMessage(`Copied: ${name}`);
-    }),
-    commands.registerCommand(CMD_COPY_NAME, async (node?: ExplorerNode) => {
-      if (node === undefined) {
-        warnNoSelection();
-        return;
-      }
-      await vscode.env.clipboard.writeText(node.sortName);
-      void window.showInformationMessage(`Copied: ${node.sortName}`);
-    }),
-    commands.registerCommand(CMD_REVEAL_IN_EXPLORER, (node?: ExplorerNode) => {
-      if (node?.symbolUri === undefined) return;
-      const uri = vscode.Uri.parse(node.symbolUri);
-      void commands.executeCommand('revealInExplorer', uri);
-    }),
-    commands.registerCommand(CMD_SORT_MEMBERS, async (node?: ExplorerNode) => {
-      await sortMembers(node);
-    }),
-    commands.registerCommand(CMD_OPEN_PROJECT_FILE, async (node?: ExplorerNode) => {
-      await openProjectFile(node);
-    }),
-    commands.registerCommand(CMD_ADD_PROJECT_REFERENCE, async (node?: ExplorerNode) => {
-      await addProjectReference(node);
-    }),
-    commands.registerCommand(CMD_ADD_FSHARP_FILE, async (node?: ExplorerNode) => {
-      await addFSharpSourceFile(node);
-    }),
-    commands.registerCommand(CMD_REMOVE_FSHARP_FILE, async (node?: ExplorerNode) => {
-      await removeFSharpSourceFile(node);
-    }),
-    commands.registerCommand(CMD_ADD_REFERENCE_AND_IMPORT, addReferenceAndImport),
-    commands.registerCommand(CMD_NUGET_ADD_FROM_EXPLORER, async (node?: ExplorerNode) => {
-      const projectFilePath = projectPathOf(node);
-      if (projectFilePath === undefined) return;
-      await addNuGetPackageToProject(projectFilePath);
-    }),
-  );
-}
-
-/**
- * The project file a Solution Explorer command was invoked on, or `undefined`
- * once the user has been told why nothing happened.
- *
- * The Command Palette invokes these commands with no argument at all
- * ([SE-CONTEXT-VALUES]), so the node is genuinely optional and reading through
- * it unguarded threw rather than explaining itself.
- */
-function projectPathOf(node: ExplorerNode | undefined): string | undefined {
-  if (node?.projectFilePath === undefined) {
-    void window.showWarningMessage('No project file path available.');
-    return undefined;
-  }
-  return node.projectFilePath;
-}
-
-async function openProjectFile(node: ExplorerNode | undefined): Promise<void> {
-  const projectFilePath = projectPathOf(node);
-  if (projectFilePath === undefined) return;
-  const uri = vscode.Uri.file(projectFilePath);
-  const doc = await workspace.openTextDocument(uri);
-  await window.showTextDocument(doc);
-  log.info(`Opened project file: ${projectFilePath}`);
-}
-
-async function addProjectReference(node: ExplorerNode | undefined): Promise<void> {
-  const projectFilePath = projectPathOf(node);
-  if (projectFilePath === undefined) return;
-  const projectFiles = await workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
-  const candidates = projectFiles.filter((f) => !samePath(f.fsPath, projectFilePath));
-  if (candidates.length === 0) {
-    void window.showWarningMessage('No other project files found to reference.');
-    return;
-  }
-  const pick = await window.showQuickPick(
-    candidates.map((f) => ({
-      label: workspace.asRelativePath(f),
-      uri: f,
-    })),
-    { placeHolder: 'Select project to reference' },
-  );
-  if (pick === undefined) return;
-  const error = await deps.addProjectReference(projectFilePath, pick.uri.fsPath);
-  if (error !== undefined) {
-    void window.showErrorMessage(`Failed to add project reference: ${error}`);
-    return;
-  }
-  void window.showInformationMessage(`Added reference to ${pick.label}`);
-  await explorerProvider?.refresh();
-}
-
-async function sortMembers(node: ExplorerNode | undefined): Promise<void> {
-  if (node?.symbolUri === undefined || node.symbolRange === undefined) {
-    void window.showWarningMessage('No symbol location available.');
-    return;
-  }
-
-  const lsp = lspClient;
-  if (lsp === undefined) {
-    void window.showWarningMessage('LSP client not available.');
-    return;
-  }
-
-  const config = workspace.getConfiguration('sharplsp.memberSortOrder');
-  const hierarchy = config.get<string[]>('hierarchy', [...DEFAULT_SORT_POLICY.hierarchy]);
-  const accessibilityOrder = config.get<string[]>('accessibilityOrder', [
-    ...DEFAULT_SORT_POLICY.accessibilityOrder,
-  ]);
-  const categoryOrder = config.get<string[]>('categoryOrder', [
-    ...DEFAULT_SORT_POLICY.categoryOrder,
-  ]);
-
-  try {
-    const response = await lsp.sendRequest<SortMembersResponse | null>('sharplsp/sortMembers', {
-      uri: node.symbolUri,
-      range: node.symbolRange,
-      sortConfig: { hierarchy, accessibilityOrder, categoryOrder },
-    });
-
-    if (response === null || response.edits.length === 0) {
-      void window.showInformationMessage('Members already sorted.');
-      return;
-    }
-
-    const uri = vscode.Uri.parse(node.symbolUri);
-    const edit = new vscode.WorkspaceEdit();
-    for (const textEdit of response.edits) {
-      const range = new vscode.Range(
-        textEdit.range.start.line,
-        textEdit.range.start.character,
-        textEdit.range.end.line,
-        textEdit.range.end.character,
-      );
-      edit.replace(uri, range, textEdit.newText);
-    }
-    await workspace.applyEdit(edit);
-    log.info('Sort Members applied successfully');
-  } catch (err: unknown) {
-    const msg = getErrorMessage(err);
-    log.info(`Sort Members failed: ${msg}`);
-    void window.showErrorMessage(`Sort Members failed: ${msg}`);
-  }
-}
-
-interface SortMembersEdit {
-  readonly range: {
-    readonly start: { readonly line: number; readonly character: number };
-    readonly end: { readonly line: number; readonly character: number };
+  const handlers: Record<string, (...args: never[]) => unknown> = {
+    [CMD_RESTART_SERVER]: restartServer,
+    [CMD_RETRY_DOTNET_ACQUISITION]: retryDotnetAcquisition,
+    [CMD_SHOW_OUTPUT]: () => {
+      log.output().show();
+    },
+    [CMD_SHOW_TRACE]: () => {
+      log.trace().show();
+    },
+    [CMD_SELECT_SOLUTION]: solutions.selectAndLoad,
+    [CMD_OPEN_SOLUTION]: async (solutionPath: string) => {
+      await solutions.load({ path: solutionPath, name: '' });
+    },
+    [CMD_REFRESH_EXPLORER]: async () => await explorerProvider?.refresh(),
+    [CMD_SORT_NATURAL]: cycleSort,
+    [CMD_SORT_ALPHABETICAL]: cycleSort,
+    [CMD_SORT_ACCESSIBILITY]: cycleSort,
   };
-  readonly newText: string;
-}
-
-interface SortMembersResponse {
-  readonly edits: SortMembersEdit[];
-}
-
-async function confirmAndRemoveDependency(
-  node: ExplorerNode | undefined,
-  kind: 'package' | 'reference',
-): Promise<void> {
-  if (node?.projectFilePath === undefined) return;
-  if (node.referenceName === undefined) return;
-  const rawLabel = node.label;
-  const displayName = typeof rawLabel === 'string' ? rawLabel : (rawLabel?.label ?? '');
-  const label = kind === 'package' ? 'NuGet package' : 'project reference';
-  const answer = await window.showWarningMessage(
-    `Remove ${label} "${displayName}"?`,
-    { modal: true },
-    'Remove',
+  context.subscriptions.push(
+    ...Object.entries(handlers).map(([id, handler]) => commands.registerCommand(id, handler)),
   );
-  if (answer !== 'Remove') return;
-  const removeFn = kind === 'package' ? deps.removeNuGetPackage : deps.removeProjectReference;
-  const error = await removeFn(node.projectFilePath, node.referenceName);
-  if (error !== undefined) {
-    void window.showErrorMessage(`Failed to remove ${label}: ${error}`);
+  registerNamespaceLayout(context);
+  registerExplorerCommands(context, explorerDeps);
+}
+
+async function restartServer(): Promise<void> {
+  if (statusBar === undefined) return;
+  log.info('Restarting server…');
+  statusBar.setState(ServerState.Starting);
+  try {
+    if (lspClient !== undefined) await client.restart(lspClient);
+    log.info('Server restarted.');
+  } catch (err: unknown) {
+    log.info(`Restart failed: ${getErrorMessage(err)}`);
+    statusBar.setState(ServerState.Error);
+  }
+}
+
+/** Implements [DIST-FAILURE-UX]: Result-based retry with a toast on failure. */
+async function retryDotnetAcquisition(): Promise<void> {
+  if (statusBar === undefined) return;
+  log.info('Retrying .NET 10 SDK acquisition…');
+  const retryResult = await acquireDotnet10Sdk(statusBar);
+  if (!retryResult.ok) {
+    await showAcquireFailureNotification(retryResult.error, CMD_RETRY_DOTNET_ACQUISITION);
     return;
   }
-  void window.showInformationMessage(`Removed ${displayName}`);
-  await explorerProvider?.refresh();
-}
-
-const REFRESH_DEBOUNCE_MS = 1_000;
-const RELEVANT_LANGUAGES = new Set(['csharp', 'fsharp']);
-const SOLUTION_FILE_GLOB = '**/*.{sln,slnx}';
-let debounceTimer: ReturnType<typeof setTimeout> | undefined;
-let solutionSelectionGeneration = 0;
-
-/** Re-fetch workspace symbols when source or solution files change. */
-function wireDocumentChangeRefresh(context: ExtensionContext): void {
-  context.subscriptions.push(
-    workspace.onDidChangeTextDocument((event) => {
-      if (!RELEVANT_LANGUAGES.has(event.document.languageId)) return;
-      if (event.contentChanges.length === 0) return;
-      log.traceInfo(`Document changed: ${event.document.uri.fsPath}`);
-      if (debounceTimer !== undefined) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        log.traceInfo('Debounced tree refresh triggered');
-        void explorerProvider?.refresh();
-      }, REFRESH_DEBOUNCE_MS);
-    }),
+  sharedState.dotnetPath.value = retryResult.value;
+  const reload = 'Reload Window';
+  const choice = await window.showInformationMessage(
+    'SharpLsp: .NET 10 SDK acquired. Reload the window to start the language server.',
+    reload,
   );
-  const solutionWatcher = workspace.createFileSystemWatcher(SOLUTION_FILE_GLOB);
-  context.subscriptions.push(
-    solutionWatcher,
-    solutionWatcher.onDidChange((uri) => {
-      scheduleSolutionRefresh(uri.fsPath);
-    }),
-    solutionWatcher.onDidCreate((uri) => {
-      scheduleSolutionRefresh(uri.fsPath);
-    }),
-    solutionWatcher.onDidDelete((uri) => {
-      scheduleSolutionRefresh(uri.fsPath);
-    }),
-  );
-  log.traceInfo(`Solution file watcher active: ${SOLUTION_FILE_GLOB}`);
-}
-
-function scheduleSolutionRefresh(solutionFilePath: string): void {
-  log.traceInfo(`Solution file changed: ${solutionFilePath}`);
-  if (debounceTimer !== undefined) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    log.traceInfo('Debounced solution tree refresh triggered');
-    void explorerProvider?.refresh();
-  }, REFRESH_DEBOUNCE_MS);
-}
-
-/** Select a solution (auto or user-picked) and load it into the explorer. */
-async function selectAndLoadSolution(): Promise<void> {
-  const generation = ++solutionSelectionGeneration;
-  const initialSolution = sharedState.solutionPath.value;
-
-  // [SE-LOADING-FEEDBACK]: without this the explorer sits blank while the
-  // workspace scan (up to 5s) and then the solution load run, and the user
-  // has no signal that anything is happening. `window.withProgress` puts a
-  // native progress bar in the Solution Explorer view title with a status
-  // message; the `loadPhase` signal drives the in-tree spinner node.
-  await window.withProgress({ location: { viewId: VIEW_SOLUTION_EXPLORER } }, async (progress) => {
-    progress.report({ message: 'Searching for solutions…' });
-    const phase = sharedState.beginDiscovery();
-    // Same contract as `loadSolution` below: a failed scan must clear the
-    // phase, or the tree spins forever on a search that already gave up.
-    let solutions: readonly solution.SolutionSelection[];
-    try {
-      solutions = await solution.findSolutions();
-    } finally {
-      sharedState.endLoadPhase(phase);
-    }
-    if (!solutionSelectionIsCurrent(generation, initialSolution) || solutions.length === 0) {
-      return;
-    }
-    const picked =
-      solutions.length === 1 ? solutions[0] : await solution.promptUserSelection(solutions);
-    if (!solutionSelectionIsCurrent(generation, initialSolution)) return;
-    if (picked !== undefined) {
-      progress.report({ message: `Loading ${picked.name}…` });
-      await loadSolution(picked);
-      return;
-    }
-    // User dismissed the QuickPick — show solutions as buttons in the tree.
-    explorerProvider?.showSolutionPicker(solutions);
-  });
-}
-
-function solutionSelectionIsCurrent(
-  generation: number,
-  initialSolution: string | undefined,
-): boolean {
-  return (
-    generation === solutionSelectionGeneration && sharedState.solutionPath.value === initialSolution
-  );
-}
-
-/** Load a solution into the explorer tree AND the LSP sidecar. */
-async function loadSolution(selected: solution.SolutionSelection): Promise<void> {
-  solutionSelectionGeneration += 1;
-  log.info(`Loading solution: ${selected.path}`);
-
-  // Cover the whole load — the LSP reload below runs BEFORE
-  // state.loadSolution begins its own phase, and the tree must not sit on a
-  // stale/blank view meanwhile ([SE-LOADING-FEEDBACK]).
-  const phase = sharedState.beginLoading(selected.path);
-
-  // `finally`, never a trailing statement: a throw out of the explorer load
-  // would otherwise leave the phase set forever, and the tree renders a
-  // spinner for as long as a phase is active — a permanently "loading"
-  // Solution Explorer with no way back ([SE-LOADING-FEEDBACK]).
-  try {
-    // Tell the LSP server to reload sidecars with this specific solution.
-    // Without this, the sidecar uses the workspace root and may pick the
-    // wrong solution when multiple exist — breaking hover, definition, etc.
-    if (lspClient !== undefined) {
-      try {
-        await lspClient.sendRequest('sharplsp/loadSolution', {
-          solutionPath: selected.path,
-        });
-      } catch (err: unknown) {
-        const msg = getErrorMessage(err);
-        log.error(`sharplsp/loadSolution failed: ${msg}`);
-      }
-    }
-
-    await explorerProvider?.loadSolution(selected.path);
-  } finally {
-    sharedState.endLoadPhase(phase);
+  if (choice === reload) {
+    await commands.executeCommand('workbench.action.reloadWindow');
   }
 }

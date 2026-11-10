@@ -240,17 +240,16 @@ internal sealed partial class WorkspaceManager
     {
         return RunQueryAsync(
             () => FindRazorProjectionAsync(filePath, ct),
-            new SemanticTokensResult(),
-            async projection => new SemanticTokensResult
-            {
-                Data = await RazorTokensAsync(
+            new SemanticTokensResult(Data: []),
+            async projection => new SemanticTokensResult(
+                Data: await RazorTokensAsync(
                         projection,
                         await FindRazorMarkupAsync(filePath, ct).ConfigureAwait(false),
                         range,
                         ct
                     )
-                    .ConfigureAwait(false),
-            }
+                    .ConfigureAwait(false)
+            )
         );
     }
 

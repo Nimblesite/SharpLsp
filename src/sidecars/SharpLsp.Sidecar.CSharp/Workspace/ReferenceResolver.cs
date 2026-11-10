@@ -181,7 +181,10 @@ internal static class ReferenceResolver
             .Where(member => member.IsOverride);
     }
 
-    /// <summary>Each referenced symbol's uses in source, after its declaration when asked for.</summary>
+    /// <summary>
+    /// Each referenced symbol's uses in source, after its declarations when asked for: every
+    /// part of a partial type or method. [REFERENCES-CSHARP-FIND] [REFERENCES-CSHARP-RESOLUTION]
+    /// </summary>
     private static IEnumerable<LocationResult> ReferenceLocations(
         IEnumerable<ReferencedSymbol> referenced,
         bool includeDeclaration
@@ -189,11 +192,11 @@ internal static class ReferenceResolver
     {
         foreach (var reference in referenced)
         {
-            if (
-                includeDeclaration
-                && DeclaresItself(reference)
-                && DefinitionResolver.ToFirstSourceLocation(reference.Definition) is { } declared
-            )
+            var declarations =
+                includeDeclaration && DeclaresItself(reference)
+                    ? DefinitionResolver.ToAllSourceLocations(reference.Definition).Locations
+                    : [];
+            foreach (var declared in declarations)
             {
                 yield return declared;
             }
@@ -221,9 +224,8 @@ internal static class ReferenceResolver
     /// <summary>Each place once: one place is found through every symbol that names it.</summary>
     internal static LocationListResult Distinct(IEnumerable<LocationResult> locations)
     {
-        return new LocationListResult
-        {
-            Locations =
+        return new LocationListResult(
+            Locations:
             [
                 .. locations.DistinctBy(location =>
                     (
@@ -234,8 +236,8 @@ internal static class ReferenceResolver
                         location.EndCharacter
                     )
                 ),
-            ],
-        };
+            ]
+        );
     }
 
     /// <summary>One referenced symbol's declaration (a write) and its uses in the document.</summary>
@@ -278,14 +280,13 @@ internal static class ReferenceResolver
     {
         var span = location.GetMappedLineSpan();
         return span.IsValid && NativePaths.AreEqual(span.Path, answerPath)
-            ? new DocumentHighlightResult
-            {
-                StartLine = span.StartLinePosition.Line,
-                StartCharacter = span.StartLinePosition.Character,
-                EndLine = span.EndLinePosition.Line,
-                EndCharacter = span.EndLinePosition.Character,
-                Kind = kind,
-            }
+            ? new DocumentHighlightResult(
+                StartLine: span.StartLinePosition.Line,
+                StartCharacter: span.StartLinePosition.Character,
+                EndLine: span.EndLinePosition.Line,
+                EndCharacter: span.EndLinePosition.Character,
+                Kind: kind
+            )
             : null;
     }
 

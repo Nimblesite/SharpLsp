@@ -102,6 +102,46 @@ async function finish(
   assert.deepEqual(harness.stubs.log.errorMessages, [], 'the workbench reports no debug errors');
 }
 
+/** Arm `after-library` and launch the permutation under the given break policy. */
+async function startPermutation(
+  harness: Debuggee,
+  justMyCode: boolean,
+  projection: Projection,
+  breakOn: 'all' | 'unhandled',
+): Promise<vscode.DebugSession> {
+  armBreakpoints(harness.fixture, 'after-library');
+  return startDebuggee(harness, {
+    mode: MODE.libraryCaught,
+    justMyCode,
+    extra: {
+      exceptionPolicy: {
+        break_on: breakOn,
+        just_my_code: justMyCode,
+        external_code: projection,
+      },
+    },
+  });
+}
+
+/** Assert the return stop is after the library and its breakpoint really bound. */
+async function assertAfterLibrary(
+  session: vscode.DebugSession,
+  harness: Debuggee,
+  stop: StopRecord,
+  entryMethod: string,
+  stoppedMessage: string,
+  boundMessage: string,
+): Promise<void> {
+  assertStoppedAt(
+    await topFrame(session, stop.threadId),
+    harness.fixture,
+    'after-library',
+    entryMethod,
+    stoppedMessage,
+  );
+  assert.ok(stop.hitBreakpointIds.length > 0, boundMessage);
+}
+
 for (const language of ['fsharp', 'csharp'] as const) {
   suite(`VSIX exception policy permutations — ${language}`, () => {
     const debuggee = useDebuggee(`debug-permutations-${language}-`, language);
@@ -112,18 +152,7 @@ for (const language of ['fsharp', 'csharp'] as const) {
           debuggee,
           async (harness) => {
             await buildWithLibrarySymbols(harness);
-            armBreakpoints(harness.fixture, 'after-library');
-            const session = await startDebuggee(harness, {
-              mode: MODE.libraryCaught,
-              justMyCode,
-              extra: {
-                exceptionPolicy: {
-                  break_on: 'all',
-                  just_my_code: justMyCode,
-                  external_code: projection,
-                },
-              },
-            });
+            const session = await startPermutation(harness, justMyCode, projection, 'all');
             let count = 1;
             if (!justMyCode) {
               const external = await stopped(harness, count++, 'exception');
@@ -131,14 +160,14 @@ for (const language of ['fsharp', 'csharp'] as const) {
               await dap(session, 'continue', { threadId: external.threadId });
             }
             const returned = await stopped(harness, count++, 'breakpoint');
-            assertStoppedAt(
-              await topFrame(session, returned.threadId),
-              harness.fixture,
-              'after-library',
+            await assertAfterLibrary(
+              session,
+              harness,
+              returned,
               language === 'fsharp' ? 'main' : 'Main',
               'the library handled its exception and returned',
+              'the user breakpoint actually bound',
             );
-            assert.ok(returned.hitBreakpointIds.length > 0, 'the user breakpoint actually bound');
             await dap(session, 'continue', { threadId: returned.threadId });
             const user = await stopped(harness, count++, 'exception');
             const info = await exceptionInfoOf(session, user.threadId);
@@ -163,28 +192,14 @@ for (const language of ['fsharp', 'csharp'] as const) {
           `unhandled only: Just My Code ${String(justMyCode)}, ${projection}`,
           debuggee,
           async (harness) => {
-            armBreakpoints(harness.fixture, 'after-library');
-            const session = await startDebuggee(harness, {
-              mode: MODE.libraryCaught,
-              justMyCode,
-              extra: {
-                exceptionPolicy: {
-                  break_on: 'unhandled',
-                  just_my_code: justMyCode,
-                  external_code: projection,
-                },
-              },
-            });
+            const session = await startPermutation(harness, justMyCode, projection, 'unhandled');
             const returned = await stopped(harness, 1, 'breakpoint');
-            assertStoppedAt(
-              await topFrame(session, returned.threadId),
-              harness.fixture,
-              'after-library',
+            await assertAfterLibrary(
+              session,
+              harness,
+              returned,
               language === 'fsharp' ? 'main' : 'Main',
               'handled external throw is not surfaced',
-            );
-            assert.ok(
-              returned.hitBreakpointIds.length > 0,
               'the control case still reaches a real breakpoint',
             );
             await finish(harness, session, returned, 1);

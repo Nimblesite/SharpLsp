@@ -68,14 +68,13 @@ internal static class DocumentText
     {
         var start = text.Lines.GetLinePosition(change.Span.Start);
         var end = text.Lines.GetLinePosition(change.Span.End);
-        return new TextEditResult
-        {
-            StartLine = start.Line,
-            StartCharacter = start.Character,
-            EndLine = end.Line,
-            EndCharacter = end.Character,
-            NewText = change.NewText ?? "",
-        };
+        return new TextEditResult(
+            StartLine: start.Line,
+            StartCharacter: start.Character,
+            EndLine: end.Line,
+            EndCharacter: end.Character,
+            NewText: change.NewText ?? ""
+        );
     }
 
     /// <summary>

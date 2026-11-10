@@ -4,41 +4,23 @@ namespace SharpLsp.Sidecar.CSharp;
 
 // Cross-sidecar symbol identity used to bridge C# and F# rename references.
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class RenameIdentityResultWire
-{
-    [Key(0)]
-    public bool Found { get; init; }
-
-    [Key(1)]
-    public string AssemblyName { get; set; } = "";
-
-    [Key(2)]
-    public string XmlDocSig { get; set; } = "";
-}
+internal sealed record RenameIdentityResultWire(
+    [property: Key(0)] bool Found,
+    [property: Key(1)] string AssemblyName,
+    [property: Key(2)] string XmlDocSig
+);
 
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class RenameForeignRequest
-{
-    [Key(0)]
-    public string AssemblyName { get; set; } = "";
-
-    [Key(1)]
-    public string XmlDocSig { get; set; } = "";
-
-    [Key(2)]
-    public string NewName { get; set; } = "";
-}
+internal sealed record RenameForeignRequest(
+    [property: Key(0)] string AssemblyName,
+    [property: Key(1)] string XmlDocSig,
+    [property: Key(2)] string NewName
+);
 
 /// <summary>A symbol another sidecar names by identity. [REFERENCES-CROSS-LANGUAGE]</summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class ForeignSymbolRequest
-{
-    [Key(0)]
-    public string AssemblyName { get; set; } = "";
-
-    [Key(1)]
-    public string XmlDocSig { get; set; } = "";
-
-    [Key(2)]
-    public bool IncludeDeclaration { get; init; }
-}
+internal sealed record ForeignSymbolRequest(
+    [property: Key(0)] string AssemblyName,
+    [property: Key(1)] string XmlDocSig,
+    [property: Key(2)] bool IncludeDeclaration
+);

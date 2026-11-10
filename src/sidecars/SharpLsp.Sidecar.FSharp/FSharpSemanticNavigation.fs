@@ -143,6 +143,34 @@ let private quickSymbolUse (checkResults: FSharpCheckFileResults) line character
     |> Option.bind (fun (name, endColumn, _) ->
         checkResults.GetSymbolUseAtLocation(line + 1, endColumn, lineText, [ name ]))
 
+/// The identifier token under the cursor on `lineText`, as the lexer reads it.
+let private identifierAt (lineText: string) character =
+    let tokenizer = FSharpSourceTokenizer([], None, None, None)
+
+    fst (scanLine tokenizer lineText FSharpTokenizerLexState.Initial)
+    |> List.tryFind (fun token ->
+        token.TokenName = "IDENT" && token.LeftColumn <= character && character <= token.RightColumn)
+    |> Option.map (fun token -> lineText.Substring(token.LeftColumn, token.RightColumn - token.LeftColumn + 1))
+
+/// The case of an active pattern's own name, `(|Even|Odd|)`, the cursor is on: the identifier
+/// island there spells the whole pattern function, but the user points at one case, whose
+/// references, highlights and rename they want. [REFERENCES-FSHARP-CASES]
+let private caseUnderCursor (checkResults: FSharpCheckFileResults) lineText line character =
+    let named name (symbolUse: FSharpSymbolUse) =
+        match symbolUse.Symbol with
+        | :? FSharpActivePatternCase as case -> case.Name = name && symbolRangeContains line character symbolUse
+        | _ -> false
+
+    identifierAt lineText character
+    |> Option.bind (fun name -> checkResults.GetAllUsesOfAllSymbolsInFile() |> Seq.tryFind (named name))
+
+/// `found`, unless it is an active pattern function and the cursor is on one of its cases.
+let private preferCase checkResults lineText line character (found: FSharpSymbolUse) =
+    match found.Symbol with
+    | :? FSharpMemberOrFunctionOrValue as pattern when pattern.IsActivePattern ->
+        caseUnderCursor checkResults lineText line character |> Option.defaultValue found
+    | _ -> found
+
 let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line character =
     let lines = source.Split('\n')
 
@@ -150,6 +178,7 @@ let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line ch
         None
     else
         quickSymbolUse checkResults line character lines[line]
+        |> Option.map (preferCase checkResults lines[line] line character)
         |> Option.orElseWith (fun () -> symbolUseCoveringPosition checkResults line character)
 
 /// The entity `entity` stands for, through any abbreviation: `string` is `System.String`,
@@ -301,23 +330,3 @@ let getDeclarationIn (external: ExternalResolver) (checkFile: string -> Task<Che
 
 let getDeclaration (checkFile: string -> Task<CheckedFile option>) filePath line character =
     getDeclarationIn noExternalSource checkFile filePath line character
-
-let private extractImplementations checkResults source line character =
-    getSymbolUse checkResults source line character
-    |> Option.bind (fun useInfo -> useInfo.Symbol.DeclarationLocation)
-    |> Option.bind rangeToLocation
-    |> Option.toList
-
-let getImplementations (checkFile: string -> Task<CheckedFile option>) filePath line character =
-    task {
-        try
-            let! result = checkFile filePath
-
-            return
-                result
-                |> Option.map (fun (check, source) -> extractImplementations check source line character)
-                |> Option.defaultValue []
-        with ex ->
-            Log.Debug(ex, "[F# Implementation] failed")
-            return []
-    }

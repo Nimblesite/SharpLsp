@@ -11,12 +11,13 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
-use tree_sitter::Node;
 
 use crate::sidecar::manager::SidecarManager;
-use crate::tree_sitter_parse::{parse_file, LangId, TsParsers};
-use crate::utils::usize_to_u32;
+use crate::tree_sitter_parse::TsParsers;
 use crate::vfs::Vfs;
+
+mod file_symbols;
+use file_symbols::file_symbols;
 
 /// Request params for `sharplsp/workspaceSymbols`.
 #[derive(Debug, Deserialize)]
@@ -98,6 +99,22 @@ pub struct SymbolRange {
     pub start: SymbolPosition,
     /// End of the range.
     pub end: SymbolPosition,
+}
+
+impl SymbolRange {
+    /// The range from `start` to `end`, each a `(line, character)` pair.
+    pub const fn new(start: (u32, u32), end: (u32, u32)) -> Self {
+        Self {
+            start: SymbolPosition {
+                line: start.0,
+                character: start.1,
+            },
+            end: SymbolPosition {
+                line: end.0,
+                character: end.1,
+            },
+        }
+    }
 }
 
 /// Position within a file.
@@ -191,44 +208,37 @@ pub fn handle(
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<WorkspaceSymbolsResponse> {
     let target = Path::new(&params.solution);
-    if !crate::workspace_targets::is_solution(target) {
+    let (projects, solution_folders) = if crate::workspace_targets::is_solution(target) {
+        let sln = read_solution(params, runtime, solution_sidecar)?;
+        info!(
+            "sharplsp/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
+            sln.projects.len(),
+            sln.folders.len(),
+            sln.file_count,
+            sln.path,
+            sln.format
+        );
+        (sln.projects, sln.folders)
+    } else {
         let projects = crate::workspace_targets::projects_of(target)
             .iter()
             .enumerate()
             .map(|(order, path)| standalone_project(path, order))
-            .filter_map(|project| {
-                build_project_node(&project, parsers, vfs, runtime, fsharp_sidecar).ok()
-            })
             .collect();
-        return Ok(WorkspaceSymbolsResponse {
-            projects,
-            solution_folders: Vec::new(),
-        });
-    }
-    let sln_data = read_solution(params, runtime, solution_sidecar)?;
-
-    info!(
-        "sharplsp/workspaceSymbols: {} projects, {} folders, {} files from {} ({})",
-        sln_data.projects.len(),
-        sln_data.folders.len(),
-        sln_data.file_count,
-        sln_data.path,
-        sln_data.format
-    );
-
-    let project_nodes: Vec<ProjectNode> = sln_data
-        .projects
+        (projects, Vec::new())
+    };
+    let projects = projects
         .iter()
-        .filter_map(|proj| {
-            let mut node = build_project_node(proj, parsers, vfs, runtime, fsharp_sidecar).ok()?;
-            node.parent_folder.clone_from(&proj.parent_folder);
+        .filter_map(|project| {
+            let mut node =
+                build_project_node(project, parsers, vfs, runtime, fsharp_sidecar).ok()?;
+            node.parent_folder.clone_from(&project.parent_folder);
             Some(node)
         })
         .collect();
-
     Ok(WorkspaceSymbolsResponse {
-        projects: project_nodes,
-        solution_folders: sln_data.folders,
+        projects,
+        solution_folders,
     })
 }
 
@@ -460,459 +470,6 @@ fn build_project_node(
     })
 }
 
-/// Extract a file's symbols, dispatching by language: tree-sitter for C#, the
-/// FCS sidecar for F#.
-fn file_symbols(
-    file_path: &str,
-    parsers: &TsParsers,
-    vfs: &Vfs,
-    runtime: &tokio::runtime::Runtime,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<FileSymbol> {
-    match LangId::from_path(Path::new(file_path)) {
-        Some(LangId::FSharp) => parse_fsharp_file_symbols(file_path, runtime, fsharp_sidecar),
-        _ => parse_file_symbols(file_path, parsers, vfs),
-    }
-}
-
-/// Extract an F# file's symbols via the FCS sidecar's documentSymbol, mapping
-/// the result into the Solution Explorer's symbol model. `[SE-FSHARP-SYMBOLS]`
-fn parse_fsharp_file_symbols(
-    file_path: &str,
-    runtime: &tokio::runtime::Runtime,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<FileSymbol> {
-    let sidecar = fsharp_sidecar.context("F# sidecar unavailable for F# symbol extraction")?;
-    let items = crate::document_symbols::fetch_fsharp_document_symbols(
-        runtime,
-        sidecar,
-        file_path.to_string(),
-    )?;
-    Ok(FileSymbol {
-        file: file_path.to_string(),
-        symbols: items.iter().map(map_sidecar_symbol).collect(),
-    })
-}
-
-/// Map a sidecar document symbol (and its children) into a `SymbolNode`. Uses
-/// the full symbol range to match the C# tree-sitter path's `node_to_symbol`.
-fn map_sidecar_symbol(item: &crate::document_symbols::SidecarDocumentSymbol) -> SymbolNode {
-    SymbolNode {
-        name: item.name.clone(),
-        kind: item.kind.clone(),
-        detail: None,
-        access: None,
-        range: SymbolRange {
-            start: SymbolPosition {
-                line: item.start_line,
-                character: item.start_character,
-            },
-            end: SymbolPosition {
-                line: item.end_line,
-                character: item.end_character,
-            },
-        },
-        selection_range: SymbolRange {
-            start: SymbolPosition {
-                line: item.selection_start_line,
-                character: item.selection_start_character,
-            },
-            end: SymbolPosition {
-                line: item.selection_end_line,
-                character: item.selection_end_character,
-            },
-        },
-        children: item.children.iter().map(map_sidecar_symbol).collect(),
-    }
-}
-
-/// Parse a single source file and extract symbols.
-/// Prefers VFS content (unsaved buffer) over disk for open documents.
-/// Implements [SE-LIVE-BUFFER].
-fn parse_file_symbols(file_path: &str, parsers: &TsParsers, vfs: &Vfs) -> Result<FileSymbol> {
-    let (source, tree) = parse_file(file_path, parsers, vfs)?;
-
-    let symbols = collect_symbols(tree.root_node(), source.as_bytes());
-    let symbols = top_level_program(tree.root_node())
-        .into_iter()
-        .chain(reparent_file_scoped_members(symbols))
-        .collect();
-
-    Ok(FileSymbol {
-        file: file_path.to_string(),
-        symbols,
-    })
-}
-
-/// Top-level statements compile into the global-namespace `Program` class, so a
-/// file of them lists as `Program`, spanning its first to last statement ([SE-TREE]).
-fn top_level_program(root: Node<'_>) -> Option<SymbolNode> {
-    let mut cursor = root.walk();
-    let statements: Vec<Node<'_>> = root
-        .children(&mut cursor)
-        .filter(|child| child.kind() == "global_statement")
-        .collect();
-    let (first, last) = (*statements.first()?, *statements.last()?);
-    Some(SymbolNode {
-        name: "Program".to_string(),
-        kind: "Class".to_string(),
-        detail: None,
-        access: None,
-        range: SymbolRange {
-            start: node_range(first).start,
-            end: node_range(last).end,
-        },
-        selection_range: node_range(first),
-        children: Vec::new(),
-    })
-}
-
-/// Fix file-scoped namespace hierarchy.
-///
-/// `tree-sitter-c-sharp` 0.23 emits `file_scoped_namespace_declaration`
-/// without nesting subsequent type declarations as children — they appear
-/// as siblings at the root level. Detect this and move them inside.
-fn reparent_file_scoped_members(symbols: Vec<SymbolNode>) -> Vec<SymbolNode> {
-    let ns_count = symbols.iter().filter(|s| s.kind == "Namespace").count();
-    let has_root_types = symbols.iter().any(|s| s.kind != "Namespace");
-
-    if ns_count != 1 || !has_root_types {
-        return symbols;
-    }
-
-    // Only reparent if the namespace has no type children already.
-    let ns_has_types = symbols
-        .iter()
-        .find(|s| s.kind == "Namespace")
-        .is_some_and(|ns| ns.children.iter().any(|c| c.kind != "Namespace"));
-
-    if ns_has_types {
-        return symbols;
-    }
-
-    let (mut namespaces, types): (Vec<_>, Vec<_>) =
-        symbols.into_iter().partition(|s| s.kind == "Namespace");
-
-    if let Some(ns) = namespaces.first_mut() {
-        ns.children.extend(types);
-    }
-
-    namespaces
-}
-
-/// Walk a tree-sitter node and collect recognized symbols.
-fn collect_symbols(node: Node<'_>, source: &[u8]) -> Vec<SymbolNode> {
-    let mut symbols = Vec::new();
-    let mut cursor = node.walk();
-
-    for child in node.children(&mut cursor) {
-        if let Some(sym) = node_to_symbol(child, source) {
-            symbols.push(sym);
-        } else {
-            symbols.extend(collect_symbols(child, source));
-        }
-    }
-
-    symbols
-}
-
-/// Map a tree-sitter node to a `SymbolNode` if it is a recognized declaration.
-fn node_to_symbol(node: Node<'_>, source: &[u8]) -> Option<SymbolNode> {
-    let kind = match node.kind() {
-        "namespace_declaration" | "file_scoped_namespace_declaration" => "Namespace",
-        "class_declaration" | "record_declaration" => "Class",
-        "struct_declaration" => "Struct",
-        "interface_declaration" => "Interface",
-        "enum_declaration" => "Enum",
-        "method_declaration" => "Method",
-        "constructor_declaration" => "Constructor",
-        "property_declaration" => "Property",
-        "field_declaration" => "Field",
-        "delegate_declaration" => "Function",
-        "event_declaration" | "event_field_declaration" => "Event",
-        "enum_member_declaration" => "EnumMember",
-        _ => return None,
-    };
-
-    let (name, name_node) = crate::syntax::extract_symbol_name(node, source)?;
-
-    let detail = extract_type_detail(node, source);
-    let access = crate::sort_members::extract_access_modifiers(&node, source);
-    let children = collect_symbols(node, source);
-
-    Some(SymbolNode {
-        name,
-        kind: kind.to_string(),
-        detail,
-        access,
-        range: node_range(node),
-        selection_range: node_range(name_node),
-        children,
-    })
-}
-
-/// The span a tree-sitter node covers, in 0-based lines and characters.
-fn node_range(node: Node<'_>) -> SymbolRange {
-    let position = |point: tree_sitter::Point| SymbolPosition {
-        line: usize_to_u32(point.row),
-        character: usize_to_u32(point.column),
-    };
-    SymbolRange {
-        start: position(node.start_position()),
-        end: position(node.end_position()),
-    }
-}
-
-/// Extract type info (base class, return type) for display.
-fn extract_type_detail(node: Node<'_>, source: &[u8]) -> Option<String> {
-    match node.kind() {
-        "class_declaration" | "struct_declaration" | "record_declaration" => node
-            .child_by_field_name("bases")
-            .and_then(|b| b.utf8_text(source).ok())
-            .map(|s| s.trim_start_matches(": ").to_string()),
-        "property_declaration" | "field_declaration" => node
-            .child_by_field_name("type")
-            .and_then(|t| t.utf8_text(source).ok())
-            .map(String::from),
-        "method_declaration" => node
-            .child_by_field_name("type")
-            .and_then(|t| t.utf8_text(source).ok())
-            .map(|ret| format!("() : {ret}")),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "test code — panics are the correct failure mode"
-)]
-mod tests {
-    use super::*;
-
-    fn make_symbol(name: &str, kind: &str) -> SymbolNode {
-        SymbolNode {
-            name: name.to_string(),
-            kind: kind.to_string(),
-            detail: None,
-            access: None,
-            range: SymbolRange {
-                start: SymbolPosition {
-                    line: 0,
-                    character: 0,
-                },
-                end: SymbolPosition {
-                    line: 0,
-                    character: 0,
-                },
-            },
-            selection_range: SymbolRange {
-                start: SymbolPosition {
-                    line: 0,
-                    character: 0,
-                },
-                end: SymbolPosition {
-                    line: 0,
-                    character: 0,
-                },
-            },
-            children: Vec::new(),
-        }
-    }
-
-    // ── reparent_file_scoped_members ──
-
-    #[test]
-    fn reparent_no_namespace_returns_unchanged() {
-        let symbols = vec![
-            make_symbol("MyClass", "Class"),
-            make_symbol("MyStruct", "Struct"),
-        ];
-        let result = reparent_file_scoped_members(symbols);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].name, "MyClass");
-        assert_eq!(result[1].name, "MyStruct");
-    }
-
-    #[test]
-    fn reparent_namespace_with_existing_children_unchanged() {
-        let mut ns = make_symbol("MyApp", "Namespace");
-        ns.children.push(make_symbol("Existing", "Class"));
-
-        let symbols = vec![ns, make_symbol("Orphan", "Class")];
-        let result = reparent_file_scoped_members(symbols);
-        // Namespace already has type children, so no reparenting.
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].name, "MyApp");
-        assert_eq!(result[0].children.len(), 1);
-        assert_eq!(result[1].name, "Orphan");
-    }
-
-    #[test]
-    fn reparent_file_scoped_namespace_adopts_orphans() {
-        let ns = make_symbol("MyApp.Models", "Namespace");
-        let class1 = make_symbol("User", "Class");
-        let class2 = make_symbol("Order", "Class");
-
-        let symbols = vec![ns, class1, class2];
-        let result = reparent_file_scoped_members(symbols);
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].name, "MyApp.Models");
-        assert_eq!(result[0].kind, "Namespace");
-        assert_eq!(result[0].children.len(), 2);
-        assert_eq!(result[0].children[0].name, "User");
-        assert_eq!(result[0].children[1].name, "Order");
-    }
-
-    fn project(
-        display_name: &str,
-        path: &str,
-        project_type: &str,
-        parent_folder: Option<&str>,
-        parent_folder_path: Option<&str>,
-        order: usize,
-    ) -> SolutionProjectEntry {
-        SolutionProjectEntry {
-            display_name: display_name.to_string(),
-            path: path.to_string(),
-            relative_path: path.to_string(),
-            project_type: project_type.to_string(),
-            identity: format!("id-{display_name}"),
-            parent_folder: parent_folder.map(str::to_string),
-            parent_folder_path: parent_folder_path.map(str::to_string),
-            declaration_order: order,
-        }
-    }
-
-    fn folder(
-        name: &str,
-        path: &str,
-        parent_path: Option<&str>,
-        parent_name: Option<&str>,
-    ) -> SolutionFolderEntry {
-        SolutionFolderEntry {
-            name: name.to_string(),
-            path: path.to_string(),
-            identity: format!("guid-{name}"),
-            parent_path: parent_path.map(str::to_string),
-            parent_name: parent_name.map(str::to_string),
-            declaration_order: 0,
-        }
-    }
-
-    #[test]
-    fn model_projects_keeps_only_dotnet_projects_in_declaration_order() {
-        let model = SolutionFileModel {
-            path: "/s.sln".to_string(),
-            format: "sln".to_string(),
-            projects: vec![
-                project("Web", "/Web/Web.csproj", "", None, None, 1),
-                project("Native", "/Native/Native.vcxproj", "", None, None, 0),
-                project("Lib", "/Lib/Lib.fsproj", "", None, None, 2),
-            ],
-            folders: vec![],
-            files: vec![],
-        };
-
-        let projects = model_projects(&model);
-
-        // The C++ project is filtered out; the rest keep declaration order.
-        assert_eq!(projects.len(), 2);
-        assert_eq!(projects[0].name, "Web");
-        assert_eq!(projects[1].name, "Lib");
-    }
-
-    #[test]
-    fn project_name_falls_back_to_the_file_stem_when_display_name_is_empty() {
-        let entry = project("", "/src/Calc/Calc.csproj", "", None, None, 0);
-        assert_eq!(project_name(&entry), "Calc");
-    }
-
-    #[test]
-    fn parent_folder_name_resolves_via_folder_path() {
-        let folders = vec![folder("src", "/src/", None, None)];
-        let entry = project("App", "/App.csproj", "", None, Some("/src/"), 0);
-        assert_eq!(
-            parent_folder_name(&entry, &folders),
-            Some("src".to_string())
-        );
-    }
-
-    #[test]
-    fn model_folders_resolve_parent_identity_by_path_then_name() {
-        let folders = vec![
-            folder("root", "/root/", None, None),
-            folder("child", "/root/child/", Some("/root/"), None),
-            folder("byname", "/x/", None, Some("root")),
-        ];
-
-        let nodes = model_folders(&folders);
-
-        let child = nodes.iter().find(|n| n.name == "child").unwrap();
-        assert_eq!(child.parent_guid, Some("guid-root".to_string()));
-        let byname = nodes.iter().find(|n| n.name == "byname").unwrap();
-        assert_eq!(byname.parent_guid, Some("guid-root".to_string()));
-        let root = nodes.iter().find(|n| n.name == "root").unwrap();
-        assert_eq!(root.parent_guid, None);
-    }
-
-    #[test]
-    fn solution_item_count_ignores_fully_empty_entries() {
-        let files = vec![
-            SolutionItemEntry {
-                path: "/readme.md".to_string(),
-                relative_path: "readme.md".to_string(),
-                parent_folder: None,
-                parent_folder_path: None,
-                declaration_order: 0,
-            },
-            SolutionItemEntry {
-                path: String::new(),
-                relative_path: String::new(),
-                parent_folder: None,
-                parent_folder_path: None,
-                declaration_order: 0,
-            },
-        ];
-
-        assert_eq!(solution_item_count(&files), 1);
-    }
-
-    #[test]
-    fn is_dotnet_project_detects_by_path_and_by_type_marker() {
-        assert!(is_dotnet_project(&project(
-            "A",
-            "/A.csproj",
-            "",
-            None,
-            None,
-            0
-        )));
-        assert!(is_dotnet_project(&project(
-            "B",
-            "/B.fsproj",
-            "",
-            None,
-            None,
-            0
-        )));
-        assert!(is_dotnet_project(&project(
-            "C",
-            "/C.unknown",
-            ".csproj",
-            None,
-            None,
-            0
-        )));
-        assert!(!is_dotnet_project(&project(
-            "D",
-            "/D.vcxproj",
-            "native",
-            None,
-            None,
-            0
-        )));
-    }
-}
+#[path = "workspace_symbols_tests.rs"]
+mod tests;

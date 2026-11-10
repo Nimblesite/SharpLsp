@@ -6,9 +6,8 @@ LSP capability routed by the Rust host works identically for `.fs` and `.cs`/`.c
 
 ## How requests reach a sidecar
 
-The Rust host ([src/sharplsp/src/main.rs](../../src/sharplsp/src/main.rs)) routes each LSP method to **one**
-sidecar chosen purely by document language ([src/sharplsp/src/main.rs:763](../../src/sharplsp/src/main.rs#L763)
-`pick_sidecar`): `.fs` → F# sidecar, everything else → C# sidecar. The wire
+The Rust host ([src/sharplsp/src/dispatch.rs](../../src/sharplsp/src/dispatch.rs)) routes each LSP method to **one**
+sidecar chosen purely by document language (`pick_sidecar` in that file): `.fs` → F# sidecar, everything else → C# sidecar. The wire
 contract for every method is fixed by the Rust handler's MessagePack request/response
 structs (positional, `[Key(n)]`-ordered). A sidecar reaches parity for a method by
 registering that method name and returning a wire-compatible payload. If the F#
@@ -19,10 +18,10 @@ that feature — that is the parity gap.
 
 | LSP method | Rust handler | C# (Roslyn) | F# (FCS) | Spec |
 |---|---|---|---|---|
-| `textDocument/completion` | [semantic.rs:24](../../src/sharplsp/src/semantic.rs#L24) | ✅ | ✅ **(this plan)** | [FS-COMPLETION] |
-| `completionItem/resolve` | [semantic.rs:87](../../src/sharplsp/src/semantic.rs#L87) | ✅ | ✅ **(this plan)** | [FS-COMPLETION-RESOLVE] |
-| `textDocument/prepareRename` | [semantic.rs:920](../../src/sharplsp/src/semantic.rs#L920) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-PREPARE] |
-| `textDocument/rename` | [semantic.rs:965](../../src/sharplsp/src/semantic.rs#L965) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-APPLY] |
+| `textDocument/completion` | [semantic/completion.rs](../../src/sharplsp/src/semantic/completion.rs) | ✅ | ✅ **(this plan)** | [FS-COMPLETION] |
+| `completionItem/resolve` | [semantic/completion.rs](../../src/sharplsp/src/semantic/completion.rs) | ✅ | ✅ **(this plan)** | [FS-COMPLETION-RESOLVE] |
+| `textDocument/prepareRename` | [semantic/rename.rs](../../src/sharplsp/src/semantic/rename.rs) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-PREPARE] |
+| `textDocument/rename` | [semantic/rename.rs](../../src/sharplsp/src/semantic/rename.rs) | ✅ | ✅ **(this plan)** | [RENAME-FSHARP-APPLY] |
 | `textDocument/codeLens` | [code_lens.rs:15](../../src/sharplsp/src/code_lens.rs#L15) | ✅ | ✅ **(this plan)** | [FS-CODELENS] |
 | `textDocument/prepareCallHierarchy` | [call_hierarchy.rs:19](../../src/sharplsp/src/call_hierarchy.rs#L19) | ✅ | ✅ **(this plan)** | [FS-CALLHIER-PREPARE] |
 | `callHierarchy/incomingCalls` | [call_hierarchy.rs:59](../../src/sharplsp/src/call_hierarchy.rs#L59) | ✅ | ✅ **(this plan)** | [FS-CALLHIER-INCOMING] |
@@ -31,8 +30,8 @@ that feature — that is the parity gap.
 | `typeHierarchy/supertypes` | [type_hierarchy.rs:58](../../src/sharplsp/src/type_hierarchy.rs#L58) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUPER] |
 | `typeHierarchy/subtypes` | [type_hierarchy.rs:93](../../src/sharplsp/src/type_hierarchy.rs#L93) | ✅ | ✅ **(this plan)** | [FS-TYPEHIER-SUB] |
 | `textDocument/references` | [semantic.rs](../../src/sharplsp/src/semantic.rs) | ✅ solution-wide | ✅ **project-wide (this plan)** | [REFERENCES-FSHARP-FIND] |
-| `textDocument/hover` | [semantic.rs:134](../../src/sharplsp/src/semantic.rs#L134) | ✅ | ✅ | — |
-| `textDocument/definition` etc. | [main.rs:657](../../src/sharplsp/src/main.rs#L657) | ✅ | ✅ | — |
+| `textDocument/hover` | [semantic/hover.rs](../../src/sharplsp/src/semantic/hover.rs) | ✅ | ✅ | — |
+| `textDocument/definition` etc. | [dispatch.rs](../../src/sharplsp/src/dispatch.rs) `handle_nav_request` | ✅ | ✅ | — |
 | `textDocument/typeDefinition` | nav | ✅ | ✅ | — |
 | `textDocument/declaration` | nav | ✅ | ✅ | — |
 | `textDocument/implementation` | nav | ✅ | ✅ | — |
@@ -40,7 +39,7 @@ that feature — that is the parity gap.
 | `textDocument/codeAction` + resolve | [code_actions.rs](../../src/sharplsp/src/code_actions.rs) | ✅ | ✅ | — |
 | `textDocument/semanticTokens/{full,range}` | [semantic_tokens.rs](../../src/sharplsp/src/semantic_tokens.rs) | ✅ | ✅ | — |
 | `textDocument/documentSymbol` | [document_symbols.rs:20](../../src/sharplsp/src/document_symbols.rs#L20) | ✅ tree-sitter (host) | ✅ **FCS nav items (this plan)** | [FS-DOCSYMBOL] |
-| `workspace/symbol` | [main.rs](../../src/sharplsp/src/main.rs) `handle_standard_workspace_symbol` | ✅ tree-sitter (host) | ✅ **FCS document symbols** | [FS-WORKSPACE-SYMBOL] |
+| `workspace/symbol` | [workspace_symbol_query.rs](../../src/sharplsp/src/workspace_symbol_query.rs) | ✅ tree-sitter (host) | ✅ **FCS document symbols** | [FS-WORKSPACE-SYMBOL] |
 | `textDocument/signatureHelp` | [signature_help.rs](../../src/sharplsp/src/signature_help.rs) | ✅ semantic model ([SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP]) | ✅ **FCS GetMethods (this plan)** | [FS-SIGHELP] |
 | `textDocument/inlayHint` | [inlay_hints.rs](../../src/sharplsp/src/inlay_hints.rs) | ✅ | ✅ | — |
 | `workspace/diagnostics` (pull) | [pull_diagnostics.rs](../../src/sharplsp/src/pull_diagnostics.rs) | ✅ | ✅ | — |

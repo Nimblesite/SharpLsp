@@ -42,12 +42,11 @@ internal sealed partial class WorkspaceManager
             }
 
             var used = compilation.GetUsedAssemblyReferences(ct);
-            var result = new ReferenceUsageResult
-            {
-                UsedPaths = PortablePaths(used),
-                AllPaths = PortablePaths(compilation.References),
-                PackagesRoot = GlobalPackagesFolder(),
-            };
+            var result = new ReferenceUsageResult(
+                UsedPaths: PortablePaths(used),
+                AllPaths: PortablePaths(compilation.References),
+                PackagesRoot: GlobalPackagesFolder()
+            );
             return new ReferenceUsageQueryResult.Ok<ReferenceUsageResult, string>(result);
         }
         catch (Exception ex)

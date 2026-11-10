@@ -18,6 +18,7 @@ import {
   clearMemoryDecorations,
 } from '@nimblesite/lsp-profiler-ui/out/src/memory-decorations';
 import {
+  assertPainted,
   DECORATED_SOURCE,
   memorySnapshot,
   openSourceFile,
@@ -82,6 +83,76 @@ async function paintAllocation(line: number, size: number, count: number): Promi
   await applyMemoryDecorations(memorySnapshot({ topAllocations: [{ file, line, size, count }] }));
 }
 
+/** One decoration module's paint, read and clear seams. */
+interface DecorationSeam {
+  /** Paint one entry on `line` with two module-specific numbers. */
+  readonly paint: (line: number, magnitude: number, count: number) => Promise<void>;
+  /** The lines the ledger holds now. */
+  readonly lines: () => readonly number[];
+  /** The whole ledger, to assert it is empty. */
+  readonly all: () => readonly unknown[];
+  /** Clear the ledger. */
+  readonly clear: () => void;
+}
+
+/** Build one module's seams from its paint, ledger and clear functions. */
+function seamOf(
+  paint: (line: number, magnitude: number, count: number) => Promise<void>,
+  ledger: () => readonly { line: number }[],
+  clear: () => void,
+): DecorationSeam {
+  return {
+    paint,
+    lines: () => ledger().map((entry) => entry.line),
+    all: ledger,
+    clear,
+  };
+}
+
+/** The profiler-decorations module's seams. */
+const PROFILE_SEAM: DecorationSeam = seamOf(
+  paintHotLine,
+  appliedProfileDecorations,
+  clearProfileDecorations,
+);
+
+/** The memory-decorations module's seams. */
+const MEMORY_SEAM: DecorationSeam = seamOf(
+  paintAllocation,
+  appliedMemoryDecorations,
+  clearMemoryDecorations,
+);
+
+/** Assert the module paints exactly `line` and nothing else. */
+async function assertSeamPaints(
+  seam: DecorationSeam,
+  line: number,
+  magnitude: number,
+  count: number,
+): Promise<void> {
+  await seam.paint(line, magnitude, count);
+  assert.deepEqual(seam.lines(), [line], 'it paints');
+}
+
+/** Assert the module clears everything it just painted. */
+async function assertSeamClears(
+  seam: DecorationSeam,
+  line: number,
+  magnitude: number,
+  count: number,
+): Promise<void> {
+  await seam.paint(line, magnitude, count);
+  seam.clear();
+  assert.deepEqual(seam.all(), [], 'it clears');
+}
+
+/** Assert a double clear of the ledger raises nothing and leaves nothing. */
+function assertSeamDoubleClears(seam: DecorationSeam): void {
+  seam.clear();
+  seam.clear();
+  assert.deepEqual(seam.all(), []);
+}
+
 /** One test per row: its name, the percentages painted, and the levels they must get. */
 function levelTests(
   rows: readonly (readonly [string, readonly number[], readonly Heat[]])[],
@@ -96,46 +167,24 @@ function levelTests(
 suite('Profiler — Decoration Modules', () => {
   useDecoratedEditor('profiler-dec-');
 
-  test('profiler-decorations exports applyProfileDecorations function', async () => {
-    await paintHotLine(2, 30, 5);
-    assert.deepEqual(
-      appliedProfileDecorations().map((entry) => entry.line),
-      [2],
-      'it paints',
-    );
-  });
+  test('profiler-decorations exports applyProfileDecorations function', () =>
+    assertSeamPaints(PROFILE_SEAM, 2, 30, 5));
 
-  test('profiler-decorations exports clearProfileDecorations function', async () => {
-    await paintHotLine(2, 30, 5);
-    clearProfileDecorations();
-    assert.deepEqual(appliedProfileDecorations(), [], 'it clears');
-  });
+  test('profiler-decorations exports clearProfileDecorations function', () =>
+    assertSeamClears(PROFILE_SEAM, 2, 30, 5));
 
-  test('memory-decorations exports applyMemoryDecorations function', async () => {
-    await paintAllocation(3, 4096, 8);
-    assert.deepEqual(
-      appliedMemoryDecorations().map((entry) => entry.line),
-      [3],
-      'it paints',
-    );
-  });
+  test('memory-decorations exports applyMemoryDecorations function', () =>
+    assertSeamPaints(MEMORY_SEAM, 3, 4096, 8));
 
-  test('memory-decorations exports clearMemoryDecorations function', async () => {
-    await paintAllocation(3, 4096, 8);
-    clearMemoryDecorations();
-    assert.deepEqual(appliedMemoryDecorations(), [], 'it clears');
-  });
+  test('memory-decorations exports clearMemoryDecorations function', () =>
+    assertSeamClears(MEMORY_SEAM, 3, 4096, 8));
 
   test('clearProfileDecorations does not throw when no decorations exist', () => {
-    clearProfileDecorations();
-    clearProfileDecorations();
-    assert.deepEqual(appliedProfileDecorations(), []);
+    assertSeamDoubleClears(PROFILE_SEAM);
   });
 
   test('clearMemoryDecorations does not throw when no decorations exist', () => {
-    clearMemoryDecorations();
-    clearMemoryDecorations();
-    assert.deepEqual(appliedMemoryDecorations(), []);
+    assertSeamDoubleClears(MEMORY_SEAM);
   });
 
   test('ProfileResult type has required fields', async () => {
@@ -159,9 +208,11 @@ suite('Profiler — Decoration Modules', () => {
 
   test('ProfileHotLine type has required fields', async () => {
     await paintHotLine(5, 25, 500);
-    const [painted] = appliedProfileDecorations();
-    assert.equal(painted?.line, 5);
-    assert.ok(painted.contentText.includes('25.0% (500 samples)'), painted.contentText);
+    assertPainted(
+      appliedProfileDecorations()[0],
+      { line: 5, includes: '25.0% (500 samples)' },
+      'the hot line',
+    );
   });
 
   test('ProfileHotFunction type has required fields', async () => {
@@ -172,11 +223,10 @@ suite('Profiler — Decoration Modules', () => {
         ],
       }),
     );
-    const [painted] = appliedProfileDecorations();
-    assert.equal(painted?.line, 8);
-    assert.ok(
-      painted.contentText.includes('ProcessData — 40.0% CPU (30.0% self)'),
-      painted.contentText,
+    assertPainted(
+      appliedProfileDecorations()[0],
+      { line: 8, includes: 'ProcessData — 40.0% CPU (30.0% self)' },
+      'the hot function',
     );
   });
 
@@ -184,11 +234,10 @@ suite('Profiler — Decoration Modules', () => {
     await applyMemoryDecorations(
       memorySnapshot({ topAllocations: [{ file, line: 9, size: 10_485_760, count: 5000 }] }),
     );
-    const [painted] = appliedMemoryDecorations();
-    assert.equal(painted?.line, 9);
-    assert.ok(
-      painted.contentText.includes('10.0 MB allocated (5000 objects)'),
-      painted.contentText,
+    assertPainted(
+      appliedMemoryDecorations()[0],
+      { line: 9, includes: '10.0 MB allocated (5000 objects)' },
+      'the allocation',
     );
   });
 

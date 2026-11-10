@@ -627,7 +627,7 @@ let ``getImplementations on non-existent file returns empty`` () = task {
     let! (state, dir, _, _) =
         loadWorkspace [ "I.fs", "module I\nlet x = 1\n" ]
     try
-        let! i = FSharpWorkspace.getImplementations state "/bogus/path.fs" 0 0
+        let! i = FSharpImplementations.getImplementations state "/bogus/path.fs" 0 0
         Assert.Empty(i)
     finally
         cleanup dir
@@ -700,7 +700,7 @@ let ``getSemanticTokensRange filters by range`` () = task {
 [<Fact>]
 let ``getInlayHints returns empty when not loaded`` () = task {
     let state = FSharpWorkspace.create ()
-    let! hints = FSharpFeatures.getInlayHints state "/x.fs" 0 10
+    let! hints = FSharpInlayHints.getInlayHints state "/x.fs" 0 10
     Assert.Empty(hints)
 }
 
@@ -714,7 +714,7 @@ let ``getInlayHints returns list for loaded file`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
     finally
         cleanup dir
@@ -981,7 +981,7 @@ let ``WS getImplementations on a value returns its location`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
     try
         // "add" call site on line 10 → implementation list with one location.
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 10 16
+        let! impls = FSharpImplementations.getImplementations state paths[0] 10 16
         Assert.NotEmpty(impls)
         let loc = List.head impls
         Assert.EndsWith("Sample.fs", loc.FilePath)
@@ -996,7 +996,7 @@ let ``WS getImplementations on a type returns its location`` () = task {
     try
         // "Person" type usage in the record literal on line 12 — resolve via
         // the field; ensure the implementations path runs and returns a list.
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 14 16
+        let! impls = FSharpImplementations.getImplementations state paths[0] 14 16
         Assert.NotEmpty(impls)
         Assert.Equal(2, (List.head impls).Line)
     finally
@@ -1007,7 +1007,7 @@ let ``WS getImplementations on a type returns its location`` () = task {
 let ``WS getImplementations at whitespace returns empty`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
     try
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 1 0
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 0
         Assert.Empty(impls)
     finally
         cleanup dir
@@ -1123,7 +1123,7 @@ let ``WS getImplementations on a function declaration returns its own location``
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // "square" at its declaration on line 1; 's' at column 4.
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 1 6
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 6
         Assert.NotEmpty(impls)
         Assert.Equal(1, (List.head impls).Line)
     finally
@@ -1177,7 +1177,7 @@ let ``WS getImplementations on an external symbol may return empty`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // "Empty" field on line 1 — external symbol.
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 1 24
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 24
         // Either empty (no in-source location) or a list; the path runs.
         Assert.NotNull(impls :> obj)
     finally
@@ -1649,7 +1649,7 @@ let ``FEAT getInlayHints produces type and parameter hints`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
         // Real symbols are present, so at least one hint must be produced.
         Assert.NotEmpty(hints)
@@ -2245,7 +2245,7 @@ let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
         "let again = total |> string\n"
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
-        let! hints = FSharpFeatures.getInlayHints state paths[0] 0 10
+        let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
         // The pipeline path may or may not resolve a tooltip depending on FCS,
         // but every hint produced is well-formed.
@@ -2374,7 +2374,7 @@ let ``WS2 getImplementations on an interface override returns its location`` () 
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // 'Area' impl on line 5 (0-based); 'A' at column 17.
-        let! impls = FSharpWorkspace.getImplementations state paths[0] 5 18
+        let! impls = FSharpImplementations.getImplementations state paths[0] 5 18
         Assert.NotEmpty(impls)
         for loc in impls do
             Assert.EndsWith("M.fs", loc.FilePath)

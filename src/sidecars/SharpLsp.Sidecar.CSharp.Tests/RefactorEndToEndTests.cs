@@ -79,13 +79,7 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
         // edits for both sites without touching disk.
         var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
             "textDocument/rename",
-            new RenameRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 9,
-                Character = 15,
-                NewName = "Sum",
-            }
+            new RenameRequest(FilePath: fixture.SourceFile, Line: 9, Character: 15, NewName: "Sum")
         );
         var doc = Assert.Single(edit.DocumentChanges);
         Assert.Equal(fixture.SourceFile, doc.FilePath);
@@ -98,13 +92,12 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     {
         var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
             "textDocument/rename",
-            new RenameRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 80,
-                Character = 15,
-                NewName = "Counter",
-            }
+            new RenameRequest(
+                FilePath: fixture.SourceFile,
+                Line: 80,
+                Character: 15,
+                NewName: "Counter"
+            )
         );
         Assert.NotEmpty(edit.DocumentChanges);
     }
@@ -115,46 +108,67 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
         // No symbol at a string literal -> empty workspace edit, not an error.
         var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
             "textDocument/rename",
-            new RenameRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 124,
-                Character = 23,
-                NewName = "Whatever",
-            }
+            new RenameRequest(
+                FilePath: fixture.SourceFile,
+                Line: 124,
+                Character: 23,
+                NewName: "Whatever"
+            )
         );
         Assert.Empty(edit.DocumentChanges);
     }
 
     [Theory]
-    [InlineData(3, 13, "Calculator")]
-    [InlineData(3, 13, "   ")]
-    [InlineData(3, 13, "bad-name")]
-    [InlineData(3, 13, "Program")]
-    [InlineData(0, 12, "MetaProbe")]
+    [InlineData(3, 13, "Calculator", false)]
+    [InlineData(3, 13, "   ", true)]
+    [InlineData(3, 13, "bad-name", true)]
+    [InlineData(3, 13, "", true)]
+    [InlineData(3, 13, "123bad", true)]
+    [InlineData(3, 13, "bad name", true)]
+    [InlineData(3, 13, "class", true)]
+    [InlineData(3, 13, "Program", false)]
+    [InlineData(0, 12, "MetaProbe", false)]
     public async Task Rename_rejects_invalid_unchanged_and_conflicting_names(
         int line,
         int character,
-        string newName
+        string newName,
+        bool invalidIdentifier
     )
     {
-        // [RENAME-ERRORS] Rejected names never leak partial Roslyn edits.
-        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+        // [RENAME-ERRORS] #559: invalid identifiers are errors, never silent no-ops.
+        var response = await fixture.SendAsync(
             "textDocument/rename",
-            RenameRequestAt(line, character, newName)
+            MessagePackSerializer.Serialize(RenameRequestAt(line, character, newName))
         );
-        Assert.Empty(edit.DocumentChanges);
+        if (invalidIdentifier)
+        {
+            Assert.NotNull(response.Error);
+            Assert.Contains(
+                "Invalid C# rename identifier",
+                response.Error,
+                StringComparison.Ordinal
+            );
+            Assert.Empty(response.Payload);
+        }
+        else
+        {
+            Assert.Null(response.Error);
+            Assert.Empty(
+                MessagePackSerializer
+                    .Deserialize<WorkspaceEditResult>(response.Payload)
+                    .DocumentChanges
+            );
+        }
     }
 
     private RenameRequest RenameRequestAt(int line, int character, string newName)
     {
-        return new RenameRequest
-        {
-            FilePath = fixture.SourceFile,
-            Line = line,
-            Character = character,
-            NewName = newName,
-        };
+        return new RenameRequest(
+            FilePath: fixture.SourceFile,
+            Line: line,
+            Character: character,
+            NewName: newName
+        );
     }
 
     [Fact]
@@ -162,14 +176,13 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     {
         // `var unused = 42;` at L136 produces CS0219; Roslyn offers a
         // "Remove unused variable" fix. Discover it, then resolve to an edit.
-        var request = new CodeActionRequest
-        {
-            FilePath = fixture.SourceFile,
-            StartLine = 136,
-            StartCharacter = 12,
-            EndLine = 136,
-            EndCharacter = 18,
-        };
+        var request = new CodeActionRequest(
+            FilePath: fixture.SourceFile,
+            StartLine: 136,
+            StartCharacter: 12,
+            EndLine: 136,
+            EndCharacter: 18
+        );
         var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
             "textDocument/codeAction",
             MessagePackSerializer.Serialize(request)
@@ -186,7 +199,7 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
         {
             var resolveResp = await fixture.SendAsync(
                 "codeAction/resolve",
-                MessagePackSerializer.Serialize(new CodeActionResolveRequest { Id = action.Id })
+                MessagePackSerializer.Serialize(new CodeActionResolveRequest(Id: action.Id))
             );
             Assert.Null(resolveResp.Error);
             if (resolveResp.Payload.Length <= 1)
@@ -211,7 +224,7 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
         // never a silent nil or a bare number. [REFACTOR-NEVER-SILENT]
         var r = await fixture.SendAsync(
             "codeAction/resolve",
-            MessagePackSerializer.Serialize(new CodeActionResolveRequest { Id = 999_999 })
+            MessagePackSerializer.Serialize(new CodeActionResolveRequest(Id: 999_999))
         );
         Assert.NotNull(r.Error);
         Assert.Contains("the code action is no longer available", r.Error);
@@ -222,14 +235,13 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task CodeAction_on_type_offers_refactorings()
     {
         // A selection spanning a method body tends to surface refactorings.
-        var request = new CodeActionRequest
-        {
-            FilePath = fixture.SourceFile,
-            StartLine = 9,
-            StartCharacter = 35,
-            EndLine = 9,
-            EndCharacter = 40,
-        };
+        var request = new CodeActionRequest(
+            FilePath: fixture.SourceFile,
+            StartLine: 9,
+            StartCharacter: 35,
+            EndLine: 9,
+            EndCharacter: 40
+        );
         var actions = await fixture.SendAndDeserializeAsync<CodeActionItem[]>(
             "textDocument/codeAction",
             MessagePackSerializer.Serialize(request)

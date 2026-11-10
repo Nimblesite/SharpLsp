@@ -36,7 +36,13 @@ import {
 } from './debug-suite-kit';
 import { comparablePath, deepEq, eq, neq, requireAt } from './test-helpers';
 import { assertAnswered, assertSessionEnded, assertAdapterAlive } from './debug-dap-kit';
-import { assertValues } from './debug-inspect-kit';
+import { assertEverySucceeded, assertValues } from './debug-inspect-kit';
+import { assertParkedOn, assertProjectedFrames, walkLines } from './debug-stepping-kit';
+import {
+  assertPausedQuietly,
+  assertRequested,
+  assertStopsNamedThreads,
+} from './debug-inspection-flow-kit';
 
 /** The logical await chain the sidecar must reconstruct, innermost first. */
 const ASYNC_CHAIN = ['LeafAsync', 'MiddleAsync', 'RootAsync'] as const;
@@ -67,23 +73,22 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
         frames.length >= 3,
         `at least three user frames must be reported; got ${frames.length}`,
       );
-      deepEq(
-        frames.slice(0, 3).map((frame) => methodOf(frame)),
+      assertProjectedFrames(
+        frames.slice(0, 3),
+        methodOf,
         ['Add', 'Accumulate', 'Main'],
         'DAP orders `stackTrace` innermost-first; a reversed or truncated chain makes the Call ' +
           'Stack panel unusable for tracing how execution arrived here',
       );
-      deepEq(
-        frames.slice(0, 3).map((frame) => frame.line),
-        [
-          fixture.source.dapLine('add-body'),
-          fixture.source.dapLine('accumulate-call'),
-          fixture.source.dapLine('main-accumulate'),
-        ],
+      assertProjectedFrames(
+        frames.slice(0, 3),
+        (frame) => frame.line,
+        walkLines(fixture),
         'each frame must be parked on the statement executing IN it',
       );
-      deepEq(
-        frames.slice(0, 3).map((frame) => frame.id > 0),
+      assertProjectedFrames(
+        frames.slice(0, 3),
+        (frame) => frame.id > 0,
         [true, true, true],
         'every frame needs a non-zero id: it is the handle `scopes` and `evaluate` take',
       );
@@ -118,12 +123,13 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 5 - the stack was READ, not inferred: the request went out
       // and came back, and the workbench focused a frame off the back of it.
       assertAnswered(recorder, 'stackTrace', 'the workbench really asked for the stack');
-      assert.ok(
-        recorder.requests('threads').length >= 1,
-        'after enumerating the threads it belongs to',
+      assertRequested(recorder, 'threads', 1, 'after enumerating the threads it belongs to');
+      assertPausedQuietly(
+        recorder,
+        1,
+        'with the debuggee paused exactly once',
+        'and no adapter transport error',
       );
-      eq(recorder.stops().length, 1, 'with the debuggee paused exactly once');
-      deepEq(recorder.errors, [], 'and no adapter transport error');
     },
   );
 
@@ -178,8 +184,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // frame id, and nothing else changes.
       assert.ok(recorder.requests('scopes').length >= 1, 'the caller frame scopes were read');
       assertAnswered(recorder, 'variables', 'and its variables');
-      eq(recorder.stops().length, 1, 'without resuming the debuggee');
-      deepEq(recorder.errors, [], 'and with no adapter transport error');
+      assertPausedQuietly(
+        recorder,
+        1,
+        'without resuming the debuggee',
+        'and with no adapter transport error',
+      );
     },
   );
 
@@ -300,10 +310,7 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 4 - threads are what the Call Stack panel groups by, so the
       // enumeration is load-bearing rather than incidental.
       assertAnswered(recorder, 'threads', 'the threads were enumerated');
-      assert.ok(
-        recorder.stops().every((entry) => entry.threadId !== 0),
-        'every stop named a thread',
-      );
+      assertStopsNamedThreads(recorder, 'every stop named a thread');
       assertAdapterAlive(recorder, 'and the session ended at most once');
     },
   );
@@ -376,16 +383,14 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 4 - Just My Code is a LAUNCH attribute, so it has to have
       // travelled with the launch this stack belongs to.
       eq(recorder.requests('launch').length, 1, 'one launch request for one session');
-      assert.ok(
-        recorder.responses('launch').every((response) => response.success),
-        'answered successfully',
+      assertEverySucceeded(recorder, [['launch', 'answered successfully']]);
+      assertRequested(recorder, 'stackTrace', 1, 'and the stack really was read from it');
+      assertPausedQuietly(
+        recorder,
+        1,
+        'with the debuggee paused once',
+        'and no adapter transport error',
       );
-      assert.ok(
-        recorder.requests('stackTrace').length >= 1,
-        'and the stack really was read from it',
-      );
-      eq(recorder.stops().length, 1, 'with the debuggee paused once');
-      deepEq(recorder.errors, [], 'and no adapter transport error');
     },
   );
 
@@ -400,10 +405,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 1 — stop at the top of the loop body.
       const { session, stop } = await runToFirstStop(debuggee(), 'accumulate-call');
       const before = await stackFrames(session, stop.threadId);
-      eq(methodOf(requireAt(before, 0, 'the first frame')), 'Accumulate', 'stopped in the caller');
-      eq(
-        requireAt(before, 0, 'the first frame').line,
-        fixture.source.dapLine('accumulate-call'),
+      assertParkedOn(
+        requireAt(before, 0, 'the first frame'),
+        fixture,
+        'accumulate-call',
+        'Accumulate',
+        'stopped in the caller',
         'on the call statement',
       );
 
@@ -412,10 +419,12 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       const into = await stepToFrame(recorder, CMD_STEP_INTO);
       const deeper = await stackFrames(session, into.stop.threadId);
       eq(deeper.length, before.length + 1, 'a step into pushes exactly one frame');
-      eq(methodOf(requireAt(deeper, 0, 'the new innermost frame')), 'Add', 'and the callee is it');
-      eq(
-        requireAt(deeper, 0, 'the new innermost frame').line,
-        fixture.source.dapLine('add-body'),
+      assertParkedOn(
+        requireAt(deeper, 0, 'the new innermost frame'),
+        fixture,
+        'add-body',
+        'Add',
+        'and the callee is it',
         'parked on the callee first statement',
       );
       eq(
@@ -439,9 +448,10 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
         'Accumulate',
         'back in the caller',
       );
-      deepEq(
-        shallower.slice(0, 2).map((frame) => methodOf(frame)),
-        before.slice(0, 2).map((frame) => methodOf(frame)),
+      assertProjectedFrames(
+        shallower.slice(0, 2),
+        methodOf,
+        before.slice(0, 2).map(methodOf),
         'and the whole visible chain is what it was before the excursion',
       );
       eq(
@@ -456,11 +466,8 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 4 - three stack reads, one per stop, each its own round trip.
       // A cached stack would show as fewer requests than stops.
       assertAnswered(recorder, 'stackTrace', 'the stack was re-read after each step', 3);
-      assert.ok(
-        recorder.requests('stepIn').length >= 1,
-        'the step into really reached the adapter',
-      );
-      assert.ok(recorder.requests('stepOut').length >= 1, 'and so did the step out');
+      assertRequested(recorder, 'stepIn', 1, 'the step into really reached the adapter');
+      assertRequested(recorder, 'stepOut', 1, 'and so did the step out');
       eq(recorder.stops().length, 3, 'with exactly three stops behind them');
     },
   );
@@ -481,18 +488,21 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       // Interaction 2 — read it again. Names, lines and sources must match.
       const second = await stackFrames(session, stop.threadId);
       eq(second.length, first.length, 'the same stopped stack has the same depth on both reads');
-      deepEq(
-        second.map((frame) => methodOf(frame)),
-        first.map((frame) => methodOf(frame)),
+      assertProjectedFrames(
+        second,
+        methodOf,
+        first.map(methodOf),
         'and the same frames, in the same order',
       );
-      deepEq(
-        second.map((frame) => frame.line),
+      assertProjectedFrames(
+        second,
+        (frame) => frame.line,
         first.map((frame) => frame.line),
         'each parked on the same line',
       );
-      deepEq(
-        second.map((frame) => comparablePath(frame.sourcePath)),
+      assertProjectedFrames(
+        second,
+        (frame) => comparablePath(frame.sourcePath),
         first.map((frame) => comparablePath(frame.sourcePath)),
         'and attributed to the same source',
       );
@@ -519,14 +529,10 @@ suite('Debug call stack — frames, per-frame state, threads and async chains', 
       assertCleanSession(debuggee(), 'reading a stopped stack twice');
       // Interaction 4 - two reads of one stopped stack are two REQUESTS, and both
       // were answered. A cached second read would show as one.
-      assert.ok(recorder.requests('stackTrace').length >= 2, 'the stack really was read twice');
+      assertRequested(recorder, 'stackTrace', 2, 'the stack really was read twice');
       assert.ok(recorder.responses('stackTrace').length >= 2, 'and answered twice');
-      assert.ok(
-        recorder.responses('stackTrace').every((response) => response.success),
-        'both successfully',
-      );
-      eq(recorder.stops().length, 1, 'from the one stop');
-      deepEq(recorder.errors, [], 'with no adapter transport error');
+      assertEverySucceeded(recorder, [['stackTrace', 'both successfully']]);
+      assertPausedQuietly(recorder, 1, 'from the one stop', 'with no adapter transport error');
     },
   );
 });

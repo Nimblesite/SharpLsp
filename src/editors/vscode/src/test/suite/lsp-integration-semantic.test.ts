@@ -10,22 +10,19 @@
 // so the two halves fail for entirely different reasons and belong in separate
 // files.
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
-  closeAllEditors,
+  openCSharpFile,
   openExistingFile,
   pollUntilResult,
-  setupLspTestSuite,
-  teardownLspTestSuite,
   waitForDocumentSymbols,
   pollProvider,
   assertContainsAll,
 } from './test-helpers';
 import { assertCompletionEditSpans } from './lsp-invariants-kit';
-import { ACTIVATION_MS, LSP_RESPONSE_MS } from './test-timeouts';
-import { useLspTestSuite } from './lsp-suite-kit';
+import { LSP_RESPONSE_MS } from './test-timeouts';
+import { inlayHintLabel, useLspTestSuite } from './lsp-suite-kit';
 import { assertShotMembers, MEMBER_CARET } from './completion-shot-kit';
 
 /** The `Add(...)` call site in the same fixture. */
@@ -34,32 +31,15 @@ const ADD_CALL = new vscode.Position(10, 26);
 const ADD_DECLARATION_LINE = 6;
 
 suite('LSP Integration — Real Semantic LSP', () => {
-  let tmpDir: string;
-  let fixtureDir: string;
-
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS);
-    const result = await setupLspTestSuite('semantic-');
-    tmpDir = result.tmpDir;
-    fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
-  });
-
-  suiteTeardown(async () => {
-    await closeAllEditors();
-    teardownLspTestSuite(tmpDir);
-  });
-
-  teardown(async () => {
-    await closeAllEditors();
-  });
+  useLspTestSuite('semantic-');
+  const fixtureDir = path.resolve(__dirname, '../../../test-fixtures/workspace');
 
   test('returns Roslyn-backed completion items with concrete symbol kinds', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the sidecar answers with real Roslyn symbols, each
     // carrying the KIND its completion icon is drawn from. A list of
     // undifferentiated Text items is a tree-sitter word list, not IntelliSense.
-    const { uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri } = await openCompletionShot(fixtureDir);
     const completions = await completionsAt(uri, MEMBER_CARET);
     assertShotMembers(completions);
 
@@ -90,8 +70,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // providers registered for that character. This stays empty unless the
     // server advertises `.` in completionProvider.triggerCharacters — i.e. it
     // reproduces "press dot, get nothing" end-to-end through the language client.
-    const { uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
-    await waitForDocumentSymbols(uri);
+    const { uri } = await openCompletionShot(fixtureDir);
     const triggered = await completionsAt(uri, MEMBER_CARET, '.');
     const labels = new Set(triggered.items.map((item) => item.label.toString()));
     for (const member of ['Add', 'Name', '_count']) {
@@ -117,24 +96,15 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 3 — the triggered items carry the same kinds and the same
     // explicit edit spans, so accepting one after typing `.` does not duplicate
     // the identifier.
-    const byLabel = new Map(triggered.items.map((item) => [item.label.toString(), item]));
-    assert.strictEqual(byLabel.get('Add')?.kind, vscode.CompletionItemKind.Method);
-    assert.strictEqual(byLabel.get('Name')?.kind, vscode.CompletionItemKind.Property);
+    assertShotMembers(triggered);
     assertCompletionEditSpans(triggered.items, MEMBER_CARET);
   });
 
   test('resolves definition and references for a method call site', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — F12 on the call lands on the declaration, in this file.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
-    await waitForDocumentSymbols(uri);
-    const definitions = await pollProvider<vscode.Location>(
-      'vscode.executeDefinitionProvider',
-      [uri, ADD_CALL],
-      (locations) => locations.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
+    const { uri, doc } = await openCompletionShot(fixtureDir);
+    const definitions = await pollAtCall<vscode.Location>('vscode.executeDefinitionProvider', uri);
     assert.ok(
       definitions.some(
         (location) =>
@@ -152,13 +122,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
     // Interaction 2 — Shift-F12 finds the call site AND the declaration.
     // References that omit the declaration make Rename miss the very symbol
     // being renamed.
-    const references = await pollProvider<vscode.Location>(
-      'vscode.executeReferenceProvider',
-      [uri, ADD_CALL],
-      (locations) => locations.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
+    const references = await pollAtCall<vscode.Location>('vscode.executeReferenceProvider', uri);
     assert.ok(
       references.some(
         (location) =>
@@ -194,14 +158,10 @@ suite('LSP Integration — Real Semantic LSP', () => {
   test('returns document highlights for a semantic symbol occurrence', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — resting on `Add` highlights it.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
-    await waitForDocumentSymbols(uri);
-    const highlights = await pollProvider<vscode.DocumentHighlight>(
+    const { uri, doc } = await openCompletionShot(fixtureDir);
+    const highlights = await pollAtCall<vscode.DocumentHighlight>(
       'vscode.executeDocumentHighlights',
-      [uri, ADD_CALL],
-      (items) => items.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
+      uri,
     );
     assert.ok(
       highlights.every((highlight) => highlight.range.start.line >= 0),
@@ -268,8 +228,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
   test('returns parameter-name inlay hints for a real method call', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the call site gets a hint per argument.
-    const { doc, uri } = await openExistingFile(fixtureDir, 'CompletionShot.cs');
-    await waitForDocumentSymbols(uri);
+    const { doc, uri } = await openCompletionShot(fixtureDir);
     const hints = await pollProvider<vscode.InlayHint>(
       'vscode.executeInlayHintProvider',
       [uri, new vscode.Range(new vscode.Position(0, 0), new vscode.Position(doc.lineCount, 0))],
@@ -277,7 +236,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
       LSP_RESPONSE_MS,
       2_000,
     );
-    const labels = hints.map(inlayHintLabelText).join(' ');
+    const labels = hints.map(inlayHintLabel).join(' ');
     assert.match(labels, /\ba\b/, 'Inlay hints must include the first parameter name');
     assert.match(labels, /\bb\b/, 'Inlay hints must include the second parameter name');
 
@@ -290,7 +249,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
         hint.position.character <= doc.lineAt(hint.position.line).text.length,
         `hint on line ${hint.position.line} must sit inside that line`,
       );
-      assert.ok(inlayHintLabelText(hint).length > 0, 'a hint must carry visible text');
+      assert.ok(inlayHintLabel(hint).length > 0, 'a hint must carry visible text');
     }
 
     // Interaction 3 — the parameter hints for the call sit on the call's line,
@@ -309,7 +268,7 @@ suite('LSP Integration — Real Semantic LSP', () => {
       'hints arrive in argument order',
     );
     assert.ok(
-      parameters.every((hint) => inlayHintLabelText(hint).trimEnd().endsWith(':')),
+      parameters.every((hint) => inlayHintLabel(hint).trimEnd().endsWith(':')),
       'a parameter-name hint renders as `name:`',
     );
     // `var total` earns an inferred-TYPE hint on the same line; that is the
@@ -346,11 +305,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
 }`;
     // Interaction 1 — the file is part of TestFixtures.csproj, so Roslyn sees
     // it and reports the unused local.
-    const refactorPath = path.join(workspaceRoot, 'Refactor.cs');
-    fs.writeFileSync(refactorPath, content, 'utf8');
-    const uri = vscode.Uri.file(refactorPath);
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
+    const { doc, uri } = await openCSharpFile(workspaceRoot, 'Refactor.cs', content);
     await waitForDocumentSymbols(uri);
     assert.strictEqual(doc.languageId, 'csharp', 'the fixture opens as C#');
     assert.ok(doc.getText().includes('string unused'), 'and really declares the unused local');
@@ -359,13 +314,7 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
     // is the "lightbulb never appears" defect [SHARPLSP-FEATURES-REFACTORING]
     // makes a P0.
     const range = new vscode.Range(new vscode.Position(6, 19), new vscode.Position(6, 25));
-    const actions = await pollProvider<vscode.CodeAction>(
-      'vscode.executeCodeActionProvider',
-      [uri, range],
-      (offered) => offered.length > 0,
-      LSP_RESPONSE_MS,
-      2_000,
-    );
+    const actions = await pollCodeActions(uri, range);
     assert.ok(actions.length > 0, 'Must have at least one code action for unused variable');
     assert.strictEqual(doc.getText(range), 'unused', 'the range really covers the identifier');
 
@@ -418,6 +367,37 @@ suite('LSP Integration — Code Actions & Refactoring', () => {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+/** Open the `CompletionShot.cs` fixture and wait for the symbols Roslyn reports. */
+async function openCompletionShot(
+  fixtureDir: string,
+): Promise<{ doc: vscode.TextDocument; uri: vscode.Uri }> {
+  const opened = await openExistingFile(fixtureDir, 'CompletionShot.cs');
+  await waitForDocumentSymbols(opened.uri);
+  return opened;
+}
+
+/** Poll the code-action provider until it offers at least one action. */
+async function pollCodeActions(uri: vscode.Uri, range: vscode.Range): Promise<vscode.CodeAction[]> {
+  return pollProvider<vscode.CodeAction>(
+    'vscode.executeCodeActionProvider',
+    [uri, range],
+    (offered) => offered.length > 0,
+    LSP_RESPONSE_MS,
+    2_000,
+  );
+}
+
+/** Poll `providerId` at the `Add` call site until it reports at least one item. */
+async function pollAtCall<T>(providerId: string, uri: vscode.Uri): Promise<T[]> {
+  return pollProvider<T>(
+    providerId,
+    [uri, ADD_CALL],
+    (items) => items.length > 0,
+    LSP_RESPONSE_MS,
+    2_000,
+  );
+}
+
 /** Completions at a caret, polled until the sidecar has really answered. */
 async function completionsAt(
   uri: vscode.Uri,
@@ -438,11 +418,4 @@ async function completionsAt(
     LSP_RESPONSE_MS,
     2_000,
   );
-}
-
-function inlayHintLabelText(hint: vscode.InlayHint): string {
-  if (typeof hint.label === 'string') {
-    return hint.label;
-  }
-  return hint.label.map((part) => part.value).join('');
 }

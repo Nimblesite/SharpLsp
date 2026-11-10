@@ -167,7 +167,7 @@ let ``definition family on unloaded workspace returns empty`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpWorkspace.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)
         Assert.True(Option.isNone decl)
@@ -240,7 +240,7 @@ let ``code lens on unloaded workspace returns empty`` () =
 let ``inlay and semantic tokens on unloaded workspace return empty`` () =
     task {
         let ws = FSharpWorkspace.create ()
-        let! hints = FSharpFeatures.getInlayHints ws missing 0 100
+        let! hints = FSharpInlayHints.getInlayHints ws missing 0 100
         let! full = FSharpFeatures.getSemanticTokens ws missing
         let! ranged = FSharpFeatures.getSemanticTokensRange ws missing 0 100
         Assert.Empty(hints)
@@ -258,7 +258,7 @@ let ``loaded queries on a missing file fail gracefully`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpWorkspace.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0
         Assert.True(Option.isNone h)
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)
@@ -330,7 +330,7 @@ let ``code lens reports reference counts on a loaded file`` () =
 let ``inlay hints surface on the loaded file`` () =
     task {
         let ws, src = loaded.Value
-        let! hints = FSharpFeatures.getInlayHints ws src 0 100
+        let! hints = FSharpInlayHints.getInlayHints ws src 0 100
         Assert.NotEmpty(hints)
     }
 

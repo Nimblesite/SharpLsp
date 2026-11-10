@@ -44,6 +44,16 @@ function pythonProcessesTitleCommands(): string[] {
     .map((entry) => entry.command);
 }
 
+/** Assert the Processes title bar offers (or, with `want` false, omits) `command`. */
+function assertTitleCommand(
+  commands: readonly string[],
+  command: string,
+  want: boolean,
+  why: string,
+): void {
+  assert.strictEqual(commands.includes(command), want, `${why}; got: ${commands.join(', ')}`);
+}
+
 /** Look up a command's declaration, asserting it exists. */
 function commandEntry(commandId: string): CommandContribution {
   const entry = manifestCommands().find((cmd) => cmd.command === commandId);
@@ -54,16 +64,22 @@ function commandEntry(commandId: string): CommandContribution {
 suite('Processes — title-bar entry points state their metric (#82)', () => {
   test('the title bar offers a CPU launch and a memory launch, not one ambiguous button', () => {
     const titleCommands = pythonProcessesTitleCommands();
-    assert.ok(
-      titleCommands.includes(CPU_LAUNCH_COMMAND),
-      `the title bar must offer a CPU-explicit launch (#82); got: ${titleCommands.join(', ')}`,
+    assertTitleCommand(
+      titleCommands,
+      CPU_LAUNCH_COMMAND,
+      true,
+      'the title bar must offer a CPU-explicit launch (#82)',
     );
-    assert.ok(
-      titleCommands.includes(MEMORY_LAUNCH_COMMAND),
-      `the title bar must offer a memory-explicit launch (#82); got: ${titleCommands.join(', ')}`,
+    assertTitleCommand(
+      titleCommands,
+      MEMORY_LAUNCH_COMMAND,
+      true,
+      'the title bar must offer a memory-explicit launch (#82)',
     );
-    assert.ok(
-      !titleCommands.includes(AMBIGUOUS_LAUNCH_COMMAND),
+    assertTitleCommand(
+      titleCommands,
+      AMBIGUOUS_LAUNCH_COMMAND,
+      false,
       "the metric-less 'Run & Profile Current File' button must be gone (#82)",
     );
   });
@@ -225,6 +241,17 @@ function providerWithClient(client: unknown): ProcessesProvider {
   return new ProcessesProvider(store);
 }
 
+/** Drive one real fetch through `client` and assert the state the provider settles to. */
+async function assertFetchSettles(client: unknown, expected: string): Promise<void> {
+  const provider = providerWithClient(client);
+  try {
+    await provider.refreshNow();
+    assert.strictEqual(provider.processesState, expected, `the fetch settles to ${expected}`);
+  } finally {
+    provider.dispose();
+  }
+}
+
 suite('Processes — fetch-state drives the welcome (#147)', () => {
   // The empty welcome only tells the truth if the provider publishes the right
   // processesState. A still-loading or errored fetch must NEVER read as "loaded"
@@ -236,32 +263,26 @@ suite('Processes — fetch-state drives the welcome (#147)', () => {
   });
 
   test("a successful fetch settles to 'loaded' — only then is empty genuine", async () => {
-    const provider = providerWithClient({
-      isRunning: () => true,
-      sendRequest: async () => ({ processes: [] }),
-    });
-    await provider.refreshNow();
-    assert.strictEqual(provider.processesState, 'loaded');
-    provider.dispose();
+    await assertFetchSettles(
+      { isRunning: () => true, sendRequest: async () => ({ processes: [] }) },
+      'loaded',
+    );
   });
 
   test("a failed fetch settles to 'error', not masquerading as 'no processes'", async () => {
-    const provider = providerWithClient({
-      isRunning: () => true,
-      sendRequest: async () => {
-        throw new Error('disconnected');
+    await assertFetchSettles(
+      {
+        isRunning: () => true,
+        sendRequest: async () => {
+          throw new Error('disconnected');
+        },
       },
-    });
-    await provider.refreshNow();
-    assert.strictEqual(provider.processesState, 'error');
-    provider.dispose();
+      'error',
+    );
   });
 
   test("no running client stays 'loading' (the serverState welcome owns the copy)", async () => {
-    const provider = providerWithClient(undefined);
-    await provider.refreshNow();
-    assert.strictEqual(provider.processesState, 'loading');
-    provider.dispose();
+    await assertFetchSettles(undefined, 'loading');
   });
 });
 
@@ -290,17 +311,23 @@ suite('Run & Profile registered commands (#82)', () => {
 /** A program inside the opened workspace folder. */
 const WORKSPACE_PROGRAM = (): string => path.join(requireWorkspaceRoot(), 'App', 'Program.cs');
 
+/** The `metric` launch for the workspace program, asserted to run in the opened workspace folder. */
+function workspaceLaunch(metric: 'cpu' | 'memory'): vscode.DebugConfiguration {
+  const config = launchConfigOf(metric, WORKSPACE_PROGRAM());
+  assert.strictEqual(
+    config.cwd,
+    requireWorkspaceRoot(),
+    'the launch runs in the workspace folder of the file',
+  );
+  return config;
+}
+
 suite('Run & Profile launch configurations (#82)', () => {
   test('the CPU launch asks for profiling on launch and names its metric', () => {
-    const config = launchConfigOf('cpu', WORKSPACE_PROGRAM());
+    const config = workspaceLaunch('cpu');
     assert.strictEqual(config.type, 'sharplsp-coreclr');
     assert.strictEqual(config.request, 'launch');
     // The adapter resolves the project that owns the file from its folder.
-    assert.strictEqual(
-      config.cwd,
-      requireWorkspaceRoot(),
-      'the launch runs in the workspace folder of the file',
-    );
     assert.strictEqual(
       config.profileOnLaunch,
       true,
@@ -313,12 +340,7 @@ suite('Run & Profile launch configurations (#82)', () => {
   });
 
   test('the memory launch tracks from launch, with no stop on entry (direct capture)', () => {
-    const config = launchConfigOf('memory', WORKSPACE_PROGRAM());
-    assert.strictEqual(
-      config.cwd,
-      requireWorkspaceRoot(),
-      'the launch runs in the workspace folder of the file',
-    );
+    const config = workspaceLaunch('memory');
     assert.strictEqual(
       config.stopAtEntry,
       undefined,
@@ -341,7 +363,7 @@ suite('Run & Profile launch configurations (#82)', () => {
 
     const fromEntryPoint = {
       type: 'sharplsp-coreclr',
-      configuration: launchConfigOf('cpu', WORKSPACE_PROGRAM()),
+      configuration: workspaceLaunch('cpu'),
     };
     assert.strictEqual(
       shouldProfileOnLaunch(fromEntryPoint),
@@ -361,7 +383,7 @@ suite('Run & Profile launch configurations (#82)', () => {
 
     const foreignSession = {
       type: 'node',
-      configuration: launchConfigOf('cpu', WORKSPACE_PROGRAM()),
+      configuration: workspaceLaunch('cpu'),
     };
     assert.strictEqual(
       shouldProfileOnLaunch(foreignSession),
@@ -379,7 +401,7 @@ suite('Run & Profile launch configurations (#82)', () => {
     try {
       const memorySession = {
         type: 'sharplsp-coreclr',
-        configuration: launchConfigOf('memory', WORKSPACE_PROGRAM()),
+        configuration: workspaceLaunch('memory'),
       };
       assert.strictEqual(
         shouldProfileOnLaunch(memorySession),

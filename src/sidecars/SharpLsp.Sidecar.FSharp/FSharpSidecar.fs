@@ -155,7 +155,7 @@ type FSharpSidecar() as this =
         base.Register("textDocument/definition", Helpers.locationOptionHandler workspace FSharpWorkspace.getDefinition)
         base.Register("textDocument/typeDefinition", Helpers.locationOptionHandler workspace FSharpWorkspace.getTypeDefinition)
         base.Register("textDocument/declaration", Helpers.locationOptionHandler workspace FSharpWorkspace.getDeclaration)
-        base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpWorkspace.getImplementations)
+        base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpImplementations.getImplementations)
 
         // References
         base.Register("textDocument/references", Helpers.handle (fun (request: ReferencesRequest) ->
@@ -248,7 +248,7 @@ type FSharpSidecar() as this =
 
         // Inlay hints
         base.Register("textDocument/inlayHint", Helpers.handle (fun (request: InlayHintRequest) ->
-            FSharpFeatures.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
+            FSharpInlayHints.getInlayHints workspace request.FilePath request.StartLine request.EndLine) (Helpers.listOf id))
 
         // Compiler truth and analyzers share one uncached query boundary.
         base.Register("workspace/diagnostics", Helpers.handleWithCancellation (fun (requestPath: string) ct ->

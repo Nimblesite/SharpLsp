@@ -40,6 +40,22 @@ const STEP_MS = 60_000;
 /** Time for the program to leak more between passes. */
 const GROWTH_MS = 2_000;
 
+/** Poll `read` until it yields a value, and return that value. */
+async function waitForValue<T>(
+  read: () => T | undefined,
+  timeoutMs: number,
+  description: string,
+): Promise<T> {
+  const found: T | undefined = await pollUntilResult({
+    fn: read,
+    until: (value) => value !== undefined,
+    timeoutMs,
+    description,
+  });
+  assert.ok(found !== undefined, `${description}: still undefined`);
+  return found;
+}
+
 /** The suspected leaks of a wire diff. */
 async function diffLeaks(memorySessionId: string): Promise<SuspectedLeak[]> {
   const result = completed(
@@ -52,14 +68,7 @@ async function diffLeaks(memorySessionId: string): Promise<SuspectedLeak[]> {
 /** Start tracking `pid` through the real command and wait for the store to agree. */
 async function startTracking(pid: number): Promise<string> {
   await vscode.commands.executeCommand('sharplsp.profiler.memoryStart', pid);
-  const id = await pollUntilResult({
-    fn: () => activeMemorySession(),
-    until: (found) => found !== undefined,
-    timeoutMs: STEP_MS,
-    description: 'memory tracking to start',
-  });
-  assert.ok(id !== undefined);
-  return id;
+  return await waitForValue(() => activeMemorySession(), STEP_MS, 'memory tracking to start');
 }
 
 suite('Memory profiling — real end-to-end', () => {
@@ -68,15 +77,28 @@ suite('Memory profiling — real end-to-end', () => {
     clearMemoryDecorations();
   });
 
+  /** The built debuggee with breakpoints cleared, so every launch starts clean. */
+  function freshTarget(): ReturnType<typeof built> {
+    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+    return built();
+  }
+
+  /** Launch `target` under `name` and start memory tracking its debuggee PID. */
+  async function launchAndTrack(
+    target: ReturnType<typeof built>,
+    name: string,
+  ): Promise<{ session: vscode.DebugSession; memorySessionId: string }> {
+    const session = await launch(target, launchConfig(target, name));
+    return { session, memorySessionId: await startTracking(await debuggeePid(session)) };
+  }
+
   test('round-trip on a debug-launched program: snapshot real allocations, diff growth into leaks, paint the memory track', async function () {
     this.timeout(STEP_MS * 4);
-    const target = built();
+    const target = freshTarget();
     await showProgram(target);
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
-    const session = await launch(target, launchConfig(target, 'Memory E2E'));
+    const { memorySessionId } = await launchAndTrack(target, 'Memory E2E');
 
     // Pass 1: start tracking and seed the diff baseline.
-    const memorySessionId = await startTracking(await debuggeePid(session));
     await diffLeaks(memorySessionId);
     await delay(GROWTH_MS);
 
@@ -115,8 +137,7 @@ suite('Memory profiling — real end-to-end', () => {
 
   test('a running (not paused) debuggee needs no evaluable frame — a snapshot completes without pausing it', async function () {
     this.timeout(STEP_MS * 2);
-    const target = built();
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+    const target = freshTarget();
     const session = await launch(target, launchConfig(target, 'Running snapshot'));
     const started = await execute<{ memory_session_id: string }>('memory.start', {
       pid: await debuggeePid(session),
@@ -135,19 +156,17 @@ suite('Memory profiling — real end-to-end', () => {
 
   test('memory ops on a RUNNING program: snapshot real allocations, and it keeps running', async function () {
     this.timeout(STEP_MS * 2);
-    const target = built();
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+    const target = freshTarget();
     await showProgram(target);
     const session = await launch(target, launchConfig(target, 'Running memory ops'));
     await recorder().waitForOutput('READY');
     await startTracking(await debuggeePid(session));
     await vscode.commands.executeCommand('sharplsp.profiler.memorySnapshot');
-    const snapshot = await pollUntilResult({
-      fn: () => lastMemorySnapshot(),
-      until: (snap) => snap !== undefined,
-      timeoutMs: STEP_MS,
-      description: 'a snapshot of the running program',
-    });
+    const snapshot = await waitForValue(
+      () => lastMemorySnapshot(),
+      STEP_MS,
+      'a snapshot of the running program',
+    );
     assert.ok(
       snapshot?.topAllocations.some((site) => site.typeName === WIDGET_TYPE),
       `the snapshot must hold the real Widget allocations: ${JSON.stringify(snapshot?.topAllocations)}`,
@@ -158,16 +177,14 @@ suite('Memory profiling — real end-to-end', () => {
 
   test('Run & Track Memory (Current File): the run finalises into a visible memory result on session end (#146)', async function () {
     this.timeout(STEP_MS * 3);
-    const target = built();
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+    const target = freshTarget();
     await showProgram(target);
     await vscode.commands.executeCommand('sharplsp.profiler.trackMemoryCurrentFile');
-    await pollUntilResult({
-      fn: () => activeMemorySession(),
-      until: (found) => found !== undefined,
-      timeoutMs: STEP_MS,
-      description: 'Run & Track Memory to start tracking the launched program',
-    });
+    await waitForValue(
+      () => activeMemorySession(),
+      STEP_MS,
+      'Run & Track Memory to start tracking the launched program',
+    );
     // The program's default run ends by itself; tracking must end with it.
     await pollUntilResult({
       fn: () => vscode.debug.activeDebugSession,
@@ -189,11 +206,9 @@ suite('Memory profiling — real end-to-end', () => {
 
   test('the memory status bar follows the whole session lifecycle — never stale, never silent', async function () {
     this.timeout(STEP_MS * 3);
-    const target = built();
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
+    const target = freshTarget();
     assert.equal(memoryStatusText(), undefined, 'hidden before tracking');
-    const session = await launch(target, launchConfig(target, 'Memory status bar'));
-    await startTracking(await debuggeePid(session));
+    const { session } = await launchAndTrack(target, 'Memory status bar');
     assert.ok(
       memoryStatusText()?.includes('tracking'),
       `tracking shows: ${String(memoryStatusText())}`,
@@ -211,10 +226,8 @@ suite('Memory profiling — real end-to-end', () => {
 
   test('an unrelated debug session ending does not tear down live memory tracking (#146)', async function () {
     this.timeout(STEP_MS * 3);
-    const target = built();
-    vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
-    const tracked = await launch(target, launchConfig(target, 'Tracked run'));
-    const memorySessionId = await startTracking(await debuggeePid(tracked));
+    const target = freshTarget();
+    const { memorySessionId } = await launchAndTrack(target, 'Tracked run');
 
     const started = await vscode.debug.startDebugging(
       target.folder,

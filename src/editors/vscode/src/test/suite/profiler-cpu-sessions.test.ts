@@ -31,10 +31,12 @@ import {
   stopProfiling,
   Target,
   uiCommand,
+  untilSampling,
   waitFor,
 } from './profiler-kit';
-import { setupLspTestSuite, teardownLspTestSuite } from './test-helpers';
-import { ACTIVATION_MS, LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
+import { twoTargetsSuite } from './profiler-flow-kit';
+import { pollUntilResult } from './test-helpers';
+import { LSP_RESPONSE_MS, PROCESS_START_MS } from './test-timeouts';
 
 const SAMPLE_WINDOW_MS = 2_000;
 const HOT_FUNCTIONS = [
@@ -69,6 +71,30 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** One entry of a `cpu.list` reply. */
+type SessionEntry = ProfileSessionList['sessions'][number];
+
+/** Assert a listed session carries the target's PID on the dotnet runtime. */
+function assertListed(entry: SessionEntry | undefined, pid: number): asserts entry {
+  assert.ok(entry, 'the session is listed');
+  assert.equal(entry.pid, pid);
+  assert.equal(entry.runtime, 'dotnet');
+}
+
+/** Assert `report` carries samples; `why` prefixes the count in the failure. */
+function assertHasSamples(report: ProfileReport, why: string): void {
+  assert.ok(report.total_samples > 0, `${why}: ${report.total_samples}`);
+}
+
+/** Assert `sessionId` left the live session list. */
+async function assertSessionGone(sessionId: string, why: string): Promise<void> {
+  assert.deepEqual(
+    (await sessions()).filter((s) => s.session_id === sessionId),
+    [],
+    why,
+  );
+}
+
 suite('CPU sessions — list, snapshot and presets over the wire', () => {
   const live = profilingSuite('profiler-cpu-sessions-', 'ProfileTarget');
   // A test that fails mid-way must not leave its session running into the next
@@ -87,11 +113,10 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     assert.equal(started.pid, target.pid);
     assert.ok(started.runtime_version.length > 0, 'the backend reports the runtime version');
     const listed = (await sessions()).find((s) => s.session_id === started.session_id);
-    assert.ok(listed, 'the session is listed');
-    assert.equal(listed.pid, target.pid);
-    assert.equal(listed.runtime, 'dotnet');
+    assertListed(listed, target.pid);
     assert.equal(listed.runtime_version, started.runtime_version);
     assert.ok(!Number.isNaN(Date.parse(listed.started_at)), `RFC 3339 start: ${listed.started_at}`);
+    await untilSampling(started.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     const later = (await sessions()).find((s) => s.session_id === started.session_id);
     assert.ok(later, 'still listed');
@@ -102,25 +127,23 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
     assert.equal(dotnetCpu()?.live_progress, true, 'the capability the count follows');
     assert.ok(later.sample_count > 0, `the live count grows mid-session: ${later.sample_count}`);
     const report = await stop(started.session_id);
-    assert.ok(
-      report.total_samples > 0,
-      `the stop report carries the samples: ${report.total_samples}`,
-    );
-    assert.deepEqual(
-      (await sessions()).filter((s) => s.session_id === started.session_id),
-      [],
-      'a stopped session leaves the list',
-    );
+    assertHasSamples(report, 'the stop report carries the samples');
+    await assertSessionGone(started.session_id, 'a stopped session leaves the list');
   });
 
   test('a snapshot reports the data so far and the session keeps running', async function () {
     this.timeout(STOP_MS);
     const { target } = live;
     const started = await start(target.pid);
-    await sleep(SAMPLE_WINDOW_MS);
-    const snap = await execute<ProfileReport>('cpu.snapshot', { session_id: started.session_id });
+    const snap = await pollUntilResult(
+      () => execute<ProfileReport>('cpu.snapshot', { session_id: started.session_id }),
+      (report) => report.total_samples > 0,
+      PROCESS_START_MS,
+      SAMPLE_WINDOW_MS / 4,
+      'a snapshot with samples',
+    );
     assert.equal(snap.session_id, started.session_id);
-    assert.ok(snap.total_samples > 0, `snapshot has samples: ${snap.total_samples}`);
+    assertHasSamples(snap, 'snapshot has samples');
     assert.ok(snap.hot_functions.length > 0, 'snapshot has hot functions');
     assert.ok(
       (await sessions()).some((s) => s.session_id === started.session_id),
@@ -207,24 +230,11 @@ suite('CPU sessions — list, snapshot and presets over the wire', () => {
 });
 
 suite('CPU sessions — concurrency and a target that dies', () => {
-  let tmpDir = '';
-  let first: Target | undefined;
-  let second: Target | undefined;
-  suiteSetup(async function () {
-    this.timeout(ACTIVATION_MS + PROCESS_START_MS * 2);
-    ({ tmpDir } = await setupLspTestSuite('profiler-cpu-conc-'));
-    first = await Target.start('ProfileTarget');
-    second = await Target.start('ProfileLeakTarget');
-  });
-  suiteTeardown(() => {
-    first?.stop();
-    second?.stop();
-    teardownLspTestSuite(tmpDir);
-  });
+  const live = twoTargetsSuite('profiler-cpu-conc-');
 
   test('two targets profile at once and stopping one leaves the other running', async function () {
     this.timeout(STOP_MS * 2);
-    assert.ok(first && second);
+    const { first, second } = live;
     const a = await start(first.pid);
     const b = await start(second.pid);
     assert.notEqual(a.session_id, b.session_id);
@@ -233,6 +243,8 @@ suite('CPU sessions — concurrency and a target that dies', () => {
       both.map((s) => s.pid).sort((x, y) => x - y),
       [first.pid, second.pid].sort((x, y) => x - y),
     );
+    await untilSampling(a.session_id);
+    await untilSampling(b.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     const reportA = await stop(a.session_id);
     assert.equal(reportA.pid, first.pid);
@@ -252,17 +264,14 @@ suite('CPU sessions — concurrency and a target that dies', () => {
     this.timeout(STOP_MS + PROCESS_START_MS);
     const victim = await Target.start('ProfileTarget');
     const started = await start(victim.pid);
+    await untilSampling(started.session_id);
     await sleep(SAMPLE_WINDOW_MS);
     victim.stop();
     await sleep(1_000);
     const report = await stop(started.session_id);
     assert.equal(report.pid, victim.pid);
-    assert.ok(report.total_samples > 0, `samples before death are kept: ${report.total_samples}`);
-    assert.deepEqual(
-      (await sessions()).filter((s) => s.session_id === started.session_id),
-      [],
-      'the dead session is gone from the list',
-    );
+    assertHasSamples(report, 'samples before death are kept');
+    await assertSessionGone(started.session_id, 'the dead session is gone from the list');
   });
 });
 

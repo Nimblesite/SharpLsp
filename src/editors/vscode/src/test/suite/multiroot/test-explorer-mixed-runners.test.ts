@@ -23,6 +23,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../../extension.js';
+import type { CachedTestResult } from '../../../testing.js';
 import { statusLensTitle } from '../../../test-lens.js';
 import { usesMtpRunner } from '../../../test-mtp.js';
 import { discoveryTargets, runCwd } from '../../../test-targets.js';
@@ -161,6 +162,59 @@ function assertEveryVerdict(api: SharpLspExtensionApi): void {
   assertFailed(cachedFor(api, VSTEST_FAIL), VSTEST_FAIL);
   assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
   assertFailed(cachedFor(api, MTP_FAIL), MTP_FAIL);
+}
+
+/** One expected post-run verdict: the id and the outcome it must carry. */
+interface ExpectedVerdict {
+  readonly id: string;
+  readonly passed: boolean;
+}
+
+/** The verdict pair for one runner's green and red test, pass asserted first. */
+function pairVerdicts(pass: string, fail: string): readonly ExpectedVerdict[] {
+  return [
+    { id: pass, passed: true },
+    { id: fail, passed: false },
+  ];
+}
+
+/** One status-lens `runSingle`: `id` reports `outcome`, its message shown as `why`. */
+async function runSingleAsserting(
+  api: SharpLspExtensionApi,
+  id: string,
+  outcome: string,
+  why: string,
+): Promise<CachedTestResult> {
+  const result = await api.testController.runSingle(id);
+  assert.equal(result.outcome, outcome, `${why}: ${result.message ?? '(none)'}`);
+  return result;
+}
+
+/** An id the run must leave untouched, and the message saying why it stands. */
+interface UntouchedId {
+  readonly id: string;
+  readonly why: string;
+}
+
+/**
+ * ▶ `ids`, then assert every expected verdict in the result cache and that each
+ * untouched id still carries the very result object it had before the run.
+ */
+async function runAndAssertVerdicts(
+  api: SharpLspExtensionApi,
+  ids: readonly string[],
+  verdicts: readonly ExpectedVerdict[],
+  untouched: readonly UntouchedId[] = [],
+): Promise<void> {
+  const before = untouched.map((entry) => api.testController.getResult(entry.id));
+  await runAndSettle(api, ids);
+  for (const { id, passed } of verdicts) {
+    if (passed) assertPassed(cachedFor(api, id), id);
+    else assertFailed(cachedFor(api, id), id);
+  }
+  untouched.forEach((entry, index) => {
+    assert.equal(api.testController.getResult(entry.id), before[index], entry.why);
+  });
 }
 
 suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace', () => {
@@ -357,22 +411,22 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
     this.timeout(FIXTURE_BUILD_MS);
 
     // 1. A selection from the VSTest folder only: `dotnet test` must run it.
-    const untouchedMtp = api.testController.getResult(MTP_PASS);
-    const untouchedMtpFail = api.testController.getResult(MTP_FAIL);
-    await runAndSettle(api, [VSTEST_PASS, VSTEST_FAIL]);
-    assertPassed(cachedFor(api, VSTEST_PASS), VSTEST_PASS);
-    assertFailed(cachedFor(api, VSTEST_FAIL), VSTEST_FAIL);
     // [TEST-MTP-ROUTING] a runner left with no id is not started: neither MTP
     // test was run or re-cached.
-    assert.equal(api.testController.getResult(MTP_PASS), untouchedMtp, 'MTP was not started');
-    assert.equal(api.testController.getResult(MTP_FAIL), untouchedMtpFail, 'for either test');
+    await runAndAssertVerdicts(
+      api,
+      [VSTEST_PASS, VSTEST_FAIL],
+      pairVerdicts(VSTEST_PASS, VSTEST_FAIL),
+      [
+        { id: MTP_PASS, why: 'MTP was not started' },
+        { id: MTP_FAIL, why: 'for either test' },
+      ],
+    );
 
     // 2. A selection from the MTP folder only: its module must run it.
-    const vstestAfterOne = api.testController.getResult(VSTEST_PASS);
-    await runAndSettle(api, [MTP_PASS, MTP_FAIL]);
-    assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
-    assertFailed(cachedFor(api, MTP_FAIL), MTP_FAIL);
-    assert.equal(api.testController.getResult(VSTEST_PASS), vstestAfterOne, 'VSTest not started');
+    await runAndAssertVerdicts(api, [MTP_PASS, MTP_FAIL], pairVerdicts(MTP_PASS, MTP_FAIL), [
+      { id: VSTEST_PASS, why: 'VSTest not started' },
+    ]);
 
     // 3. ONE selection spanning both runners: each half reaches its runner.
     const unselected = [VSTEST_PASS, MTP_FAIL].map((id) => api.testController.getResult(id));
@@ -408,13 +462,11 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
 
     // 2. The status CodeLens runs one test through `runSingle`, per runner.
     const mtpBeforeLens = api.testController.getResult(MTP_PASS);
-    const vstest = await api.testController.runSingle(VSTEST_PASS);
-    assert.equal(vstest.outcome, 'passed', `VSTest lens run: ${vstest.message ?? '(none)'}`);
+    const vstest = await runSingleAsserting(api, VSTEST_PASS, 'passed', 'VSTest lens run');
     // [TEST-STATUS-LENS] what the lens ran is what the cache — and so the lens — now shows …
     assert.deepStrictEqual(api.testController.getResult(VSTEST_PASS), vstest, 'the lens paints it');
     assert.equal(api.testController.getResult(MTP_PASS), mtpBeforeLens, 'MTP was not started');
-    const mtp = await api.testController.runSingle(MTP_FAIL);
-    assert.equal(mtp.outcome, 'failed', `MTP lens run: ${mtp.message ?? '(none)'}`);
+    const mtp = await runSingleAsserting(api, MTP_FAIL, 'failed', 'MTP lens run');
     // … with the framework's own words behind "Failed", never a generic stand-in.
     assert.ok(
       (mtp.message ?? '').includes(XUNIT_FAILURE_TEXT),
@@ -443,27 +495,28 @@ suite('Test Explorer e2e — a VSTest folder and an MTP folder in one workspace'
       //    only a rebuild of the MTP folder itself can pick the edit up.
       fs.writeFileSync(source, mtpSource(4), 'utf8');
       const untouched = api.testController.getResult(MTP_FAIL);
-      await runAndSettle(api, [MTP_PASS]);
-      assertFailed(cachedFor(api, MTP_PASS), MTP_PASS);
-      // The module was BUILT after the edit, and the failure is the edit's own.
-      assert.ok(mtimeOf(module) >= mtimeOf(source), 'the module was rebuilt after the edit');
+      /** Run `Adds_TwoNumbers` alone, and assert the module is at least as new as the edit. */
+      const runAloneAndAssertRebuilt = async (passed: boolean, why: string): Promise<void> => {
+        await runAndAssertVerdicts(api, [MTP_PASS], [{ id: MTP_PASS, passed }]);
+        assert.ok(mtimeOf(module) >= mtimeOf(source), why);
+      };
+      await runAloneAndAssertRebuilt(false, 'the module was rebuilt after the edit');
       assert.ok((cachedFor(api, MTP_PASS).message ?? '').includes('4'), 'expected 4, as edited');
       // `--filter-uid` ran the one selected test of the module, and no other.
       assert.equal(api.testController.getResult(MTP_FAIL), untouched, 'the other test stands');
 
       // 2. A selection spanning both folders sees the edit too, and the VSTest
       //    half is unaffected by it.
-      const vstestFail = api.testController.getResult(VSTEST_FAIL);
-      await runAndSettle(api, [VSTEST_PASS, MTP_PASS]);
-      assertPassed(cachedFor(api, VSTEST_PASS), VSTEST_PASS);
-      assertFailed(cachedFor(api, MTP_PASS), MTP_PASS);
-      assert.equal(api.testController.getResult(VSTEST_FAIL), vstestFail, 'VSTest ran its one');
+      await runAndAssertVerdicts(
+        api,
+        [VSTEST_PASS, MTP_PASS],
+        pairVerdicts(VSTEST_PASS, MTP_PASS),
+        [{ id: VSTEST_FAIL, why: 'VSTest ran its one' }],
+      );
 
       // 3. Put it back: green again, so the rebuild tracks the source both ways.
       fs.writeFileSync(source, mtpSource(3), 'utf8');
-      await runAndSettle(api, [MTP_PASS]);
-      assertPassed(cachedFor(api, MTP_PASS), MTP_PASS);
-      assert.ok(mtimeOf(module) >= mtimeOf(source), 'rebuilt after the second edit too');
+      await runAloneAndAssertRebuilt(true, 'rebuilt after the second edit too');
     } finally {
       fs.writeFileSync(source, mtpSource(3), 'utf8');
     }

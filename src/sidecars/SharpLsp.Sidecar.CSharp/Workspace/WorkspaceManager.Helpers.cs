@@ -74,7 +74,8 @@ internal sealed partial class WorkspaceManager
             diag.Id,
             diag.Severity.ToString(),
             diag.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
-            diag.Descriptor.HelpLinkUri
+            diag.Descriptor.HelpLinkUri,
+            DiagnosticTags.Of(diag)
         );
     }
 
@@ -170,22 +171,22 @@ internal sealed partial class WorkspaceManager
         var hasImportHint =
             item.InlineDescription.Length > 0 && !string.IsNullOrEmpty(item.InlineDescription);
         var detail = hasImportHint ? $"(import) {item.InlineDescription}" : item.InlineDescription;
-        return new CompletionItem
-        {
-            Label = item.DisplayText,
-            Kind = item.Tags.Length > 0 ? item.Tags[0] : "Text",
-            Detail = detail,
-            InsertText = item.FilterText,
-            Index = index,
-            TextEdit = new TextEditResult
-            {
-                StartLine = editSpan.Start.Line,
-                StartCharacter = editSpan.Start.Character,
-                EndLine = editSpan.End.Line,
-                EndCharacter = editSpan.End.Character,
-                NewText = item.FilterText,
-            },
-        };
+        return new CompletionItem(
+            Label: item.DisplayText,
+            Kind: item.Tags.Length > 0 ? item.Tags[0] : "Text",
+            Detail: detail,
+            InsertText: item.FilterText,
+            Index: index,
+            TextEdit: new TextEditResult(
+                StartLine: editSpan.Start.Line,
+                StartCharacter: editSpan.Start.Character,
+                EndLine: editSpan.End.Line,
+                EndCharacter: editSpan.End.Character,
+                NewText: item.FilterText
+            ),
+            Documentation: null,
+            SortText: null
+        );
     }
 
     internal async Task<CompletionResolveResult> ResolveCompletionAsync(
@@ -193,7 +194,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var result = new CompletionResolveResult();
+        var result = new CompletionResolveResult(AdditionalEdits: []);
         if (
             _lastCompletionList is null
             || _lastCompletionDocument is null
@@ -348,7 +349,7 @@ internal sealed partial class WorkspaceManager
         return RunPositionQueryAsync(
             filePath,
             at,
-            new LocationListResult(),
+            new LocationListResult(Locations: []),
             async target =>
             {
                 var scope = await SearchScope

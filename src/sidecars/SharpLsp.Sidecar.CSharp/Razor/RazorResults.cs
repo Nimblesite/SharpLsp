@@ -43,49 +43,55 @@ internal static class RazorResults
         );
         return origin.ToRazor(span) is { } razor
             ? Prepared(razor, prepared.Placeholder)
-            : new PrepareRenameResult { CanRename = false };
+            : new PrepareRenameResult(
+                CanRename: false,
+                StartLine: 0,
+                StartCharacter: 0,
+                EndLine: 0,
+                EndCharacter: 0,
+                Placeholder: ""
+            );
     }
 
     /// <summary>A text edit over <paramref name="span"/>.</summary>
     public static TextEditResult Edit(LinePositionSpan span, string newText)
     {
-        return new TextEditResult
-        {
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-            NewText = newText,
-        };
+        return new TextEditResult(
+            StartLine: span.Start.Line,
+            StartCharacter: span.Start.Character,
+            EndLine: span.End.Line,
+            EndCharacter: span.End.Character,
+            NewText: newText
+        );
     }
 
     private static CompletionItem? MapCompletion(CompletionItem item, RazorProjection origin)
     {
         return item.TextEdit is null ? item
             : MapEdit(item.TextEdit, origin) is { } edit
-                ? new CompletionItem
-                {
-                    Label = item.Label,
-                    Kind = item.Kind,
-                    Detail = item.Detail,
-                    InsertText = item.InsertText,
-                    Index = item.Index,
-                    TextEdit = edit,
-                }
+                ? new CompletionItem(
+                    Label: item.Label,
+                    Kind: item.Kind,
+                    Detail: item.Detail,
+                    InsertText: item.InsertText,
+                    Index: item.Index,
+                    TextEdit: edit,
+                    Documentation: null,
+                    SortText: null
+                )
             : null;
     }
 
     private static PrepareRenameResult Prepared(LinePositionSpan span, string placeholder)
     {
-        return new PrepareRenameResult
-        {
-            CanRename = true,
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-            Placeholder = placeholder,
-        };
+        return new PrepareRenameResult(
+            CanRename: true,
+            StartLine: span.Start.Line,
+            StartCharacter: span.Start.Character,
+            EndLine: span.End.Line,
+            EndCharacter: span.End.Character,
+            Placeholder: placeholder
+        );
     }
 
     private static LinePositionSpan SpanOf(TextEditResult edit)

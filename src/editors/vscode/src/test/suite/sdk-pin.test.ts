@@ -13,9 +13,15 @@ import {
   type SdkPin,
 } from '../../global-json.js';
 import { describeSdkPinFailure, existingSdkSatisfiesWorkspace } from '../../dotnetRuntime.js';
-import { candidateDotnetRoots, findDotnetSatisfying } from '../../dotnet-roots.js';
+import { candidateDotnetRoots } from '../../dotnet-roots.js';
 import { SDK_RESOLUTION_EXIT_CODE, diagnoseBuildFailure } from '../../build.js';
 import { assertContainsAll, removeDirRecursive } from './test-helpers';
+import {
+  assertDotnetRootFor,
+  assertPinSatisfiedBy,
+  assertSdkSatisfies,
+  pinnedWorkspace,
+} from './sdk-pin-kit';
 
 /**
  * Regression suite for the SDK pin that broke every `dotnet` entry point on a
@@ -69,19 +75,16 @@ suite('global.json SDK pin', () => {
   test('a lower feature band never satisfies a latestPatch pin', () => {
     // The exact production failure: band 200 cannot roll forward to band 300.
     const target = pin('10.0.303', 'latestPatch');
-    assert.equal(
-      sdkSatisfiesPin('10.0.203', target),
-      false,
-      '10.0.203 is band 200, pin is band 300',
-    );
-    assert.equal(sdkSatisfiesPin('10.0.300', target), false, 'same band but patch 0 < patch 3');
-    assert.equal(sdkSatisfiesPin('10.0.303', target), true, 'the pinned version itself satisfies');
-    assert.equal(sdkSatisfiesPin('10.0.310', target), true, 'a higher patch in the band satisfies');
-    assert.equal(sdkSatisfiesPin('10.0.400', target), false, 'latestPatch may not cross bands');
+    assertSdkSatisfies('10.0.203', target, false, '10.0.203 is band 200, pin is band 300');
+    assertSdkSatisfies('10.0.300', target, false, 'same band but patch 0 < patch 3');
+    assertSdkSatisfies('10.0.303', target, true, 'the pinned version itself satisfies');
+    assertSdkSatisfies('10.0.310', target, true, 'a higher patch in the band satisfies');
+    assertSdkSatisfies('10.0.400', target, false, 'latestPatch may not cross bands');
 
     // The whole installed set of the broken machine satisfies nothing.
-    assert.equal(
-      pinSatisfiedBy(['9.0.312', '10.0.203'], target),
+    assertPinSatisfiedBy(
+      ['9.0.312', '10.0.203'],
+      target,
       false,
       'neither installed SDK can satisfy the pin',
     );
@@ -114,10 +117,7 @@ suite('global.json SDK pin', () => {
   });
 
   test('readSdkPin reads the nearest global.json and defaults rollForward', () => {
-    const pinned = fakeWorkspace(
-      'pinned',
-      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
-    );
+    const pinned = pinnedWorkspace(scratchDir, 'pinned', '10.0.303', 'latestPatch');
     const found = readSdkPin(pinned);
     assert.equal(found?.version, '10.0.303');
     assert.equal(found?.rollForward, 'latestPatch');
@@ -137,7 +137,6 @@ suite('global.json SDK pin', () => {
     assert.equal(readSdkPin(fakeWorkspace('broken', '{ not json')), undefined);
     assert.equal(readSdkPin(fakeWorkspace('empty', JSON.stringify({}))), undefined);
   });
-
   test('installedSdkVersions enumerates the SDKs beside a dotnet executable', () => {
     const exe = fakeDotnet('root', ['10.0.203', '9.0.312']);
     assert.deepEqual(installedSdkVersions(exe), ['10.0.203', '9.0.312']);
@@ -168,18 +167,16 @@ suite('global.json SDK pin', () => {
     // for sits in the user-local root the Install Tool never looked at. Every
     // build, test discovery and sidecar launch then ran the root that cannot
     // work, and the user was told to install an SDK they already had.
-    const workspace = fakeWorkspace(
-      'roots-ws',
-      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
-    );
+    const workspace = pinnedWorkspace(scratchDir, 'roots-ws', '10.0.303', 'latestPatch');
     const target = readSdkPin(workspace);
     assert.ok(target !== undefined, 'the fixture must declare a pin');
 
     const reported = fakeDotnet('share-dotnet', ['9.0.312', '10.0.203']);
     const userLocal = fakeDotnet('home-dotnet', ['10.0.100', '10.0.303']);
 
-    assert.equal(
-      findDotnetSatisfying(target, [path.dirname(reported), path.dirname(userLocal)]),
+    assertDotnetRootFor(
+      target,
+      [path.dirname(reported), path.dirname(userLocal)],
       userLocal,
       'the root that satisfies the pin is chosen over the one that cannot',
     );
@@ -187,21 +184,24 @@ suite('global.json SDK pin', () => {
     // A machine whose reported root already works keeps using it: probing must
     // never move a working install onto some other copy of the same SDK.
     const alsoWorks = fakeDotnet('other-dotnet', ['10.0.303']);
-    assert.equal(
-      findDotnetSatisfying(target, [path.dirname(userLocal), path.dirname(alsoWorks)]),
+    assertDotnetRootFor(
+      target,
+      [path.dirname(userLocal), path.dirname(alsoWorks)],
       userLocal,
       'the first satisfying root wins, so the preferred one is kept',
     );
 
     // Only when NO root can satisfy the pin is it genuinely missing.
     const alsoBroken = fakeDotnet('broken-2', ['10.0.203']);
-    assert.equal(
-      findDotnetSatisfying(target, [path.dirname(reported), path.dirname(alsoBroken)]),
+    assertDotnetRootFor(
+      target,
+      [path.dirname(reported), path.dirname(alsoBroken)],
       undefined,
       'nothing installed satisfies the pin, so acquisition is the only way out',
     );
-    assert.equal(
-      findDotnetSatisfying(target, [path.join(scratchDir, 'no-such-root')]),
+    assertDotnetRootFor(
+      target,
+      [path.join(scratchDir, 'no-such-root')],
       undefined,
       'a root with no dotnet executable is skipped, not crashed on',
     );
@@ -236,10 +236,7 @@ suite('global.json SDK pin', () => {
   });
 
   test('an installed SDK that cannot satisfy the workspace pin is not usable', () => {
-    const workspace = fakeWorkspace(
-      'ws',
-      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
-    );
+    const workspace = pinnedWorkspace(scratchDir, 'ws', '10.0.303', 'latestPatch');
     const broken = fakeDotnet('broken', ['9.0.312', '10.0.203']);
     const working = fakeDotnet('working', ['9.0.312', '10.0.303']);
 
@@ -261,10 +258,7 @@ suite('global.json SDK pin', () => {
   });
 
   test('the pin failure message names the pin, its file, and what is installed', () => {
-    const workspace = fakeWorkspace(
-      'diag',
-      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
-    );
+    const workspace = pinnedWorkspace(scratchDir, 'diag', '10.0.303', 'latestPatch');
     const broken = fakeDotnet('diag-sdk', ['9.0.312', '10.0.203']);
 
     const message = describeSdkPinFailure(broken, workspace);
@@ -281,10 +275,7 @@ suite('global.json SDK pin', () => {
   });
 
   test('a build that dies on the SDK pin is diagnosed, not reported as exit code 155', () => {
-    const workspace = fakeWorkspace(
-      'build-ws',
-      JSON.stringify({ sdk: { version: '10.0.303', rollForward: 'latestPatch' } }),
-    );
+    const workspace = pinnedWorkspace(scratchDir, 'build-ws', '10.0.303', 'latestPatch');
     const broken = fakeDotnet('build-sdk', ['9.0.312', '10.0.203']);
 
     const diagnosis = diagnoseBuildFailure(SDK_RESOLUTION_EXIT_CODE, broken, workspace);

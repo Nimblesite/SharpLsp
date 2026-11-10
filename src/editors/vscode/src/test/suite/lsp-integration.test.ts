@@ -31,11 +31,25 @@ import {
   openCSharpOutline,
 } from './test-helpers';
 import {
+  assertFoldAllHidesLines,
+  assertFoldCycle,
   assertFoldingRanges,
+  assertNamesAll,
+  assertOutlineEmpty,
+  assertOutlineKinds,
+  assertRegionDelimited,
   assertSelectionChain,
+  assertSymbolKinds,
   assertSymbolShape,
   assertSymbolTree,
+  existingOutline,
+  foldingRangesFor,
+  outlineNamed,
+  selectionChainAt,
+  selectionChainFor,
+  selectionChainTexts,
   symbolNamed,
+  visibleLines,
 } from './lsp-invariants-kit';
 import { ACTIVATION_MS, COMMAND_MS, LSP_RESPONSE_MS } from './test-timeouts';
 import { useLspTestSuite } from './lsp-suite-kit';
@@ -86,9 +100,11 @@ suite('LSP Integration — Document Symbols', () => {
 
     // Interaction 3 — each symbol carries the KIND its outline icon is drawn
     // from, and a selectionRange that really covers its own identifier.
-    assertSymbolShape(symbolNamed(symbols, 'Foo'), vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Bar'), vscode.SymbolKind.Method, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Baz'), vscode.SymbolKind.Property, doc);
+    assertSymbolKinds(symbols, doc, [
+      ['Foo', vscode.SymbolKind.Class],
+      ['Bar', vscode.SymbolKind.Method],
+      ['Baz', vscode.SymbolKind.Property],
+    ]);
 
     // Interaction 4 — the tree is a HIERARCHY, not a flat list: breadcrumbs
     // read Test > Foo > Bar, so Bar must be a child of Foo, not a sibling.
@@ -148,11 +164,12 @@ suite('LSP Integration — Document Symbols', () => {
     assert.ok(outer.range.contains(inner.range), 'and Outer contains Inner');
 
     // Interaction 3 — kinds and protocol invariants across the whole tree.
-    assertSymbolTree(symbols, doc);
-    assertSymbolShape(outer, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(inner, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'InnerMethod'), vscode.SymbolKind.Method, doc);
-    assertSymbolShape(symbolNamed(symbols, 'OuterMethod'), vscode.SymbolKind.Method, doc);
+    assertOutlineKinds(symbols, doc, [
+      ['Outer', vscode.SymbolKind.Class],
+      ['Inner', vscode.SymbolKind.Class],
+      ['InnerMethod', vscode.SymbolKind.Method],
+      ['OuterMethod', vscode.SymbolKind.Method],
+    ]);
   });
 
   test('returns interface and enum symbols', async function () {
@@ -166,9 +183,11 @@ suite('LSP Integration — Document Symbols', () => {
     // Interaction 2 — an interface is not a class and an enum is not either.
     // The outline icon is drawn from the kind, and so is workspace-symbol
     // filtering, so a wrong kind is a wrong search result.
-    assertSymbolShape(symbolNamed(symbols, 'IService'), vscode.SymbolKind.Interface, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Color'), vscode.SymbolKind.Enum, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Execute'), vscode.SymbolKind.Method, doc);
+    assertSymbolKinds(symbols, doc, [
+      ['IService', vscode.SymbolKind.Interface],
+      ['Color', vscode.SymbolKind.Enum],
+      ['Execute', vscode.SymbolKind.Method],
+    ]);
 
     // Interaction 3 — the enum's members are its children, all three of them.
     const color = symbolNamed(symbols, 'Color');
@@ -190,11 +209,7 @@ suite('LSP Integration — Document Symbols', () => {
     // Interaction 1 — a comment-only file declares nothing, so the outline is
     // empty rather than carrying a phantom root.
     const { uri, doc } = await openCSharpFile(tmpDir(), 'empty-decl.cs', '// Just a comment\n');
-    const empty = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-      'vscode.executeDocumentSymbolProvider',
-      uri,
-    );
-    assert.strictEqual(empty?.length ?? 0, 0, 'Empty file should have zero symbols');
+    await assertOutlineEmpty(uri, 'Empty file should have zero symbols');
     assert.strictEqual(doc.getText().trim(), '// Just a comment', 'the buffer really is bare');
 
     // Interaction 2 — the user types a class in, and the outline appears
@@ -208,11 +223,10 @@ suite('LSP Integration — Document Symbols', () => {
     // Interaction 3 — deleting it again empties the outline. A tree that keeps
     // a stale symbol navigates the user to a declaration that no longer exists.
     await replaceDocumentContent(doc, '// Just a comment\n');
-    const cleared = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-      'vscode.executeDocumentSymbolProvider',
+    const cleared = await assertOutlineEmpty(
       uri,
+      'removing the declaration must empty the outline',
     );
-    assert.strictEqual(cleared?.length ?? 0, 0, 'removing the declaration must empty the outline');
     assert.ok(
       !flattenSymbolNames(cleared ?? []).includes('Appears'),
       'and leave no stale symbol behind',
@@ -222,13 +236,20 @@ suite('LSP Integration — Document Symbols', () => {
   test('returns struct symbol', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the struct reaches the outline.
-    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'struct.cs', STRUCT_CS);
-    assert.ok(flattenSymbolNames(symbols).includes('Point'), 'Should contain struct Point');
-    assertSymbolTree(symbols, doc);
+    const {
+      doc,
+      symbols,
+      symbol: point,
+    } = await outlineNamed(
+      tmpDir(),
+      'struct.cs',
+      STRUCT_CS,
+      'Point',
+      'Should contain struct Point',
+    );
 
     // Interaction 2 — a struct is a Struct, not a Class. The distinction is
     // the whole point of the declaration and drives the outline icon.
-    const point = symbolNamed(symbols, 'Point');
     assertSymbolShape(point, vscode.SymbolKind.Struct, doc);
     assert.notStrictEqual(point.kind, vscode.SymbolKind.Class, 'a struct is not a class');
 
@@ -238,22 +259,27 @@ suite('LSP Integration — Document Symbols', () => {
       ['X', 'Y'],
       'the struct owns both fields in declaration order',
     );
-    assertSymbolShape(symbolNamed(symbols, 'X'), vscode.SymbolKind.Field, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Y'), vscode.SymbolKind.Field, doc);
+    assertSymbolKinds(symbols, doc, [
+      ['X', vscode.SymbolKind.Field],
+      ['Y', vscode.SymbolKind.Field],
+    ]);
   });
 
   test('returns record symbol', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     const content = 'namespace T { public record Person(string Name, int Age); }';
     // Interaction 1 — the record reaches the outline.
-    const { doc, symbols } = await openCSharpOutline(tmpDir(), 'record.cs', content);
-    assert.ok(flattenSymbolNames(symbols).includes('Person'), 'Should contain record Person');
-    assertSymbolTree(symbols, doc);
+    const { doc, symbol: person } = await outlineNamed(
+      tmpDir(),
+      'record.cs',
+      content,
+      'Person',
+      'Should contain record Person',
+    );
 
     // Interaction 2 — a record is a TYPE. Whether the outline draws it as a
     // class or a struct, it must never land on a member kind: a record
     // reported as a method or a variable is unusable from Go to Symbol.
-    const person = symbolNamed(symbols, 'Person');
     assert.ok(
       [vscode.SymbolKind.Class, vscode.SymbolKind.Struct].includes(person.kind),
       `a record must be a type kind, got ${vscode.SymbolKind[person.kind]}`,
@@ -315,10 +341,13 @@ suite('LSP Integration — Folding Ranges', () => {
   test('returns folding ranges for class and method bodies', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — one chevron per block: namespace, class, two methods.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'fold.cs', FOLD_CS);
-    const ranges = await waitForFoldingRanges(uri);
-    assert.ok(ranges.length >= 3, `Expected ≥3 folding ranges, got ${ranges.length}`);
-    assertFoldingRanges(ranges, doc);
+    const { doc, ranges } = await foldingRangesFor(
+      tmpDir(),
+      'fold.cs',
+      FOLD_CS,
+      3,
+      'Expected ≥3 folding ranges',
+    );
 
     // Interaction 2 — the outermost range is the namespace and it CONTAINS the
     // rest. A flat set of ranges cannot render nested chevrons.
@@ -339,22 +368,19 @@ suite('LSP Integration — Folding Ranges', () => {
     // Interaction 3 — the editor can USE them: folding everything collapses the
     // buffer, and unfolding restores exactly what was visible before.
     const editor = await vscode.window.showTextDocument(doc);
-    const visible = () =>
-      editor.visibleRanges.reduce((sum, range) => sum + range.end.line - range.start.line + 1, 0);
-    const before = visible();
-    await vscode.commands.executeCommand('editor.foldAll');
-    assert.ok(visible() < before, `folding must hide lines: ${before} -> ${visible()}`);
-    await vscode.commands.executeCommand('editor.unfoldAll');
-    assert.strictEqual(visible(), before, 'and unfolding must restore every line');
+    await assertFoldCycle(editor, 'folding must hide lines');
   });
 
   test('returns folding ranges for region directives', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — a #region is foldable, and it is tagged as a Region.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'region.cs', REGION_CS);
-    const ranges = await waitForFoldingRanges(uri);
-    assert.ok(ranges.length >= 1, 'Should have at least one folding range');
-    assertFoldingRanges(ranges, doc);
+    const { doc, ranges } = await foldingRangesFor(
+      tmpDir(),
+      'region.cs',
+      REGION_CS,
+      1,
+      'Should have at least one folding range',
+    );
     const regionRange = ranges.find((range) => range.kind === vscode.FoldingRangeKind.Region);
     assert.ok(regionRange, 'Should have a region folding range');
 
@@ -385,10 +411,13 @@ suite('LSP Integration — Folding Ranges', () => {
   test('returns folding ranges for using directives', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the file folds at all, and every range is well formed.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'usings.cs', USINGS_CS);
-    const ranges = await waitForFoldingRanges(uri);
-    assert.ok(ranges.length >= 1, `Expected ≥1 folding ranges, got ${String(ranges.length)}`);
-    assertFoldingRanges(ranges, doc);
+    const { ranges } = await foldingRangesFor(
+      tmpDir(),
+      'usings.cs',
+      USINGS_CS,
+      1,
+      'Expected ≥1 folding ranges',
+    );
 
     // Interaction 2 — the using block is folded as IMPORTS. LSP 3.17 defines
     // the `imports` kind precisely so an editor can collapse the header of
@@ -414,13 +443,13 @@ suite('LSP Integration — Folding Ranges', () => {
   test('nested classes produce nested folding ranges', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — one chevron per level of nesting.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'nested-fold.cs', NESTED_FOLD_CS);
-    const ranges = await waitForFoldingRanges(uri);
-    assert.ok(
-      ranges.length >= 4,
-      `Expected ≥4 folding ranges for nested classes, got ${ranges.length}`,
+    const { doc, ranges } = await foldingRangesFor(
+      tmpDir(),
+      'nested-fold.cs',
+      NESTED_FOLD_CS,
+      4,
+      'Expected ≥4 folding ranges for nested classes',
     );
-    assertFoldingRanges(ranges, doc);
 
     // Interaction 2 — the ranges really NEST. Four ranges that all start on
     // line 0 are four chevrons that fold the same thing.
@@ -438,12 +467,8 @@ suite('LSP Integration — Folding Ranges', () => {
     // Interaction 3 — folding the OUTERMOST level hides every inner one, which
     // is what nesting buys the user.
     const editor = await vscode.window.showTextDocument(doc);
-    const visible = () =>
-      editor.visibleRanges.reduce((sum, range) => sum + range.end.line - range.start.line + 1, 0);
-    const before = visible();
-    await vscode.commands.executeCommand('editor.foldAll');
-    assert.ok(visible() < before, `folding must collapse the nest: ${before} -> ${visible()}`);
-    assert.ok(visible() <= 3, `a fully folded nest shows the namespace line, got ${visible()}`);
+    const foldedLines = await assertFoldAllHidesLines(editor, 'folding must collapse the nest');
+    assert.ok(foldedLines <= 3, `a fully folded nest shows the namespace line, got ${foldedLines}`);
   });
 });
 const SEL_CS = `namespace Test {
@@ -471,13 +496,8 @@ suite('LSP Integration — Selection Ranges', () => {
   test('returns selection ranges expanding from cursor position', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — the caret on `x` yields a chain that expands outward.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'sel.cs', SEL_CS);
     const position = new vscode.Position(3, 10);
-    const ranges = await waitForSelectionRanges(uri, [position]);
-    assert.ok(ranges.length > 0, 'Should return at least one selection range');
-    const chain = ranges[0];
-    assert.ok(chain, 'the chain for the one requested position must be readable');
-    const depth = assertSelectionChain(chain, position, doc);
+    const { doc, chain, depth } = await selectionChainFor(tmpDir(), 'sel.cs', SEL_CS, position);
     assert.ok(depth >= 3, `Selection range chain should have ≥3 levels, got ${depth}`);
 
     // Interaction 2 — the innermost level is the IDENTIFIER under the caret,
@@ -489,14 +509,7 @@ suite('LSP Integration — Selection Ranges', () => {
 
     // Interaction 3 — a level along the chain covers the whole declaration
     // statement, and the outermost covers the file.
-    const levels: string[] = [];
-    for (
-      let current: vscode.SelectionRange | undefined = chain;
-      current;
-      current = current.parent
-    ) {
-      levels.push(doc.getText(current.range));
-    }
+    const levels = selectionChainTexts(chain, doc);
     assert.ok(
       levels.some((text) => text.trim() === 'var x = 42;'),
       `expanding must pass through the statement; saw ${levels.length} levels`,
@@ -543,24 +556,17 @@ suite('LSP Integration — Selection Ranges', () => {
   test('selection ranges at class level expand to file', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — a caret on the class name yields a chain.
-    const { uri, doc } = await openCSharpFile(tmpDir(), 'sel-class.cs', SEL_CLASS_CS);
-    const position = new vscode.Position(1, 8);
-    const ranges = await waitForSelectionRanges(uri, [position]);
-    assert.ok(ranges.length > 0, 'Should return selection ranges');
-    const chain = ranges[0];
-    assert.ok(chain, 'the chain must be readable');
-    const depth = assertSelectionChain(chain, position, doc);
+    const { doc, chain, depth } = await selectionChainAt(
+      tmpDir(),
+      'sel-class.cs',
+      SEL_CLASS_CS,
+      1,
+      8,
+    );
 
     // Interaction 2 — the innermost level is the class NAME, and expanding
     // reaches the class declaration itself.
-    const texts: string[] = [];
-    for (
-      let current: vscode.SelectionRange | undefined = chain;
-      current;
-      current = current.parent
-    ) {
-      texts.push(doc.getText(current.range));
-    }
+    const texts = selectionChainTexts(chain, doc);
     // VS Code merges its own word and bracket providers into the chain, so the
     // innermost level may be a word part; the identifier is a level of its own.
     assert.ok(
@@ -610,27 +616,17 @@ suite('LSP Integration — Fixture Files', () => {
   test('Calculator.cs returns symbols for class, methods, properties', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — every declaration in the committed fixture is named.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'Calculator.cs');
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
-    for (const required of [
-      'Calculator',
-      'Add',
-      'Subtract',
-      'Divide',
-      'ICalculator',
-      'Operation',
-    ]) {
-      assert.ok(names.includes(required), `Should find ${required}`);
-    }
+    const { doc, symbols, names } = await existingOutline(fixtureDir, 'Calculator.cs');
+    assertNamesAll(names, ['Calculator', 'Add', 'Subtract', 'Divide', 'ICalculator', 'Operation']);
 
     // Interaction 2 — every one of them obeys the protocol and carries the
     // kind its outline icon and Go-to-Symbol filter are drawn from.
-    assertSymbolTree(symbols, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Calculator'), vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'ICalculator'), vscode.SymbolKind.Interface, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Operation'), vscode.SymbolKind.Enum, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Add'), vscode.SymbolKind.Method, doc);
+    assertOutlineKinds(symbols, doc, [
+      ['Calculator', vscode.SymbolKind.Class],
+      ['ICalculator', vscode.SymbolKind.Interface],
+      ['Operation', vscode.SymbolKind.Enum],
+      ['Add', vscode.SymbolKind.Method],
+    ]);
 
     // Interaction 3 — the methods belong to the CLASS, not to the file. A flat
     // outline over a real fixture is the defect a synthetic one never shows.
@@ -663,20 +659,11 @@ suite('LSP Integration — Fixture Files', () => {
         range.end > range.start,
         `Region range must span >1 line: ${range.start}–${range.end}`,
       );
-      assert.ok(
-        doc.lineAt(range.start).text.includes('#region'),
-        `region range ${range.start}–${range.end} must start on a #region directive`,
-      );
-      assert.ok(
-        doc.lineAt(range.end).text.includes('#endregion'),
-        `region range ${range.start}–${range.end} must end on an #endregion directive`,
-      );
+      assertRegionDelimited(doc, range);
     }
 
     // Interaction 3 — the editor collapses on them and comes back.
-    const visible = () =>
-      editor.visibleRanges.reduce((sum, range) => sum + range.end.line - range.start.line + 1, 0);
-    const linesBefore = visible();
+    const linesBefore = visibleLines(editor);
     assert.ok(
       linesBefore > 10,
       `File must have >10 visible lines before folding, got ${linesBefore}`,
@@ -685,7 +672,7 @@ suite('LSP Integration — Fixture Files', () => {
     // The fold lands in the editor's visible ranges; wait for that, not for a
     // guess at how long the view takes to redraw.
     const linesAfter = await pollUntilResult(
-      async () => visible(),
+      async () => visibleLines(editor),
       (lines) => lines < linesBefore,
       COMMAND_MS,
       50,
@@ -698,7 +685,7 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(linesAfter <= 5, `After foldAll, should have ≤5 visible lines, got ${linesAfter}`);
     await vscode.commands.executeCommand('editor.unfoldAll');
     const restored = await pollUntilResult(
-      async () => visible(),
+      async () => visibleLines(editor),
       (lines) => lines === linesBefore,
       COMMAND_MS,
       50,
@@ -710,12 +697,8 @@ suite('LSP Integration — Fixture Files', () => {
   test('Nested.cs returns nested class hierarchy', async function () {
     this.timeout(LSP_RESPONSE_MS + 5_000);
     // Interaction 1 — every nested declaration is named.
-    const { uri, doc } = await openExistingFile(fixtureDir, 'Nested.cs');
-    const symbols = await waitForDocumentSymbols(uri);
-    const names = flattenSymbolNames(symbols);
-    for (const required of ['Outer', 'Inner', 'AnotherInner', 'InnerMethod', 'OuterMethod']) {
-      assert.ok(names.includes(required), `Should find ${required}`);
-    }
+    const { doc, symbols, names } = await existingOutline(fixtureDir, 'Nested.cs');
+    assertNamesAll(names, ['Outer', 'Inner', 'AnotherInner', 'InnerMethod', 'OuterMethod']);
 
     // Interaction 2 — the hierarchy is real: both inner classes are children
     // of Outer, and InnerMethod is a child of Inner rather than of Outer.
@@ -726,10 +709,12 @@ suite('LSP Integration — Fixture Files', () => {
     assert.ok(!outerChildren.includes('InnerMethod'), 'InnerMethod belongs to Inner, not to Outer');
 
     // Interaction 3 — kinds, so the outline draws a class icon at every level.
-    assertSymbolShape(outer, vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'Inner'), vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'AnotherInner'), vscode.SymbolKind.Class, doc);
-    assertSymbolShape(symbolNamed(symbols, 'InnerMethod'), vscode.SymbolKind.Method, doc);
+    assertSymbolKinds(symbols, doc, [
+      ['Outer', vscode.SymbolKind.Class],
+      ['Inner', vscode.SymbolKind.Class],
+      ['AnotherInner', vscode.SymbolKind.Class],
+      ['InnerMethod', vscode.SymbolKind.Method],
+    ]);
   });
 
   test('Empty.cs returns no symbols', async function () {
@@ -745,12 +730,8 @@ suite('LSP Integration — Fixture Files', () => {
 
     // Interaction 2 — the outline is empty, not a phantom root.
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-      'vscode.executeDocumentSymbolProvider',
-      uri,
-    );
-    assert.strictEqual(symbols?.length ?? 0, 0, 'Empty.cs should have zero symbols');
-    assert.deepStrictEqual(flattenSymbolNames(symbols ?? []), [], 'and name nothing at all');
+    const symbols = await assertOutlineEmpty(uri, 'Empty.cs should have zero symbols');
+    assert.deepStrictEqual(flattenSymbolNames(symbols), [], 'and name nothing at all');
 
     // Interaction 3 — the other syntax-tier providers agree: nothing to fold,
     // and no chevron in the gutter. A provider that invents a range for an

@@ -32,6 +32,7 @@ import {
   stopTracking,
   trackMemory,
   uiCommand,
+  untilSampling,
   waitFor,
 } from './profiler-kit';
 
@@ -79,6 +80,7 @@ suite('F# profiling — real end-to-end', () => {
       pid: target.pid,
     });
     assert.equal(started.runtime, 'dotnet');
+    await untilSampling(started.session_id);
     await new Promise((resolve) => setTimeout(resolve, SAMPLE_WINDOW_MS));
     const report = await execute<ProfileReport>('cpu.stop', { session_id: started.session_id });
     assert.ok(report.total_samples > 100, `samples: ${report.total_samples}`);

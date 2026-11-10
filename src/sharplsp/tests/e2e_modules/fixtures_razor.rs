@@ -1,7 +1,8 @@
 //! The Razor fixture solution (`tests/fixtures/razor`): a Blazor app, a Razor
 //! class library, a Razor Pages and MVC app and an F# library, copied to a
 //! temp directory and restored so the SDK's Razor generator runs in the
-//! sidecar's design-time build. [RAZOR-TESTING]
+//! sidecar's design-time build. [RAZOR-TESTING] Any other fixture solution
+//! under `tests/fixtures` is copied, restored and opened the same way.
 
 use super::*;
 use std::path::{Path, PathBuf};
@@ -69,14 +70,32 @@ pub fn create_razor_workspace_with_latest_sdk() -> RazorWorkspace {
 }
 
 fn create_razor_workspace_with_pin(pin_sdk: bool) -> RazorWorkspace {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/razor");
-    let dir = tempfile::tempdir().expect("create Razor temp dir");
+    RazorWorkspace {
+        dir: copied_fixture("razor", pin_sdk),
+    }
+}
+
+/// A restored temp copy of the fixture solution `tests/fixtures/<name>`, pinned
+/// to the repository's SDK when `pin_sdk`.
+pub fn copied_fixture(name: &str, pin_sdk: bool) -> tempfile::TempDir {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    let dir = tempfile::tempdir().expect("create fixture temp dir");
     copy_fixture_tree(&source, dir.path());
     if pin_sdk {
         keep_sdk_pin(dir.path());
     }
     restore_project(dir.path());
-    RazorWorkspace { dir }
+    dir
+}
+
+/// Open `relative` under a copied fixture's `root` as the editor would, returning its URI.
+pub fn open_fixture_file(client: &mut LspClient, root: &Path, relative: &str) -> String {
+    let path = root.join(relative);
+    let uri = path_to_file_uri(&path);
+    client.open_document(&uri, &std::fs::read_to_string(&path).expect("read fixture"));
+    uri
 }
 
 /// Pin `destination` to the SDK the repository builds with. A copy under the temp

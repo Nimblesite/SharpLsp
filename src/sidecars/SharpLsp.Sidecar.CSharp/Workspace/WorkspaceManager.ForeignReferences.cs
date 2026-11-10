@@ -45,7 +45,7 @@ internal sealed partial class WorkspaceManager
             || string.IsNullOrWhiteSpace(query.XmlDocSig)
         )
         {
-            return new LocationListResult();
+            return new LocationListResult(Locations: []);
         }
 
         var scope = new SearchScope(solution, null, null);

@@ -41,8 +41,8 @@ internal sealed partial class WorkspaceManager
     {
         var module = await ImportedModuleAsync(target, ct).ConfigureAwait(false);
         return module is null
-            ? new LocationListResult()
-            : new LocationListResult { Locations = [StartOf(module)] };
+            ? new LocationListResult(Locations: [])
+            : new LocationListResult(Locations: [StartOf(module)]);
     }
 
     /// <summary>The selectors of the class named in a <c>class</c> value's collocated stylesheet. [RAZOR-COLLOCATION-CSS]</summary>
@@ -56,7 +56,7 @@ internal sealed partial class WorkspaceManager
         var razor = FindRazorDocument(filePath);
         if (razor is null)
         {
-            return new LocationListResult();
+            return new LocationListResult(Locations: []);
         }
 
         var markup = await RazorMarkupEngine.ProcessAsync(razor, ct).ConfigureAwait(false);
@@ -66,7 +66,7 @@ internal sealed partial class WorkspaceManager
             && RazorCollocation.ClassValueAt(markup, offset) is { } at
             && await CollocatedStylesheetAsync(razor, ct).ConfigureAwait(false) is { } stylesheet
             ? RazorCollocation.ClassDefinitions(markup, stylesheet, at)
-            : new LocationListResult();
+            : new LocationListResult(Locations: []);
     }
 
     /// <summary>
@@ -152,6 +152,13 @@ internal sealed partial class WorkspaceManager
     /// <summary>A definition location at the very start of <paramref name="filePath"/>.</summary>
     private static LocationResult StartOf(string filePath)
     {
-        return new LocationResult { FilePath = filePath };
+        return new LocationResult(
+            FilePath: filePath,
+            Line: 0,
+            Character: 0,
+            EndLine: 0,
+            EndCharacter: 0,
+            Symbol: null
+        );
     }
 }

@@ -17,8 +17,10 @@ import {
   DEBUG_TYPE_ID,
   DebugSessionRecorder,
   contributes,
+  fakeFolder,
   stopAnyDebugSession,
 } from './run-debug-kit';
+import { TFM, buildProject, writeCSharpConsole, type ConsoleProject } from './run-debug-fixtures';
 import { closeAllEditors, comparablePath, removeDirRecursive } from './test-helpers';
 import { installUiStubs, type UiStubs } from './ui-stubs';
 import { DEBUG_SESSION_MS } from './test-timeouts';
@@ -45,7 +47,7 @@ const STALE_FRAMEWORKS: readonly string[] = ['net6.0', 'net7.0', 'net8.0', 'net9
 export const provider = new SharpLspLaunchProvider();
 
 /** Per-test fixtures shared by both suites in this file. */
-interface Harness {
+export interface Harness {
   readonly tmpDir: string;
   readonly stubs: UiStubs;
   readonly recorder: DebugSessionRecorder;
@@ -191,4 +193,110 @@ export async function provideFor(
   folder: vscode.WorkspaceFolder,
 ): Promise<vscode.DebugConfiguration[]> {
   return provider.provideDebugConfigurations(folder);
+}
+
+/** The `env` an eligible `Project` launch profile in these suites declares. */
+export const PROFILE_ENV: Record<string, string> = { ASPNETCORE_ENVIRONMENT: 'Development' };
+
+/**
+ * A configuration the user wrote in launch.json: the three fields every entry has,
+ * plus whatever else they added — kept in ONE place so a case states only what it varies.
+ */
+export function userConfig(
+  name: string,
+  request: string,
+  extra: Record<string, unknown> = {},
+): vscode.DebugConfiguration {
+  return { type: DEBUG_TYPE_ID, name, request, ...extra };
+}
+
+/**
+ * Resolve a launch.json stating the project's HAND-PICKED program: the program the
+ * user wrote is never rewritten by the resolver, so it must come back verbatim.
+ */
+export async function resolveExplicitProgram(
+  folder: vscode.WorkspaceFolder,
+  project: ConsoleProject,
+  why: string,
+): Promise<vscode.DebugConfiguration> {
+  const chosen = handPickedProgram(project);
+  const resolved = await resolveConfig(folder, userConfig('Mine', 'launch', { program: chosen }));
+  assert.strictEqual(resolved.program, chosen, why);
+  return resolved;
+}
+
+/**
+ * What the configuration states itself still beats the profile: `env` merges per
+ * key while `args`, being a list, wins whole.
+ */
+export function assertPresetWins(
+  config: vscode.DebugConfiguration,
+  envWhy: string,
+  argsWhy: string,
+): void {
+  assert.deepStrictEqual(config.env, { ...PROFILE_ENV, WHICH: 'explicit' }, envWhy);
+  assert.deepStrictEqual(config.args, ['kept'], argsWhy);
+}
+
+/** The hand-picked program path a hand-written launch.json states — MSBuild never builds it. */
+export function handPickedProgram(project: ConsoleProject): string {
+  return path.join(project.dir, 'bin', 'Debug', TFM, 'HandPicked.dll');
+}
+
+/** `dotnet build` the project and return the assembly path MSBuild would produce. */
+export async function buildConsole(project: ConsoleProject): Promise<string> {
+  await buildProject(project);
+  return builtAssembly(project);
+}
+
+/** The harness's scratch dir plus a fresh console project in it, and its recorders. */
+export function newConsole(
+  harness: Harness,
+  name: string,
+): {
+  tmpDir: string;
+  stubs: UiStubs;
+  recorder: DebugSessionRecorder;
+  project: ConsoleProject;
+  folder: vscode.WorkspaceFolder;
+} {
+  const { project, folder } = consoleProject(harness.tmpDir, name);
+  return {
+    tmpDir: harness.tmpDir,
+    stubs: harness.stubs,
+    recorder: harness.recorder,
+    project,
+    folder,
+  };
+}
+
+/**
+ * The one eligible `Project` profile supplied `env` AND `args`, and the
+ * IISExpress profile beside it leaked nothing in — each row with its own reason.
+ */
+export function assertProfileApplied(
+  config: vscode.DebugConfiguration,
+  messages: { readonly env: string; readonly args: string; readonly keys: string },
+): void {
+  // Captured before the deepStrictEqual below: that assertion is a TypeScript
+  // assertion function, so it NARROWS `config.env` to the compared shape and a
+  // later lookup of a key outside that shape stops compiling.
+  const env: Record<string, string> = config.env;
+  assert.deepStrictEqual(env, PROFILE_ENV, messages.env);
+  assert.deepStrictEqual(config.args, ['--port', '5000'], messages.args);
+  assert.deepStrictEqual(Object.keys(env).sort(), ['ASPNETCORE_ENVIRONMENT'], messages.keys);
+}
+
+/** A fresh C# console project under `tmpDir`, and the fake folder F5 resolves against. */
+export function consoleProject(
+  tmpDir: string,
+  name: string,
+): { project: ConsoleProject; folder: vscode.WorkspaceFolder } {
+  const project = writeCSharpConsole(path.join(tmpDir, name), name);
+  return { project, folder: fakeFolder(project.dir) };
+}
+
+/** The assembly MSBuild produces for `project`: the hard-coded `bin/Debug/<tfm>/` ladder. */
+export function builtAssembly(project: ConsoleProject): string {
+  return path.join(project.dir, 'bin', 'Debug', TFM, `${project.assemblyName}.dll`);
 }

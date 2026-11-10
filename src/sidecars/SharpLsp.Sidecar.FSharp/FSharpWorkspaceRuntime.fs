@@ -5,6 +5,8 @@ open System
 open System.Collections.Concurrent
 open System.IO
 open System.Reflection
+open System.Runtime.InteropServices
+open System.Security.Cryptography
 open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
@@ -24,6 +26,23 @@ let tryReadSource (overlays: ConcurrentDictionary<string, string>) (filePath: st
 /// [DIAG-ANALYSIS-CANCELLATION]: abandon obsolete I/O before starting compiler work.
 let tryReadSourceAsync overlays filePath (ct: CancellationToken) =
     Task.Run<string option>((fun () -> tryReadSource overlays filePath), ct).WaitAsync(ct)
+
+/// A digest of `text`, so the compiler's last read of each file is known without
+/// holding every source twice.
+let private fingerprint (text: string) =
+    Convert.ToHexString(SHA256.HashData(MemoryMarshal.AsBytes(text.AsSpan())))
+
+/// Record what the compiler read as `filePath`'s source: its text's digest, or the
+/// empty string, which no digest equals, when it found none.
+let recordRead (reads: ConcurrentDictionary<string, string>) (filePath: string) (source: string option) =
+    reads[filePath] <- source |> Option.map fingerprint |> Option.defaultValue String.Empty
+
+/// Whether `text` is what the compiler last read as `filePath`'s source; a buffer
+/// carrying it changes nothing the compiler must check again. [HOVER-FSHARP-OVERLAY]
+let alreadyRead (reads: ConcurrentDictionary<string, string>) filePath text =
+    match reads.TryGetValue filePath with
+    | true, seen -> seen = fingerprint text
+    | _ -> false
 
 /// The spelling `options` compile `filePath` under, when they compile it.
 let tryProjectSourcePath (options: FSharpProjectOptions) (filePath: string) : string option =

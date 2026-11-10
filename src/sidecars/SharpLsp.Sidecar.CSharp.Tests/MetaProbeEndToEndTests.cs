@@ -53,14 +53,13 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
             SemanticTokensResult
         >(
             "textDocument/semanticTokens/range",
-            new RangeFormattingRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                StartLine = 31,
-                StartCharacter = 0,
-                EndLine = 49,
-                EndCharacter = 0,
-            }
+            new RangeFormattingRequest(
+                FilePath: fixture.MetaProbeFile,
+                StartLine: 31,
+                StartCharacter: 0,
+                EndLine: 49,
+                EndCharacter: 0
+            )
         );
         Assert.NotEmpty(tokens.Data);
     }
@@ -72,12 +71,7 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     {
         var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
             "textDocument/inlayHint",
-            new InlayHintRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                StartLine = 30,
-                EndLine = 49,
-            }
+            new InlayHintRequest(FilePath: fixture.MetaProbeFile, StartLine: 30, EndLine: 49)
         );
         // `var sb = ...`, `var list = ...`, `var total = ...`, lambda params, and
         // call arguments yield a mix of type (1) and parameter (2) hints.
@@ -149,14 +143,13 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         // `var unused = 42;` at L46 raises CS0219 (assigned but never used).
         var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
             "textDocument/codeAction",
-            new CodeActionRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                StartLine = 46,
-                StartCharacter = 8,
-                EndLine = 46,
-                EndCharacter = 24,
-            }
+            new CodeActionRequest(
+                FilePath: fixture.MetaProbeFile,
+                StartLine: 46,
+                StartCharacter: 8,
+                EndLine: 46,
+                EndCharacter: 24
+            )
         );
 
         // If Roslyn surfaces a fix for the span, resolving it must drive
@@ -165,7 +158,7 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         {
             await fixture.SendAndAssertOkAsync(
                 "codeAction/resolve",
-                new CodeActionResolveRequest { Id = actions[0].Id }
+                new CodeActionResolveRequest(Id: actions[0].Id)
             );
         }
     }
@@ -179,14 +172,13 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         // added-document collection path (CollectAddedDocumentsAsync).
         var actions = await fixture.SendAndDeserializeAsync<CodeActionRequest, CodeActionItem[]>(
             "textDocument/codeAction",
-            new CodeActionRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                StartLine = 11,
-                StartCharacter = 14,
-                EndLine = 11,
-                EndCharacter = 19,
-            }
+            new CodeActionRequest(
+                FilePath: fixture.MetaProbeFile,
+                StartLine: 11,
+                StartCharacter: 14,
+                EndLine: 11,
+                EndCharacter: 19
+            )
         );
 
         var move = actions.FirstOrDefault(a => a.Title.Contains("Move"));
@@ -194,7 +186,7 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
         {
             var edit = await fixture.SendAndDeserializeAsync<WorkspaceEditResult>(
                 "codeAction/resolve",
-                MessagePackSerializer.Serialize(new CodeActionResolveRequest { Id = move.Id })
+                MessagePackSerializer.Serialize(new CodeActionResolveRequest(Id: move.Id))
             );
             Assert.NotEmpty(edit.DocumentChanges);
         }
@@ -221,13 +213,12 @@ public sealed class MetaProbeEndToEndTests(CSharpSidecarFixture fixture)
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/rename",
-            new RenameRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                Line = 38,
-                Character = 12,
-                NewName = "grandTotal",
-            }
+            new RenameRequest(
+                FilePath: fixture.MetaProbeFile,
+                Line: 38,
+                Character: 12,
+                NewName: "grandTotal"
+            )
         );
     }
 }

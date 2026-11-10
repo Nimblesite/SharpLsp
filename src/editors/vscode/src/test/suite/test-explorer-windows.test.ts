@@ -13,6 +13,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SharpLspExtensionApi } from '../../extension.js';
+import type { CachedTestResult } from '../../testing.js';
 import {
   parseAnnouncedAssemblies,
   parseTestAssemblies,
@@ -35,6 +36,7 @@ import {
 } from './test-explorer-kit';
 import {
   comparablePath,
+  eq,
   removeDirRecursive,
   assertContainsAll,
   assertContainsNone,
@@ -67,6 +69,26 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
   let hostileDir: string;
   let slnPath: string;
   let listing: string;
+
+  /** `id` run from the hostile directory reports `outcome`; returned as the controller cached it. */
+  async function assertRunReports(
+    id: string,
+    outcome: string,
+    why: string,
+  ): Promise<CachedTestResult> {
+    const result = await api.testController.runSingle(id, hostileDir);
+    eq(result.outcome, outcome, why);
+    return result;
+  }
+
+  /** `id` run from the hostile directory passes cleanly, `language` being the one that declares it. */
+  async function assertPassesFromHostile(id: string, language: string): Promise<CachedTestResult> {
+    const result = await api.testController.runSingle(id, hostileDir);
+    eq(result.outcome, 'passed', `${id} must pass when run from '${hostileDir}'`);
+    assert.ok(result.passed, `a passing ${language} test reports passed === true`);
+    assert.strictEqual(result.message, undefined, 'a passing test carries no failure message');
+    return result;
+  }
 
   suiteSetup(async function () {
     this.timeout(FIXTURE_BUILD_MS);
@@ -169,16 +191,12 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       settled.includes(FS_FACT_SPACED),
       `the spaced F# name must survive a spaced PATH too: ${FS_FACT_SPACED}`,
     );
-    assert.strictEqual(
-      settled.filter((id) => id.startsWith('Fs.Xunit.Fixtures.')).length,
-      6,
-      'all six F# tests are discovered — F# is never the afterthought',
-    );
-    assert.strictEqual(
-      settled.filter((id) => id.startsWith('Cs.Xunit.Fixtures.CalculatorTests.')).length,
-      5,
-      'all five C# tests are discovered',
-    );
+    for (const [prefix, count, why] of [
+      ['Fs.Xunit.Fixtures.', 6, 'all six F# tests are discovered — F# is never the afterthought'],
+      ['Cs.Xunit.Fixtures.CalculatorTests.', 5, 'all five C# tests are discovered'],
+    ] as const) {
+      assert.strictEqual(settled.filter((id) => id.startsWith(prefix)).length, count, why);
+    }
     assert.ok(
       !settled.some((id) => id.includes('Test run for') || id.includes('Passed!')),
       'VSTest banner/summary chatter must never become a test item',
@@ -401,14 +419,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
     });
     try {
       // F# first: F# is never the afterthought.
-      const fsResult = await api.testController.runSingle(FS_FIXTURE.passing, hostileDir);
-      assert.strictEqual(
-        fsResult.outcome,
-        'passed',
-        `${FS_FIXTURE.passing} must pass when run from '${hostileDir}'`,
-      );
-      assert.ok(fsResult.passed, 'a passing F# test reports passed === true');
-      assert.strictEqual(fsResult.message, undefined, 'a passing test carries no failure message');
+      const fsResult = await assertPassesFromHostile(FS_FIXTURE.passing, 'F#');
       assert.deepStrictEqual(
         sorted(Object.keys(fsResult)),
         ['duration', 'message', 'outcome', 'passed'],
@@ -424,9 +435,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         `a duration must never be negative: ${String(fsResult.duration)}`,
       );
       // SPACES in the FQN, run from a path with spaces: one `--filter` argument.
-      const spacedResult = await api.testController.runSingle(FS_FACT_SPACED, hostileDir);
-      assert.strictEqual(
-        spacedResult.outcome,
+      const spacedResult = await assertRunReports(
+        FS_FACT_SPACED,
         'passed',
         `${FS_FACT_SPACED} must run and pass — a space is not a filter delimiter`,
       );
@@ -437,9 +447,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'the spaced filter matched a real test, so nothing was reported missing',
       );
       // A REAL failure, carrying the adapter's own assertion text.
-      const failedResult = await api.testController.runSingle(FS_FIXTURE.failing, hostileDir);
-      assert.strictEqual(
-        failedResult.outcome,
+      const failedResult = await assertRunReports(
+        FS_FIXTURE.failing,
         'failed',
         `${FS_FIXTURE.failing} must be reported as a failure`,
       );
@@ -455,9 +464,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'the placeholder message means the TRX message was lost',
       );
       // A SKIP is not a failure — the bug the whole TRX pipeline replaced.
-      const skippedResult = await api.testController.runSingle(CS.skipped, hostileDir);
-      assert.strictEqual(
-        skippedResult.outcome,
+      const skippedResult = await assertRunReports(
+        CS.skipped,
         'skipped',
         `${CS.skipped} must be reported as SKIPPED, not failed`,
       );
@@ -467,14 +475,7 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
         'failed',
         "TRX 'NotExecuted' must never surface as a failure",
       );
-      const csResult = await api.testController.runSingle(CS.passing, hostileDir);
-      assert.strictEqual(
-        csResult.outcome,
-        'passed',
-        `${CS.passing} must pass when run from '${hostileDir}'`,
-      );
-      assert.ok(csResult.passed, 'a passing C# test reports passed === true');
-      assert.strictEqual(csResult.message, undefined, 'a passing test carries no failure message');
+      const csResult = await assertPassesFromHostile(CS.passing, 'C#');
       assert.strictEqual(
         typeof csResult.duration,
         'number',

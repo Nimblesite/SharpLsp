@@ -134,7 +134,7 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] F# → C# in memory (#313): `FSharpCSharpReferences` compiles the referenced C# project with Roslyn per framework, FCS reads it as a `PEReference` under MSBuild's `-r:`, and definition/type definition/declaration land in the `.cs` source by documentation id — `FSharpCSharpReferenceTests`
 - [x] Abbreviations and type forwarders resolve before decompiling: `string` lands on `System.String` from `System.Private.CoreLib`, not the `netstandard` facade — `FSharpSemanticNavigation.definingEntity`, `MetadataDecompiler.DeclaringAssembly`
 - [x] E2E test: cross-language navigation on a mixed C#/F# solution — `test_cross_language_definition_csharp_to_fsharp`, `test_cross_language_definition_fsharp_to_csharp` (`src/sharplsp/tests/e2e_modules/definition_cross_language.rs`)
-- [ ] Source-to-source C# → F# navigation (land in the original `.fs` rather than decompiled metadata) — needs a cross-sidecar symbol index (P2, Phase 4)
+- [x] Source-to-source C# → F# navigation (land in the original `.fs` rather than decompiled metadata) — needs a cross-sidecar symbol index (P2, Phase 4) — done by identity, without an index ([DEFINITION-CROSSLANG-IDENTITY], #545): `cross-language-definition.test.ts`, `definition_cross_language.rs`
 
 ### Testing — Rust E2E (`src/sharplsp/tests/lsp_e2e.rs`)
 
@@ -142,7 +142,7 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] E2E test: C# go-to-definition on method call navigates to method body
 - [x] E2E test: C# go-to-definition on property access navigates to property declaration
 - [x] E2E test: C# go-to-definition on constructor call navigates to constructor — `test_full_stack_definition_on_constructor`
-- [ ] E2E test: C# go-to-definition on partial class returns multiple locations
+- [x] E2E test: C# go-to-definition on partial class returns multiple locations — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
 - [x] E2E test: C# go-to-definition on whitespace/comment returns null
 - [x] E2E test: C# go-to-definition on string literal returns null
 - [x] E2E test: C# go-to-definition without sidecar returns null gracefully
@@ -153,15 +153,15 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] E2E test: C# go-to-declaration on interface impl navigates to interface member
 - [x] E2E test: C# go-to-implementation on interface method returns all implementations
 - [x] E2E test: C# go-to-implementation on abstract method returns all overrides
-- [ ] E2E test: F# go-to-definition on function navigates to `let` binding
-- [ ] E2E test: F# go-to-definition on type navigates to type declaration
-- [ ] E2E test: F# go-to-definition on DU case navigates to case declaration
-- [ ] E2E test: F# go-to-definition on record field navigates to field declaration
-- [ ] E2E test: F# go-to-definition on active pattern navigates to pattern function
-- [ ] E2E test: F# go-to-type-definition on value navigates to type
-- [ ] E2E test: F# go-to-implementation on abstract member returns implementations
+- [x] E2E test: F# go-to-definition on function navigates to `let` binding — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-definition on type navigates to type declaration — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-definition on DU case navigates to case declaration — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-definition on record field navigates to field declaration — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-definition on active pattern navigates to pattern function — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-type-definition on value navigates to type — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`
+- [x] E2E test: F# go-to-implementation on abstract member returns implementations — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`; F# implementation was a stub answering the symbol's own declaration, now `FSharpImplementations.fs`
 - [x] E2E test: definition after document edit returns updated location
-- [ ] E2E test: definition after sidecar crash recovery works correctly
+- [x] E2E test: definition after sidecar crash recovery works correctly — `navigation_kinds.rs` `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` kills the host's F# compiler and requires a new process to answer from source
 - [ ] E2E test: definition salsa hit returns result in <1ms
 - [ ] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution
 - [x] E2E test: all four nav methods interleaved in single session

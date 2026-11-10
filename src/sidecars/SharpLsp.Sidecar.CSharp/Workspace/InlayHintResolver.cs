@@ -92,13 +92,13 @@ internal static class InlayHintResolver
             // it, and a generated argument it cannot place is dropped rather than misplaced.
             var pos = text.Lines.GetLinePosition(arg.Expression.SpanStart);
             hints.Add(
-                new InlayHintResult
-                {
-                    Line = pos.Line,
-                    Character = pos.Character,
-                    Label = $"{paramSymbol.Name}:",
-                    Kind = 2, // Parameter
-                }
+                new InlayHintResult(
+                    Line: pos.Line,
+                    Character: pos.Character,
+                    Label: $"{paramSymbol.Name}:",
+                    Kind: /*Parameter*/
+                    2
+                )
             );
         }
     }
@@ -222,12 +222,12 @@ internal static class InlayHintResolver
             SymbolDisplayFormat.MinimallyQualifiedFormat
         );
         var endPos = text.Lines.GetLinePosition(identifier.Span.End);
-        return new InlayHintResult
-        {
-            Line = endPos.Line,
-            Character = endPos.Character,
-            Label = $": {typeName}",
-            Kind = 1, // Type
-        };
+        return new InlayHintResult(
+            Line: endPos.Line,
+            Character: endPos.Character,
+            Label: $": {typeName}",
+            Kind: /*Type*/
+            1
+        );
     }
 }

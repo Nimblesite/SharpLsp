@@ -1,17 +1,14 @@
 import * as assert from 'node:assert/strict';
-import * as vscode from 'vscode';
-import { closeAllEditors, pollUntilResult, pollProvider } from './test-helpers';
+import { closeAllEditors } from './test-helpers';
+import { nthPositionOf, positionOf } from './fsharp-helpers';
 import {
-  hoverText,
-  normalizeLocation,
-  nthPositionOf,
-  openFSharpFixture,
-  pollDefinition,
-  pollHover,
-  pollReferences,
-  positionOf,
-} from './fsharp-helpers';
-import { LSP_RESPONSE_MS } from './test-timeouts';
+  assertDefinitionLandsIn,
+  assertFixtureHover,
+  assertReferences,
+  openFSharpAt,
+  pollHighlights,
+  pollTypeDefinitions,
+} from './fsharp-lsp-kit';
 
 /**
  * Blanket end-to-end coverage for F# navigation features driven through the
@@ -27,49 +24,69 @@ suite('F# LSP — Hover', () => {
   teardown(closeAllEditors);
 
   test('hovers over types, DU cases, records, functions, and fields', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-
-    const domain = await openFSharpFixture('Domain.fs');
     // First hover is the cold path — waits for the sidecar to crack the project.
-    const shapeHover = await pollHover(domain.uri, positionOf(domain.doc, 'type Shape', 5));
-    assert.match(hoverText(shapeHover), /Shape/, 'hover on Shape type must mention Shape');
+    await assertFixtureHover(
+      this,
+      'Domain.fs',
+      'type Shape',
+      5,
+      /Shape/,
+      'hover on Shape type must mention Shape',
+    );
 
-    const personHover = await pollHover(domain.uri, positionOf(domain.doc, 'type Person', 5));
-    assert.match(hoverText(personHover), /Person/, 'hover on Person record must mention Person');
+    await assertFixtureHover(
+      this,
+      'Domain.fs',
+      'type Person',
+      5,
+      /Person/,
+      'hover on Person record must mention Person',
+    );
 
-    const circleHover = await pollHover(domain.uri, positionOf(domain.doc, '| Circle of', 2));
-    assert.match(hoverText(circleHover), /Circle/, 'hover on DU case must mention Circle');
+    await assertFixtureHover(
+      this,
+      'Domain.fs',
+      '| Circle of',
+      2,
+      /Circle/,
+      'hover on DU case must mention Circle',
+    );
 
-    const nameFieldHover = await pollHover(domain.uri, positionOf(domain.doc, '{ Name', 2));
-    assert.match(
-      hoverText(nameFieldHover),
+    await assertFixtureHover(
+      this,
+      'Domain.fs',
+      '{ Name',
+      2,
       /Name|string/,
       'hover on record field must mention the field or its type',
     );
 
-    const library = await openFSharpFixture('Library.fs');
-    const areaHover = await pollHover(library.uri, positionOf(library.doc, 'let area', 4));
-    const areaText = hoverText(areaHover);
-    assert.match(areaText, /area/, 'hover on area function must mention area');
+    const areaText = await assertFixtureHover(
+      this,
+      'Library.fs',
+      'let area',
+      4,
+      /area/,
+      'hover on area function must mention area',
+    );
     assert.match(areaText, /float/, 'hover on area function must show its float signature');
 
-    const totalAreaHover = await pollHover(
-      library.uri,
-      positionOf(library.doc, 'let totalArea', 4),
-    );
-    assert.match(
-      hoverText(totalAreaHover),
+    await assertFixtureHover(
+      this,
+      'Library.fs',
+      'let totalArea',
+      4,
       /Shape|list|float/,
       'hover on totalArea must surface its signature',
     );
   });
 
   test('hover includes XML doc summaries authored on declarations', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const library = await openFSharpFixture('Library.fs');
-    const hover = await pollHover(library.uri, positionOf(library.doc, 'let totalArea', 4));
-    assert.match(
-      hoverText(hover),
+    await assertFixtureHover(
+      this,
+      'Library.fs',
+      'let totalArea',
+      4,
       /Sum the areas/i,
       'hover must render the /// XML doc summary for totalArea',
     );
@@ -81,57 +98,55 @@ suite('F# LSP — Go to Definition', () => {
   teardown(closeAllEditors);
 
   test('navigates from cross-file call sites to declarations', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
+    const usage = await openFSharpAt(
+      this,
+      'Usage.fs',
+      'Geometry.totalArea shapes',
+      'Geometry.'.length,
+    );
 
     // Geometry.totalArea (used in Usage.fs) → declaration in Library.fs
-    const totalAreaDef = await pollDefinition(
+    await assertDefinitionLandsIn(
       usage.uri,
-      positionOf(usage.doc, 'Geometry.totalArea shapes', 'Geometry.'.length),
-    );
-    assert.ok(
-      totalAreaDef.some((loc) => loc.uri.fsPath.endsWith('Library.fs')),
+      usage.position,
+      'Library.fs',
       'totalArea definition must resolve into Library.fs',
     );
 
     // Greeter constructor (used in Usage.fs) → type declaration in Library.fs
-    const greeterDef = await pollDefinition(usage.uri, positionOf(usage.doc, 'Greeter("Hello")'));
-    assert.ok(
-      greeterDef.some((loc) => loc.uri.fsPath.endsWith('Library.fs')),
+    await assertDefinitionLandsIn(
+      usage.uri,
+      positionOf(usage.doc, 'Greeter("Hello")'),
+      'Library.fs',
       'Greeter definition must resolve into Library.fs',
     );
 
     // Circle DU case (used in Usage.fs) → declaration in Domain.fs
-    const circleDef = await pollDefinition(usage.uri, positionOf(usage.doc, 'Circle 1.0'));
-    assert.ok(
-      circleDef.some((loc) => loc.uri.fsPath.endsWith('Domain.fs')),
+    await assertDefinitionLandsIn(
+      usage.uri,
+      positionOf(usage.doc, 'Circle 1.0'),
+      'Domain.fs',
       'Circle DU case definition must resolve into Domain.fs',
     );
   });
 
   test('navigates to a record field declaration', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const nameDef = await pollDefinition(
+    const usage = await openFSharpAt(this, 'Usage.fs', 'alice.Name', 'alice.'.length);
+    await assertDefinitionLandsIn(
       usage.uri,
-      positionOf(usage.doc, 'alice.Name', 'alice.'.length),
-    );
-    assert.ok(
-      nameDef.some((loc) => loc.uri.fsPath.endsWith('Domain.fs')),
+      usage.position,
+      'Domain.fs',
       'Person.Name field definition must resolve into Domain.fs',
     );
   });
 
   test('navigates within a file to a local function binding', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
+    const usage = await openFSharpAt(this, 'Usage.fs', 'double (double value)');
     // The `double` inside quadruple should resolve to `let double` above it.
-    const doubleDef = await pollDefinition(
+    const doubleDef = await assertDefinitionLandsIn(
       usage.uri,
-      positionOf(usage.doc, 'double (double value)'),
-    );
-    assert.ok(
-      doubleDef.some((loc) => loc.uri.fsPath.endsWith('Usage.fs')),
+      usage.position,
+      'Usage.fs',
       'double definition must resolve within Usage.fs',
     );
     const declLine = positionOf(usage.doc, 'let double (value').line;
@@ -147,11 +162,8 @@ suite('F# LSP — Type Definition & Declaration', () => {
   teardown(closeAllEditors);
 
   test('type-definition on a value resolves to its type declaration', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const typeDefs = await pollUntilLocations(usage.uri, positionOf(usage.doc, 'alice :'), [
-      'vscode.executeTypeDefinitionProvider',
-    ]);
+    const usage = await openFSharpAt(this, 'Usage.fs', 'alice :');
+    const typeDefs = await pollTypeDefinitions(usage.uri, usage.position);
     assert.ok(
       typeDefs.some((loc) => loc.uri.fsPath.endsWith('Domain.fs')),
       'type-definition of alice must resolve to Person in Domain.fs',
@@ -164,11 +176,9 @@ suite('F# LSP — Find References & Document Highlights', () => {
   teardown(closeAllEditors);
 
   test('find-references on a function returns the declaration and call sites', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const library = await openFSharpFixture('Library.fs');
     // area: declared in Library, used in `List.map area`.
-    const areaRefs = await pollReferences(library.uri, positionOf(library.doc, 'let area', 4), 2);
-    assert.ok(areaRefs.length >= 2, `area must have ≥2 references, got ${areaRefs.length}`);
+    const library = await openFSharpAt(this, 'Library.fs', 'let area', 4);
+    const areaRefs = await assertReferences(library, 2, 'area must have ≥2 references');
     assert.ok(
       areaRefs.some((loc) => loc.uri.fsPath.endsWith('Library.fs')),
       'area references must include the Library.fs use site',
@@ -176,29 +186,14 @@ suite('F# LSP — Find References & Document Highlights', () => {
   });
 
   test('find-references on a local function counts every call site', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
     // double: declared once, called twice inside quadruple.
-    const doubleRefs = await pollReferences(
-      usage.uri,
-      positionOf(usage.doc, 'let double (value', 'let '.length),
-      3,
-    );
-    assert.ok(
-      doubleRefs.length >= 3,
-      `double must have ≥3 references (decl + 2 calls), got ${doubleRefs.length}`,
-    );
+    const usage = await openFSharpAt(this, 'Usage.fs', 'let double (value', 'let '.length);
+    await assertReferences(usage, 3, 'double must have ≥3 references (decl + 2 calls)');
   });
 
   test('document highlights mark occurrences of a symbol', async function () {
-    this.timeout(LSP_RESPONSE_MS + 5_000);
-    const usage = await openFSharpFixture('Usage.fs');
-    const highlights = await pollUntilArray<vscode.DocumentHighlight>(
-      'vscode.executeDocumentHighlights',
-      usage.uri,
-      nthPositionOf(usage.doc, 'shapes', 0),
-      (items) => items.length >= 2,
-    );
+    const usage = await openFSharpAt(this, 'Usage.fs', 'shapes');
+    const highlights = await pollHighlights(usage.uri, nthPositionOf(usage.doc, 'shapes', 0), 2);
     assert.ok(
       highlights.length >= 2,
       `shapes must have ≥2 document highlights, got ${highlights.length}`,
@@ -209,34 +204,3 @@ suite('F# LSP — Find References & Document Highlights', () => {
     );
   });
 });
-
-// ── Local helpers ─────────────────────────────────────────────────
-
-async function pollUntilLocations(
-  uri: vscode.Uri,
-  position: vscode.Position,
-  [command]: [string],
-  timeoutMs: number = LSP_RESPONSE_MS,
-): Promise<vscode.Location[]> {
-  return pollUntilResult(
-    async () => {
-      const result = await vscode.commands.executeCommand<
-        (vscode.Location | vscode.LocationLink)[]
-      >(command, uri, position);
-      return (result ?? []).map(normalizeLocation);
-    },
-    (locations) => locations.length > 0,
-    timeoutMs,
-    2_000,
-  );
-}
-
-async function pollUntilArray<T>(
-  command: string,
-  uri: vscode.Uri,
-  position: vscode.Position,
-  predicate: (items: T[]) => boolean,
-  timeoutMs: number = LSP_RESPONSE_MS,
-): Promise<T[]> {
-  return pollProvider<T>(command, [uri, position], predicate, timeoutMs, 2_000);
-}

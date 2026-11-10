@@ -85,8 +85,10 @@ internal sealed partial class WorkspaceManager
     {
         var (target, _) = await FindRenameTargetAsync(filePath, line, character, ct)
             .ConfigureAwait(false);
-        return target is null || _solution is null || !CanUseNewName(target.Value, newName)
-                ? EmptyRenameResult()
+        // [RENAME-ERRORS] Invalid names must reach the client as a failure, not a no-op.
+        return target is null || _solution is null ? EmptyRenameResult()
+            : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
+            : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
             : target.Value.Foreign
                 ? await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
                     .ConfigureAwait(false)
@@ -109,7 +111,7 @@ internal sealed partial class WorkspaceManager
         var razor = await RazorRenameEdits
             .FindAsync(solution, symbol, newName, ct)
             .ConfigureAwait(false);
-        return RenameSuccess(new WorkspaceEditResult { DocumentChanges = [.. edits, .. razor] });
+        return RenameSuccess(new WorkspaceEditResult(DocumentChanges: [.. edits, .. razor]));
     }
 
     /// <summary>
@@ -205,7 +207,14 @@ internal sealed partial class WorkspaceManager
     {
         if (target is null)
         {
-            return new PrepareRenameResult { CanRename = false };
+            return new PrepareRenameResult(
+                CanRename: false,
+                StartLine: 0,
+                StartCharacter: 0,
+                EndLine: 0,
+                EndCharacter: 0,
+                Placeholder: ""
+            );
         }
 
         var lineSpan = target.Value.Text.Lines.GetLinePositionSpan(target.Value.Token.Span);
@@ -217,15 +226,14 @@ internal sealed partial class WorkspaceManager
         LinePositionSpan span
     )
     {
-        return new PrepareRenameResult
-        {
-            CanRename = true,
-            StartLine = span.Start.Line,
-            StartCharacter = span.Start.Character,
-            EndLine = span.End.Line,
-            EndCharacter = span.End.Character,
-            Placeholder = placeholder,
-        };
+        return new PrepareRenameResult(
+            CanRename: true,
+            StartLine: span.Start.Line,
+            StartCharacter: span.Start.Character,
+            EndLine: span.End.Line,
+            EndCharacter: span.End.Character,
+            Placeholder: placeholder
+        );
     }
 
     private static PrepareRenameQueryResult PrepareSuccess(PrepareRenameResult result)
@@ -235,7 +243,7 @@ internal sealed partial class WorkspaceManager
 
     private static bool CanUseNewName(RenameTarget target, string newName)
     {
-        if (!IsValidIdentifier(newName) || newName == target.Token.Text)
+        if (newName == target.Token.Text)
         {
             return false;
         }
@@ -408,7 +416,12 @@ internal sealed partial class WorkspaceManager
             .ConfigureAwait(false);
         return edits.Count == 0
             ? null
-            : new DocumentEditResult { FilePath = documents.Old.FilePath!, Edits = edits };
+            : new DocumentEditResult(
+                FilePath: documents.Old.FilePath!,
+                Edits: edits,
+                Create: false,
+                RenameTo: null
+            );
     }
 
     private static async Task<List<TextEditResult>> ComputeRenameEditsAsync(
@@ -487,7 +500,7 @@ internal sealed partial class WorkspaceManager
 
     private static RenameEditResult EmptyRenameResult()
     {
-        return RenameSuccess(new WorkspaceEditResult());
+        return RenameSuccess(new WorkspaceEditResult(DocumentChanges: []));
     }
 
     private static RenameEditResult RenameSuccess(WorkspaceEditResult edit)

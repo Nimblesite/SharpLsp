@@ -113,16 +113,24 @@ pub(in crate::e2e_modules) fn owned_apphost(
     executable_uri: &str,
     description: &str,
 ) -> sysinfo::Pid {
+    let owned = owned_apphosts(client, executable_uri);
+    assert_eq!(owned.len(), 1, "{description}");
+    owned[0]
+}
+
+/// Every compiler child of this test's native host that runs `executable_uri`.
+pub(in crate::e2e_modules) fn owned_apphosts(
+    client: &LspClient,
+    executable_uri: &str,
+) -> Vec<sysinfo::Pid> {
     let system = sysinfo::System::new_all();
     let parent = sysinfo::Pid::from_u32(client.child.id());
-    let owned: Vec<_> = system
+    system
         .processes()
         .values()
         .filter(|process| is_owned_compiler(process, parent, executable_uri))
         .map(sysinfo::Process::pid)
-        .collect();
-    assert_eq!(owned.len(), 1, "{description}");
-    owned[0]
+        .collect()
 }
 
 /// Compare executable identity through the canonical fixture URI conversion.
@@ -161,7 +169,7 @@ fn crash_owned_fsharp(client: &LspClient) -> sysinfo::Pid {
 }
 
 /// Revalidate parent ownership immediately before terminating this test's actual apphost.
-fn crash_owned_pid(client: &LspClient, pid: sysinfo::Pid) {
+pub(in crate::e2e_modules) fn crash_owned_pid(client: &LspClient, pid: sysinfo::Pid) {
     let system = sysinfo::System::new_all();
     let process = system.process(pid).expect("owned compiler remains alive");
     assert_eq!(

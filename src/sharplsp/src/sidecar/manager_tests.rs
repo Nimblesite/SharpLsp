@@ -108,36 +108,26 @@ fn name_returns_display_name() {
     assert_eq!(mgr.name(), "My Sidecar");
 }
 
-#[test]
-fn csharp_has_correct_name() {
-    let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
-    assert_eq!(mgr.name(), "C# (Roslyn)");
-}
-
-#[test]
-fn csharp_socket_path_contains_sharplsp_csharp() {
-    let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+/// `mgr` carries the display `name` and a socket path naming `socket` in it.
+fn assert_language_sidecar(mgr: &SidecarManager, name: &str, socket: &str) {
+    assert_eq!(mgr.name(), name);
     assert!(
-        mgr.socket_path.contains("sharplsp-csharp"),
-        "expected socket_path to contain 'sharplsp-csharp', got: {}",
+        mgr.socket_path.contains(socket),
+        "expected socket_path to contain '{socket}', got: {}",
         mgr.socket_path
     );
 }
 
 #[test]
-fn fsharp_has_correct_name() {
-    let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
-    assert_eq!(mgr.name(), "F# (FCS)");
+fn csharp_has_correct_name_and_socket_path() {
+    let mgr = SidecarManager::csharp(&PathBuf::from("/workspace"));
+    assert_language_sidecar(&mgr, "C# (Roslyn)", "sharplsp-csharp");
 }
 
 #[test]
-fn fsharp_socket_path_contains_sharplsp_fsharp() {
+fn fsharp_has_correct_name_and_socket_path() {
     let mgr = SidecarManager::fsharp(&PathBuf::from("/workspace"));
-    assert!(
-        mgr.socket_path.contains("sharplsp-fsharp"),
-        "expected socket_path to contain 'sharplsp-fsharp', got: {}",
-        mgr.socket_path
-    );
+    assert_language_sidecar(&mgr, "F# (FCS)", "sharplsp-fsharp");
 }
 
 #[test]

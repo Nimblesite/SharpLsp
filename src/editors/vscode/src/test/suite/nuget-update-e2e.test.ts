@@ -62,6 +62,25 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     return { ...shape, name };
   }
 
+  /**
+   * Drives `sharplsp.nuget.update`, asserts `project`'s declaration is exactly
+   * the controlled package pinned at `expectedVersion`, and always re-checks
+   * the checked-in fixtures afterwards.
+   */
+  async function updateAndAssertDeclaration(
+    project: string,
+    expectedVersion: string,
+  ): Promise<void> {
+    try {
+      await vscode.commands.executeCommand('sharplsp.nuget.update');
+      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
+        { name: CONTROLLED_PACKAGE, version: expectedVersion },
+      ]);
+    } finally {
+      assertCheckedInProjectsUnchanged(checkedInProjects);
+    }
+  }
+
   for (const shape of UPDATE_PROJECTS) {
     test(`${shape.extension} stays within its version line and preserves checked-in fixtures`, async function () {
       this.timeout(DOTNET_CLI_MS);
@@ -94,18 +113,11 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     const shape = namedShape('fsproj', 'FSharpZeroUpdate');
     const project = writeUpdateProjectAtVersion(root, shape, '0.4.2');
     stubs.queuePick(selectExpectedProject(project), CONTROLLED_PACKAGE).queueInfo('Update');
-    try {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
-        { name: CONTROLLED_PACKAGE, version: '0.4.9' },
-      ]);
-      const confirmation = stubs.log.infoMessages.find((message) => message.includes('0.4.9'));
-      assert.ok(confirmation !== undefined, 'the exact 0.x candidate is shown');
-      assert.ok(!confirmation.includes('0.5.0'), 'the next minor is not proposed');
-      assert.ok(!confirmation.includes('beta'), 'prereleases stay excluded');
-    } finally {
-      assertCheckedInProjectsUnchanged(checkedInProjects);
-    }
+    await updateAndAssertDeclaration(project, '0.4.9');
+    const confirmation = stubs.log.infoMessages.find((message) => message.includes('0.4.9'));
+    assert.ok(confirmation !== undefined, 'the exact 0.x candidate is shown');
+    assert.ok(!confirmation.includes('0.5.0'), 'the next minor is not proposed');
+    assert.ok(!confirmation.includes('beta'), 'prereleases stay excluded');
   });
 
   test('no candidate reports the version line and makes no edit', async function () {
@@ -113,22 +125,15 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     const shape = namedShape('fsproj', 'FSharpAlreadyCurrent');
     const project = writeUpdateProjectAtVersion(root, shape, BOUNDED_VERSION);
     stubs.queuePick(selectExpectedProject(project), CONTROLLED_PACKAGE);
-    try {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
-        { name: CONTROLLED_PACKAGE, version: BOUNDED_VERSION },
-      ]);
-      assert.ok(
-        stubs.log.infoMessages.some((message) =>
-          message.includes('Already up to date within this version line'),
-        ),
-        'the no-candidate result is visible',
-      );
-      assert.deepEqual(stubs.log.errorMessages, [], 'no candidate is not an error');
-      assert.ok(!stubs.log.infoActions.some((actions) => actions.includes('Update')));
-    } finally {
-      assertCheckedInProjectsUnchanged(checkedInProjects);
-    }
+    await updateAndAssertDeclaration(project, BOUNDED_VERSION);
+    assert.ok(
+      stubs.log.infoMessages.some((message) =>
+        message.includes('Already up to date within this version line'),
+      ),
+      'the no-candidate result is visible',
+    );
+    assert.deepEqual(stubs.log.errorMessages, [], 'no candidate is not an error');
+    assert.ok(!stubs.log.infoActions.some((actions) => actions.includes('Update')));
   });
 
   test('confirmation cancellation leaves the declaration unchanged', async function () {
@@ -136,17 +141,10 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     const shape = namedShape('csproj', 'CSharpCancelledUpdate');
     const project = writeUpdateProject(root, shape);
     stubs.queuePick(selectExpectedProject(project), CONTROLLED_PACKAGE).queueInfo(undefined);
-    try {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
-        { name: CONTROLLED_PACKAGE, version: CURRENT_VERSION },
-      ]);
-      assert.ok(stubs.log.infoMessages.some((message) => message.includes(BOUNDED_VERSION)));
-      assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
-      assert.deepEqual(stubs.log.errorMessages, [], 'cancellation is not an error');
-    } finally {
-      assertCheckedInProjectsUnchanged(checkedInProjects);
-    }
+    await updateAndAssertDeclaration(project, CURRENT_VERSION);
+    assert.ok(stubs.log.infoMessages.some((message) => message.includes(BOUNDED_VERSION)));
+    assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
+    assert.deepEqual(stubs.log.errorMessages, [], 'cancellation is not an error');
   });
 
   test('an unavailable feed is visible and leaves the declaration unchanged', async function () {
@@ -155,17 +153,10 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     const project = writeUpdateProject(root, shape);
     writeUnavailablePackageSource(project);
     stubs.queuePick(selectExpectedProject(project), CONTROLLED_PACKAGE);
-    try {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
-        { name: CONTROLLED_PACKAGE, version: CURRENT_VERSION },
-      ]);
-      assert.ok(stubs.log.errorMessages.length > 0, 'lookup failure is never silent');
-      assert.ok(stubs.log.errorMessages.some((message) => message.includes(CONTROLLED_PACKAGE)));
-      assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
-    } finally {
-      assertCheckedInProjectsUnchanged(checkedInProjects);
-    }
+    await updateAndAssertDeclaration(project, CURRENT_VERSION);
+    assert.ok(stubs.log.errorMessages.length > 0, 'lookup failure is never silent');
+    assert.ok(stubs.log.errorMessages.some((message) => message.includes(CONTROLLED_PACKAGE)));
+    assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
   });
 
   test('a floating declaration requires explicit version selection and makes no edit', async function () {
@@ -173,20 +164,13 @@ suite('NuGet palette Update — bounded real C# and F# projects', () => {
     const shape = namedShape('csproj', 'CSharpFloatingUpdate');
     const project = writeUpdateProjectAtVersion(root, shape, '1.*');
     stubs.queuePick(selectExpectedProject(project), CONTROLLED_PACKAGE);
-    try {
-      await vscode.commands.executeCommand('sharplsp.nuget.update');
-      assert.deepEqual(parseProjectDependencies(project).nugetPackages, [
-        { name: CONTROLLED_PACKAGE, version: '1.*' },
-      ]);
-      assert.ok(
-        stubs.log.errorMessages.some((message) => message.includes('explicit version selection')),
-        'the ambiguity is shown',
-      );
-      assert.ok(!stubs.log.infoActions.some((actions) => actions.includes('Update')));
-      assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
-    } finally {
-      assertCheckedInProjectsUnchanged(checkedInProjects);
-    }
+    await updateAndAssertDeclaration(project, '1.*');
+    assert.ok(
+      stubs.log.errorMessages.some((message) => message.includes('explicit version selection')),
+      'the ambiguity is shown',
+    );
+    assert.ok(!stubs.log.infoActions.some((actions) => actions.includes('Update')));
+    assert.ok(!stubs.log.infoMessages.some((message) => message.includes('Updated')));
   });
 
   test('CPM previews and updates the version-owning props file only', async function () {

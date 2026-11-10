@@ -6,6 +6,13 @@ import { docsSidebar, openDocsMenu } from './docs-menu.js';
 // the docs sidebar — so the "document all F# features" requirement cannot
 // silently regress.
 
+/** Open the F# docs page and expect its body to contain every one of `texts`. */
+async function expectPageTexts(page, texts) {
+  await page.goto('/docs/fsharp/');
+  const body = page.locator('body');
+  for (const text of texts) await expect(body).toContainText(text);
+}
+
 test.describe('F# Language Support docs page', () => {
   test('page returns 200 and renders the F# heading', async ({ page }) => {
     const response = await page.goto('/docs/fsharp/');
@@ -14,36 +21,28 @@ test.describe('F# Language Support docs page', () => {
   });
 
   test('documents the FSAC parity surface', async ({ page }) => {
-    await page.goto('/docs/fsharp/');
-    const body = page.locator('body');
     // Engines and named features must all be documented.
-    await expect(body).toContainText('FsAutoComplete');
-    await expect(body).toContainText('Fantomas');
-    await expect(body).toContainText('F# Compiler Service');
-    await expect(body).toContainText('Signature help');
-    await expect(body).toContainText('Inlay Hints');
-    await expect(body).toContainText('Semantic Tokens');
-    await expect(body).toContainText('Code Lens');
-    await expect(body).toContainText('Call Hierarchy');
-    await expect(body).toContainText('Type Hierarchy');
-    await expect(body).toContainText('F# Interactive');
+    await expectPageTexts(page, [
+      'FsAutoComplete',
+      'Fantomas',
+      'F# Compiler Service',
+      'Signature help',
+      'Inlay Hints',
+      'Semantic Tokens',
+      'Code Lens',
+      'Call Hierarchy',
+      'Type Hierarchy',
+      'F# Interactive',
+    ]);
   });
 
   test('calls out the beyond-FSAC differentiators', async ({ page }) => {
-    await page.goto('/docs/fsharp/');
-    const body = page.locator('body');
     // Project-wide scope and pipeline hints are SharpLsp's edge over FSAC.
-    await expect(body).toContainText('project-wide');
-    await expect(body).toContainText('Pipeline');
-    await expect(body).toContainText('Editor-Agnostic');
+    await expectPageTexts(page, ['project-wide', 'Pipeline', 'Editor-Agnostic']);
   });
 
   test('lists the quick-fix matrix with FCS diagnostic codes', async ({ page }) => {
-    await page.goto('/docs/fsharp/');
-    const body = page.locator('body');
-    await expect(body).toContainText('FS0039');
-    await expect(body).toContainText('FS0025');
-    await expect(body).toContainText('FS1182');
+    await expectPageTexts(page, ['FS0039', 'FS0025', 'FS1182']);
   });
 
   test('appears in the docs sidebar and is reachable by click', async ({ page }) => {

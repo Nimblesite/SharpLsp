@@ -87,13 +87,12 @@ public sealed class NavigationSweepEndToEndTests(CSharpSidecarFixture fixture)
     public async Task References_across_members_return_without_error(int line, int character)
     {
         var payload = MessagePackSerializer.Serialize(
-            new ReferencesRequest
-            {
-                FilePath = fixture.MetaProbeFile,
-                Line = line,
-                Character = character,
-                IncludeDeclaration = true,
-            }
+            new ReferencesRequest(
+                FilePath: fixture.MetaProbeFile,
+                Line: line,
+                Character: character,
+                IncludeDeclaration: true
+            )
         );
         await fixture.SendAndAssertOkAsync("textDocument/references", payload);
     }

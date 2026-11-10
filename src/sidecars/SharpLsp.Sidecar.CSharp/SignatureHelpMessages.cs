@@ -10,14 +10,10 @@ namespace SharpLsp.Sidecar.CSharp;
 /// Implements [SHARPLSP-FEATURES-INTELLIGENCE-SIGNATURE-HELP].
 /// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class SignatureInfoResult
-{
-    [Key(0)]
-    public string Label { get; set; } = "";
-
-    [Key(1)]
-    public List<string> Parameters { get; set; } = [];
-}
+internal sealed record SignatureInfoResult(
+    [property: Key(0)] string Label,
+    [property: Key(1)] List<string> Parameters
+);
 
 /// <summary>
 /// Signature help for one caret: every overload the call could bind to, the one
@@ -25,14 +21,8 @@ internal sealed class SignatureInfoResult
 /// host's <c>SidecarSignatureHelp</c>.
 /// </summary>
 [MessagePackObject(AllowPrivate = true)]
-internal sealed class SignatureHelpResult
-{
-    [Key(0)]
-    public List<SignatureInfoResult> Signatures { get; set; } = [];
-
-    [Key(1)]
-    public int ActiveSignature { get; init; }
-
-    [Key(2)]
-    public int ActiveParameter { get; init; }
-}
+internal sealed record SignatureHelpResult(
+    [property: Key(0)] List<SignatureInfoResult> Signatures,
+    [property: Key(1)] int ActiveSignature,
+    [property: Key(2)] int ActiveParameter
+);

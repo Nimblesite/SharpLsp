@@ -458,7 +458,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
                 return ByteResult.Failure(!result ?? "Unknown error");
             }
 
-            var list = new LocationListResult();
+            var list = new LocationListResult(Locations: []);
             if (location is not null)
             {
                 list.Locations.Add(location);

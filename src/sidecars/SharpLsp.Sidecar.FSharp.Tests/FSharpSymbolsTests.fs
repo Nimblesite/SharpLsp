@@ -5,6 +5,8 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpSymbolsTests
 
 open System.IO
 open Xunit
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 open SharpLsp.Sidecar.Common
@@ -142,22 +144,33 @@ let ``signatureHelp outside any call returns None`` () =
         Assert.True(help.IsNone)
     }
 
-// ── nameBeforeParen (pure parsing) ───────────────────────────────
+// ── nameBeforeParen (compiler syntax parsing) ─────────────────────
+
+let private parsedCallName text caret =
+    let state = FSharpWorkspace.create ()
+    let path = "SignatureCall.fsx"
+    let options = { FSharpParsingOptions.Default with SourceFiles = [| path |] }
+    let parsed = state.Checker.ParseFile(path, SourceText.ofString text, options) |> Async.RunSynchronously
+    FSharpSignature.nameBeforeParen parsed (Position.mkPos 1 caret)
+    |> Option.map (fun (ending, names) -> ending.Column, names)
 
 [<Fact>]
 let ``nameBeforeParen extracts simple and qualified names`` () =
-    Assert.Equal(Some(7, [ "Counter" ]), FSharpSignature.nameBeforeParen "Counter(0)" 8)
-    Assert.Equal(Some(10, [ "A"; "B"; "create" ]), FSharpSignature.nameBeforeParen "A.B.create(1)" 11)
+    Assert.Equal(Some(7, [ "Counter" ]), parsedCallName "Counter(0)" 8)
+    Assert.Equal(Some(7, [ "Counter" ]), parsedCallName "Counter()" 8)
+    Assert.Equal(Some(10, [ "A"; "B"; "create" ]), parsedCallName "A.B.create(1)" 11)
+    Assert.Equal(Some(10, [ "A"; "B"; "create" ]), parsedCallName "A.B.create (1)" 12)
 
 [<Fact>]
 let ``nameBeforeParen returns None without a usable call`` () =
-    Assert.Equal(None, FSharpSignature.nameBeforeParen "no parens" 5)
-    Assert.Equal(None, FSharpSignature.nameBeforeParen "" 0)
-    Assert.Equal(None, FSharpSignature.nameBeforeParen "()" 1)
+    Assert.Equal(None, parsedCallName "no parens" 5)
+    Assert.Equal(None, parsedCallName "" 0)
+    Assert.Equal(None, parsedCallName "()" 1)
+    Assert.Equal(None, parsedCallName "Counter(0)" 10)
 
 [<Fact>]
 let ``nameBeforeParen skips balanced inner parens`` () =
     // Caret after the comma must resolve the OUTER call `f`, skipping `g(x)`.
-    match FSharpSignature.nameBeforeParen "f(g(x), y)" 8 with
+    match parsedCallName "f(g(x), y)" 8 with
     | Some(_, names) -> Assert.Equal<string list>([ "f" ], names)
     | None -> Assert.Fail("expected the outer call name")

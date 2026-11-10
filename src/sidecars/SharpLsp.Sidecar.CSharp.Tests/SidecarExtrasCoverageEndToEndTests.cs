@@ -32,7 +32,7 @@ public sealed class SidecarExtrasCoverageEndToEndTests(CSharpSidecarFixture fixt
         var response = await fixture.SendAsync(
             "analyzers/configure",
             MessagePackSerializer.Serialize(
-                new AnalyzerConfigRequest { DeadCode = deadCode, Monorepo = monorepo }
+                new AnalyzerConfigRequest(DeadCode: deadCode, Monorepo: monorepo)
             )
         );
 
@@ -64,12 +64,11 @@ public sealed class SidecarExtrasCoverageEndToEndTests(CSharpSidecarFixture fixt
         // [RENAME-APPLY] A valid cross-sidecar request remains a successful no-op.
         var edit = await fixture.SendAndDeserializeAsync<RenameForeignRequest, WorkspaceEditResult>(
             "workspace/renameForeign",
-            new RenameForeignRequest
-            {
-                AssemblyName = "ForeignAssembly",
-                XmlDocSig = "T:Foreign.Widget",
-                NewName = "RenamedWidget",
-            }
+            new RenameForeignRequest(
+                AssemblyName: "ForeignAssembly",
+                XmlDocSig: "T:Foreign.Widget",
+                NewName: "RenamedWidget"
+            )
         );
         Assert.Empty(edit.DocumentChanges);
     }

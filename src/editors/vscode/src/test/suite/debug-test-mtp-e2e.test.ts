@@ -21,12 +21,11 @@ import {
   CS_FAILS,
   CS_SOURCE,
   assertHandshakeOrder,
-  assertOneTestSession,
   breakpointAt,
   type TestDebugFixture,
 } from './debug-test-kit';
 import {
-  debugRun,
+  debugRunOneSession,
   useDebugTestFixture,
   debuggableRow,
   stopInTestSource,
@@ -61,11 +60,10 @@ suite(
       const api = await activateTestExplorer();
       const cachedBefore = api.testController.getResult(CS_ADDS);
       vscode.debug.addBreakpoints([breakpointAt(CS_SOURCE, fixture.sourceUri, 'adds-call')]);
-      await debugRun([item]);
+      const session = await debugRunOneSession([item], sessions, 'debugging an MTP test');
 
       // 2. ONE session, ATTACHED to the module's own pid — read off the prefixed
       //    MTP announcement — never to the extension host.
-      const session = assertOneTestSession(sessions, 'debugging an MTP test');
       eq(session.configuration['request'], 'attach', 'an MTP module is attached to, not launched');
       const pid = Number(session.configuration['processId']);
       assert.ok(pid > 0, `the attach must carry the waiting module's pid; got ${String(pid)}`);
@@ -110,8 +108,7 @@ suite(
 
       // 1. Debug a FAILING test with nothing armed: a session starts, the module
       //    runs to the end, and the session ends on its own.
-      await debugRun([item]);
-      const session = assertOneTestSession(sessions, 'debugging a failing MTP test');
+      const session = await debugRunOneSession([item], sessions, 'debugging a failing MTP test');
       await recorder.waitForEvents('terminated', 1);
       // [DEBUG-FEATURES-TESTS]: the SharpLsp adapter ATTACHED to the module …
       eq(session.type, DEBUG_TYPE_ID, 'it is the SharpLsp adapter that attached');

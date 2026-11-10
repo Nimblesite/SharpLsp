@@ -8,12 +8,10 @@
 // these clips from out/move-type/clips.
 //
 //   node src/website/tools/video/film.mjs move-type
-import fs from 'node:fs';
-import path from 'node:path';
 import { ACTIONS, clickOn } from '../../kit/code.mjs';
 import { LANGUAGE, awaitSemantics, quickFix, scene } from '../../kit/acts/language.mjs';
 import { runCommand } from '../../kit/editor.mjs';
-import { shootWalkthrough } from '../../kit/scenes.mjs';
+import { shootOnlyFilm } from '../../kit/scenes.mjs';
 import { MOVETYPE } from '../../kit/set.mjs';
 import { PARK, openFile, sleep } from '../../kit/workbench.mjs';
 
@@ -102,16 +100,4 @@ const SCENES = [
   scene('refused', 4, 'Withheld where it would not compile', refused),
 ];
 
-/** The shot clips, in order: what the reel's factory reads. */
-const clipsOf = (out) => SCENES.filter((each) => each.clip).map((each) => path.join(out, 'clips', `${each.clip}.mp4`));
-
-export default {
-  name: 'move-type',
-  shoot: (out) => shootWalkthrough({ demo: MOVETYPE, out, scenes: SCENES, settings: READABLE }),
-  publish: async (out) => {
-    const missing = clipsOf(out).filter((clip) => !fs.existsSync(clip));
-    if (missing.length) throw new Error(`not shot: ${missing.join(', ')}`);
-    return 0;
-  },
-  preview: async () => 0,
-};
+export default shootOnlyFilm({ name: 'move-type', demo: MOVETYPE, scenes: SCENES, settings: READABLE });

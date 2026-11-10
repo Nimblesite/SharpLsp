@@ -29,40 +29,56 @@ export interface CrossLanguageSpec {
 
 type Row = readonly [name: string, use: string, cursorOn: string, declaration: string];
 
-function fromCSharp(
+/** One direction of the boundary: the file the press is made in, and where the declaration lives. */
+interface Direction {
+  readonly prefix: string;
+  readonly useFile: string;
+  readonly originFile: string;
+  readonly originLanguage: 'fsharp' | 'csharp';
+}
+
+const FROM_CSHARP: Direction = {
+  prefix: 'C# → F# ',
+  useFile: CSHARP_USE,
+  originFile: FSHARP_ORIGIN,
+  originLanguage: 'fsharp',
+};
+
+const FROM_FSHARP: Direction = {
+  prefix: 'F# → C# ',
+  useFile: FSHARP_USE,
+  originFile: CSHARP_ORIGIN,
+  originLanguage: 'csharp',
+};
+
+/** Build a row's spec: the press in `direction.useFile`, the landing in `direction.originFile`. */
+function crossLanguage(
+  direction: Direction,
   [name, use, cursorOn, declaration]: Row,
-  landsOn = cursorOn,
-  command = REVEAL_DEFINITION,
+  landsOn: string,
+  command: string,
 ): CrossLanguageSpec {
   return {
-    name: `C# → F# ${name}`,
-    useFile: CSHARP_USE,
+    name: `${direction.prefix}${name}`,
+    useFile: direction.useFile,
     use,
     cursorOn,
-    originFile: FSHARP_ORIGIN,
-    originLanguage: 'fsharp',
+    originFile: direction.originFile,
+    originLanguage: direction.originLanguage,
     declaration,
     landsOn,
     command,
   };
 }
 
-function fromFSharp(
-  [name, use, cursorOn, declaration]: Row,
-  landsOn = cursorOn,
-  command = REVEAL_DEFINITION,
-): CrossLanguageSpec {
-  return {
-    name: `F# → C# ${name}`,
-    useFile: FSHARP_USE,
-    use,
-    cursorOn,
-    originFile: CSHARP_ORIGIN,
-    originLanguage: 'csharp',
-    declaration,
-    landsOn,
-    command,
-  };
+/** A row exercised from the C# consumer file, landing on the F# declaration. */
+function fromCSharp(row: Row, landsOn = row[2], command = REVEAL_DEFINITION): CrossLanguageSpec {
+  return crossLanguage(FROM_CSHARP, row, landsOn, command);
+}
+
+/** A row exercised from the F# consumer file, landing on the C# declaration. */
+function fromFSharp(row: Row, landsOn = row[2], command = REVEAL_DEFINITION): CrossLanguageSpec {
+  return crossLanguage(FROM_FSHARP, row, landsOn, command);
 }
 
 const FSHARP_DECLARATIONS: readonly Row[] = [

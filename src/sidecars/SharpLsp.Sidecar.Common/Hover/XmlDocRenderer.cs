@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -34,139 +33,80 @@ public static partial class XmlDocRenderer
     private static string RenderRoot(XElement root)
     {
         var sb = new StringBuilder();
-        RenderSummary(sb, root);
-        RenderTypeParams(sb, root);
-        RenderParams(sb, root);
-        RenderReturns(sb, root);
-        RenderRemarks(sb, root);
-        RenderExceptions(sb, root);
-        RenderExamples(sb, root);
+        AppendText(sb, root.Element("summary"), text => text, separated: false);
+        AppendList(sb, root, "typeparam", null, tp => NamedItem(tp, "T"));
+        AppendList(sb, root, "param", "**Parameters:**", param => NamedItem(param, "?"));
+        AppendText(sb, root.Element("returns"), text => $"**Returns:** {text}", separated: true);
+        AppendText(sb, root.Element("remarks"), text => $"*{text}*", separated: true);
+        AppendList(sb, root, "exception", "**Exceptions:**", ExceptionItem);
+        AppendList(sb, root, "example", null, ExampleText);
         return sb.ToString().TrimEnd();
     }
 
-    private static void RenderSummary(StringBuilder sb, XElement root)
+    /// <summary>
+    /// One single-element section (summary, returns, remarks), formatted when it has text and
+    /// preceded by a blank line when <paramref name="separated"/>.
+    /// </summary>
+    private static void AppendText(
+        StringBuilder sb,
+        XElement? element,
+        Func<string, string> format,
+        bool separated
+    )
     {
-        var summary = root.Element("summary");
-        if (summary is null)
+        var text = element is null ? "" : InlineContent(element).Trim();
+        if (text.Length == 0)
         {
             return;
         }
 
-        var text = InlineContent(summary).Trim();
-        if (text.Length > 0)
-        {
-            _ = sb.AppendLine(text);
-        }
+        _ = separated ? sb.AppendLine() : sb;
+        _ = sb.AppendLine(format(text));
     }
 
-    private static void RenderTypeParams(StringBuilder sb, XElement root)
+    /// <summary>
+    /// One repeated-element section (type parameters, parameters, exceptions, examples): a blank
+    /// line, the optional header, then one line per element.
+    /// </summary>
+    private static void AppendList(
+        StringBuilder sb,
+        XElement root,
+        string elementName,
+        string? header,
+        Func<XElement, string> item
+    )
     {
-        var typeParams = root.Elements("typeparam").ToList();
-        if (typeParams.Count == 0)
+        var elements = root.Elements(elementName).ToList();
+        if (elements.Count == 0)
         {
             return;
         }
 
         _ = sb.AppendLine();
-        foreach (var tp in typeParams)
-        {
-            var name = tp.Attribute("name")?.Value ?? "T";
-            var desc = InlineContent(tp).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}").AppendLine();
-        }
+        _ = header is null ? sb : sb.AppendLine(header);
+        elements.ForEach(element => sb.AppendLine(item(element)));
     }
 
-    private static void RenderParams(StringBuilder sb, XElement root)
+    /// <summary>A <c>name</c>-attributed element as <c>- `name`: description</c>.</summary>
+    private static string NamedItem(XElement element, string fallbackName)
     {
-        var parameters = root.Elements("param").ToList();
-        if (parameters.Count == 0)
-        {
-            return;
-        }
-
-        _ = sb.AppendLine();
-        _ = sb.AppendLine("**Parameters:**");
-        foreach (var param in parameters)
-        {
-            var name = param.Attribute("name")?.Value ?? "?";
-            var desc = InlineContent(param).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{name}`: {desc}").AppendLine();
-        }
+        var name = element.Attribute("name")?.Value ?? fallbackName;
+        return $"- `{name}`: {InlineContent(element).Trim()}";
     }
 
-    private static void RenderReturns(StringBuilder sb, XElement root)
+    private static string ExceptionItem(XElement exception)
     {
-        var returns = root.Element("returns");
-        if (returns is null)
-        {
-            return;
-        }
-
-        var text = InlineContent(returns).Trim();
-        if (text.Length > 0)
-        {
-            _ = sb.AppendLine();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"**Returns:** {text}").AppendLine();
-        }
+        var cref = CrefToDisplay(exception.Attribute("cref")?.Value);
+        return $"- `{cref}` \u2014 {InlineContent(exception).Trim()}";
     }
 
-    private static void RenderRemarks(StringBuilder sb, XElement root)
+    /// <summary>An example's <c>code</c> as a fenced block, otherwise its inline text.</summary>
+    private static string ExampleText(XElement example)
     {
-        var remarks = root.Element("remarks");
-        if (remarks is null)
-        {
-            return;
-        }
-
-        var text = InlineContent(remarks).Trim();
-        if (text.Length > 0)
-        {
-            _ = sb.AppendLine();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"*{text}*").AppendLine();
-        }
-    }
-
-    private static void RenderExceptions(StringBuilder sb, XElement root)
-    {
-        var exceptions = root.Elements("exception").ToList();
-        if (exceptions.Count == 0)
-        {
-            return;
-        }
-
-        _ = sb.AppendLine();
-        _ = sb.AppendLine("**Exceptions:**");
-        foreach (var ex in exceptions)
-        {
-            var cref = CrefToDisplay(ex.Attribute("cref")?.Value);
-            var desc = InlineContent(ex).Trim();
-            _ = sb.Append(CultureInfo.InvariantCulture, $"- `{cref}` \u2014 {desc}").AppendLine();
-        }
-    }
-
-    private static void RenderExamples(StringBuilder sb, XElement root)
-    {
-        var examples = root.Elements("example").ToList();
-        if (examples.Count == 0)
-        {
-            return;
-        }
-
-        _ = sb.AppendLine();
-        foreach (var example in examples)
-        {
-            var code = example.Element("code");
-            if (code is not null)
-            {
-                _ = sb.AppendLine("```csharp");
-                _ = sb.AppendLine(code.Value.Trim());
-                _ = sb.AppendLine("```");
-            }
-            else
-            {
-                _ = sb.AppendLine(InlineContent(example).Trim());
-            }
-        }
+        var code = example.Element("code");
+        return code is null
+            ? InlineContent(example).Trim()
+            : string.Join(Environment.NewLine, "```csharp", code.Value.Trim(), "```");
     }
 
     /// <summary>Convert an XML element's content to inline Markdown.</summary>

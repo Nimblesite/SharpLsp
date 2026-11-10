@@ -74,7 +74,7 @@ SharpLsp MUST support rename for these code element categories before rename is 
 
 Rename requests are semantic requests.
 
-Implementations: [semantic.rs](../../src/sharplsp/src/semantic.rs), [CSharpSidecar.Features.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs), [FSharpRename.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpRename.fs), and the [full-stack feature tests](../../src/sharplsp/tests/e2e_modules/full_stack_features.rs).
+Implementations: [semantic/rename.rs](../../src/sharplsp/src/semantic/rename.rs), [CSharpSidecar.Features.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/CSharpSidecar.Features.cs), [FSharpRename.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpRename.fs), and the [full-stack feature tests](../../src/sharplsp/tests/e2e_modules/full_stack_features.rs).
 
 | Step | Component | Action |
 |---|---|---|

@@ -21,7 +21,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
         Assert.NotEmpty(items);
         await fixture.SendAndAssertOkAsync(
             "completionItem/resolve",
-            new CompletionResolveRequest { FilePath = fixture.SourceFile, Index = items[0].Index }
+            new CompletionResolveRequest(FilePath: fixture.SourceFile, Index: items[0].Index)
         );
     }
 
@@ -30,14 +30,13 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/codeAction",
-            new CodeActionRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 9,
-                StartCharacter = 15,
-                EndLine = 9,
-                EndCharacter = 18,
-            }
+            new CodeActionRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: 9,
+                StartCharacter: 15,
+                EndLine: 9,
+                EndCharacter: 18
+            )
         );
     }
 
@@ -71,14 +70,13 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
             SemanticTokensResult
         >(
             "textDocument/semanticTokens/range",
-            new RangeFormattingRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 0,
-                StartCharacter = 0,
-                EndLine = 15,
-                EndCharacter = 0,
-            }
+            new RangeFormattingRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: 0,
+                StartCharacter: 0,
+                EndLine: 15,
+                EndCharacter: 0
+            )
         );
         Assert.NotEmpty(tokens.Data);
     }
@@ -88,12 +86,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     {
         var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
             "textDocument/inlayHint",
-            new InlayHintRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 0,
-                EndLine = 35,
-            }
+            new InlayHintRequest(FilePath: fixture.SourceFile, StartLine: 0, EndLine: 35)
         );
         Assert.NotEmpty(hints);
         Assert.False(string.IsNullOrEmpty(hints[0].Label));
@@ -172,14 +165,13 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/rangeFormatting",
-            new RangeFormattingRequest
-            {
-                FilePath = fixture.SourceFile,
-                StartLine = 3,
-                StartCharacter = 0,
-                EndLine = 12,
-                EndCharacter = 0,
-            }
+            new RangeFormattingRequest(
+                FilePath: fixture.SourceFile,
+                StartLine: 3,
+                StartCharacter: 0,
+                EndLine: 12,
+                EndCharacter: 0
+            )
         );
     }
 
@@ -188,12 +180,7 @@ public sealed class FeatureEndToEndTests(CSharpSidecarFixture fixture)
     {
         await fixture.SendAndAssertOkAsync(
             "textDocument/onTypeFormatting",
-            new OnTypeFormattingRequest
-            {
-                FilePath = fixture.SourceFile,
-                Line = 9,
-                Character = 50,
-            }
+            new OnTypeFormattingRequest(FilePath: fixture.SourceFile, Line: 9, Character: 50)
         );
     }
 }

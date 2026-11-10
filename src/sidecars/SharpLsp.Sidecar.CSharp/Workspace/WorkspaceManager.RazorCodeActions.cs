@@ -84,13 +84,13 @@ internal sealed partial class WorkspaceManager
         );
         return
         [
-            .. offered.Select(entry => new CodeActionItem
-            {
-                Id = entry.Id,
-                Title = entry.Action.Title,
-                Kind = entry.Action.Kind,
-                IsPreferred = entry.Action.IsPreferred,
-            }),
+            .. offered.Select(entry => new CodeActionItem(
+                Id: entry.Id,
+                Title: entry.Action.Title,
+                Kind: entry.Action.Kind,
+                IsPreferred: entry.Action.IsPreferred,
+                Reference: null
+            )),
         ];
     }
 
