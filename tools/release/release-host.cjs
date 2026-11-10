@@ -55,6 +55,18 @@ function requireExtensionManifest() {
     return manifest;
 }
 
+async function hoverReady(client, params, timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    let result;
+    do {
+        result = await client.request("textDocument/hover", params);
+        if (!result?.contents)
+            await new Promise((resolve) => setTimeout(resolve, 100));
+    } while (!result?.contents && Date.now() < deadline);
+    assert.ok(result?.contents, "released semantic hover must be ready");
+    return result;
+}
+
 // Creates write files, restore+build the entry project (dotnet only).
 function buildFixture(prefix, files, entry, expectedCompilerError) {
     const root = mkdtempSync(join(tmpdir(), prefix));
@@ -190,6 +202,7 @@ module.exports = {
     withReleaseHost,
     requireBundle,
     requireExtensionManifest,
+    hoverReady,
     skipUnlessEnabled: (reason) =>
         process.env.RUN_RELEASE_REGRESSIONS === "1" ? false : reason,
 };

@@ -4,7 +4,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { join } = require("node:path");
 const { tmpdir } = require("node:os");
-const { withReleaseHost, skipUnlessEnabled } = require("./release-host.cjs");
+const {
+    withReleaseHost,
+    skipUnlessEnabled,
+    hoverReady,
+} = require("./release-host.cjs");
 const pause = (milliseconds) =>
     new Promise((resolve) => setTimeout(resolve, milliseconds));
 const files = {
@@ -28,16 +32,6 @@ function logFiles(directory) {
         .readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isFile() && entry.name.includes(".log"))
         .map((entry) => join(root, entry.name));
-}
-
-async function hoverReady(client, params) {
-    const deadline = Date.now() + 20000;
-    let result;
-    do {
-        result = await client.request("textDocument/hover", params);
-        if (!result?.contents) await pause(100);
-    } while (!result?.contents && Date.now() < deadline);
-    assert.ok(result?.contents, "released semantic hover must be ready");
 }
 
 async function warmCompilers(client) {
