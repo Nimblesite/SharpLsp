@@ -69,7 +69,7 @@ The five completed core items were verified against the latest published v0.32.1
 - [ ] E2E test: `prepareRename` range and placeholder for every code element category
 - [ ] E2E test: rename updates declarations and references across files
 - [x] E2E test: rename after document edit uses latest VFS content — `lsp-rename-edge.test.ts` and `fsharp-lsp-rename-edge.test.ts` prepare, apply, reverse and undo renames of unsaved C# and F# bindings, [RENAME-TESTS]
-- [ ] E2E test: invalid new names are rejected
+- [x] E2E test: invalid new names are rejected — `RefactorEndToEndTests` requires an error and no payload for six invalid C# names; `FSharpNavigationEdgeTests` requires the compiler-backed F# refusal, [RENAME-ERRORS]. The #559 regression also passed a real LSP probe with the fixed C# engine; released v0.32.1 still has the bug.
 - [ ] E2E test: whitespace/comment/string/metadata positions are rejected
 - [x] E2E test: cross-language C# <-> F# public symbol rename — `fsharp-lsp-cross-language-rename.test.ts` checks public types and properties in both directions, exact edits in both files, apply/reverse, rebuild and diagnostics, [RENAME-CROSSLANGUAGE]
 - [ ] E2E test: returned `WorkspaceEdit` has valid, non-overlapping LSP edits
