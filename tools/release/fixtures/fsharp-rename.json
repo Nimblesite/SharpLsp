@@ -1,0 +1,156 @@
+[
+    {
+        "issue": 21,
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Person = { Name: string; Age: int }\n\nlet make name age = { Name = name; Age = age }\n\nlet bump p = { p with Age = p.Age + 1 }\n\nlet describe p =\n    match p with\n    | { Name = n; Age = a } -> n + a.ToString()\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet p = make \"Ann\" 1\nlet older = { p with Age = p.Age + 2 }\nlet label =\n    match p with\n    | { Name = n; Age = a } -> n\nlet shown = p.Name + older.Age.ToString()\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 30
+        },
+        "oldName": "Age",
+        "newName": "Years",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 30
+            },
+            {
+                "file": "Library.fs",
+                "line": 4,
+                "character": 35
+            },
+            {
+                "file": "Library.fs",
+                "line": 6,
+                "character": 22
+            },
+            {
+                "file": "Library.fs",
+                "line": 6,
+                "character": 30
+            },
+            {
+                "file": "Library.fs",
+                "line": 10,
+                "character": 18
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 5,
+                "character": 21
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 5,
+                "character": 29
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 8,
+                "character": 18
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 9,
+                "character": 27
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 22,
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\ntype Shape =\n    | Circle of int\n    | Square of int\n\nlet area s =\n    match s with\n    | Circle r -> 3 * r\n    | Square r -> r * r\n\nlet defaultShape = Circle 10\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet s = Circle 5\nlet a =\n    match s with\n    | Circle r -> r\n    | Square r -> 0\nlet other = Square 7\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 3,
+            "character": 6
+        },
+        "oldName": "Circle",
+        "newName": "Ring",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 6
+            },
+            {
+                "file": "Library.fs",
+                "line": 8,
+                "character": 6
+            },
+            {
+                "file": "Library.fs",
+                "line": 11,
+                "character": 19
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 4,
+                "character": 8
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 7,
+                "character": 6
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    },
+    {
+        "issue": 23,
+        "files": [
+            {
+                "name": "Library.fs",
+                "text": "module Library\n\nlet (|Even|Odd|) n =\n    if n % 2 = 0 then Even else Odd\n"
+            },
+            {
+                "name": "Consumer.fs",
+                "text": "module Consumer\n\nopen Library\n\nlet describe n =\n    match n with\n    | Even -> \"even\"\n    | Odd -> \"odd\"\n"
+            }
+        ],
+        "target": {
+            "file": "Library.fs",
+            "line": 2,
+            "character": 6
+        },
+        "oldName": "Even",
+        "newName": "Parity",
+        "expected": [
+            {
+                "file": "Library.fs",
+                "line": 2,
+                "character": 6
+            },
+            {
+                "file": "Library.fs",
+                "line": 3,
+                "character": 22
+            },
+            {
+                "file": "Consumer.fs",
+                "line": 6,
+                "character": 6
+            }
+        ],
+        "invalidNames": ["", "123bad", "bad!"]
+    }
+]
