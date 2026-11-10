@@ -1,4 +1,5 @@
 // [DIAG-ANALYSIS-CANCELLATION] #562 Real project-wide FCS work must honor cancellation.
+// [SHARPLSP-ARCHITECTURE-ROUTING] #237 Independent requests stay responsive.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn, execFileSync, spawnSync } = require("node:child_process");
@@ -70,19 +71,47 @@ async function release(root, holder) {
     if (holder.exitCode === null) holder.kill("SIGTERM");
 }
 
-for (const method of [
-    "textDocument/references",
-    "textDocument/implementation",
-    "callHierarchy/incomingCalls",
-]) {
+const scenarios = [
+    ...[
+        "textDocument/references",
+        "textDocument/implementation",
+        "callHierarchy/incomingCalls",
+    ].map((method) => ({ issue: 562, method })),
+    ...[
+        {
+            method: "textDocument/hover",
+            file: "CSharp/Concurrent.cs",
+            position: { line: 1, character: 49 },
+            expected: "public static int ConcurrencyInput.Library.Value",
+        },
+        {
+            method: "textDocument/documentSymbol",
+            file: "Library.fs",
+            expected: '"name":"value"',
+        },
+        {
+            method: "textDocument/documentSymbol",
+            file: "CSharp/Concurrent.cs",
+            expected: '"name":"Value"',
+        },
+    ].map((probe) => ({
+        issue: 237,
+        method: "textDocument/references",
+        probe,
+    })),
+];
+
+for (const { issue, method, probe } of scenarios) {
     test(
-        `#562 ${method} cancels while the real FCS project read is held`,
+        probe
+            ? `#237 ${probe.file} ${probe.method} responds while FCS is held`
+            : `#562 ${method} cancels while the real FCS project read is held`,
         {
             skip:
                 process.platform !== "linux"
                     ? "Linux FCS descriptor proof required"
                     : skipUnlessEnabled(
-                          "#562 F# project-wide queries ignore cancellation",
+                          `#${issue} released host blocks behind held FCS work`,
                       ),
         },
         async () => {
@@ -91,9 +120,19 @@ for (const method of [
             try {
                 await withReleaseHost(
                     {
-                        prefix: "sharplsp-562-",
-                        files,
-                        entry: "Input.fsproj",
+                        prefix: `sharplsp-${issue}-`,
+                        files: probe
+                            ? {
+                                  ...files,
+                                  "CSharp/Concurrent.csproj":
+                                      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>',
+                                  "CSharp/Concurrent.cs":
+                                      "namespace ConcurrencyInput;\npublic static class Library { public static int Value => 42; }\n",
+                                  "Input.slnx":
+                                      '<Solution><Project Path="Input.fsproj" /><Project Path="CSharp/Concurrent.csproj" /></Solution>',
+                              }
+                            : files,
+                        entry: probe ? "Input.slnx" : "Input.fsproj",
                         expectedCompilerError: "FS0001",
                         capabilities: { textDocument: { diagnostic: {} } },
                         prepare: (directory) => {
@@ -137,6 +176,28 @@ for (const method of [
                                     "val value: x: int -> int",
                                 );
                             }, "real FCS hover must resolve the query anchor");
+                            if (probe) {
+                                await open(
+                                    "CSharp/Concurrent.cs",
+                                    "csharp",
+                                    "namespace ConcurrencyInput;\npublic static class Library { public static int Value => 42; }\n",
+                                );
+                                const baseline = await request(
+                                    "textDocument/hover",
+                                    {
+                                        textDocument: {
+                                            uri: uri("CSharp/Concurrent.cs"),
+                                        },
+                                        position: { line: 1, character: 49 },
+                                    },
+                                );
+                                assert.ok(
+                                    baseline?.contents?.value?.includes(
+                                        "public static int ConcurrencyInput.Library.Value",
+                                    ),
+                                    "independent released Roslyn baseline required",
+                                );
+                            }
                             const params =
                                 method === "callHierarchy/incomingCalls"
                                     ? {
@@ -176,9 +237,18 @@ for (const method of [
                                 false,
                                 "query must still be active before cancellation",
                             );
-                            token.cancel();
+                            let response = pending;
+                            if (probe) {
+                                response = request(probe.method, {
+                                    textDocument: { uri: uri(probe.file) },
+                                    position: probe.position,
+                                }).then(
+                                    (result) => ({ result }),
+                                    (error) => ({ error }),
+                                );
+                            } else token.cancel();
                             const terminal = await Promise.race([
-                                pending,
+                                response,
                                 delay(2000).then(() => ({ timeout: true })),
                             ]);
                             assert.equal(
@@ -186,11 +256,30 @@ for (const method of [
                                 false,
                                 "old native read must remain held during the cancellation assertion",
                             );
-                            assert.equal(
-                                terminal.error?.code,
-                                -32800,
-                                `#562 ${method} must cancel before the native source read is released; got ${JSON.stringify(terminal)}`,
-                            );
+                            if (probe) {
+                                assert.notEqual(
+                                    terminal.timeout,
+                                    true,
+                                    `#237 ${probe.file} ${probe.method} must respond before the held FCS read releases`,
+                                );
+                                assert.ok(
+                                    JSON.stringify(terminal.result)?.includes(
+                                        probe.expected,
+                                    ),
+                                    "independent request must return its actual symbol",
+                                );
+                                assert.equal(
+                                    settled,
+                                    false,
+                                    "slow FCS work must still be active when the independent request answers",
+                                );
+                            } else {
+                                assert.equal(
+                                    terminal.error?.code,
+                                    -32800,
+                                    `#562 ${method} must cancel before the native source read is released; got ${JSON.stringify(terminal)}`,
+                                );
+                            }
                         } finally {
                             await release(root, holder);
                             if (pending)
