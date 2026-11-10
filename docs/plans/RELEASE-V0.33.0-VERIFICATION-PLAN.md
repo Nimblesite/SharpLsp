@@ -15,9 +15,11 @@ Archive SHA-256 `4d8e760fb71ccd9bf11e68ea7b0de4d33ba2e2141f223be3681caea0c53729d
 
 ## [RELEASE-VERIFICATION-RESULTS]
 
-The initial snapshot contains 149 open issues. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
+The initial snapshot contains 149 open issues. Issue #566 was subsequently added for release-specific reproduction. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
 
 Confirmed failures have enabled regression tests that fail on the official release and default to explicit skips. Tests live in `tools/release/`. Run them with `RUN_RELEASE_REGRESSIONS=1 SHARPLSP_RELEASE_BUNDLE=/absolute/path/to/extracted/bundle node --test --test-concurrency=1 tools/release/*.test.cjs`.
+
+- [ ] [#566](https://github.com/Nimblesite/SharpLsp/issues/566) F# sidecar high memory during editing — Pending release-specific reproduction. Exact engine identity and retained-growth timeline requested from reporter.
 
 - [ ] [#564](https://github.com/Nimblesite/SharpLsp/issues/564) Logging is far too verbose by default: add config-controlled logging modes (quiet/normal/verbose/trace) with a quieter default — Pending release verification.
 - [ ] [#563](https://github.com/Nimblesite/SharpLsp/issues/563) Initial TestFixtures.sln load is 30-110s: F# sidecar restores and loads every .fsproj under the folder (33 projects), re-restoring 'stale' projects on every open — Pending release verification.
@@ -140,11 +142,11 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#166](https://github.com/Nimblesite/SharpLsp/issues/166) MSBuildInstanceSelector: exact Roslyn version equality — SDK servicing skew falls back to a known-broken registration — Pending release verification.
 - [ ] [#164](https://github.com/Nimblesite/SharpLsp/issues/164) Sidecar protocol hardening: response-id correlation + health-check lock race — Pending release verification.
 - [ ] [#162](https://github.com/Nimblesite/SharpLsp/issues/162) make _test-vsix cannot go green on Windows — Linux-shaped staging assertions + temp-dir EPERM cleanup flakes — Pending release verification.
-- [ ] [#154](https://github.com/Nimblesite/SharpLsp/issues/154) READY echoes the requested endpoint even when the listener bound a relocated path — Pending release verification.
-- [ ] [#153](https://github.com/Nimblesite/SharpLsp/issues/153) SidecarHost.MessageLoopAsync hot-loops on persistent transport exceptions — Pending release verification.
-- [ ] [#152](https://github.com/Nimblesite/SharpLsp/issues/152) Sidecar spawn-time failures bypass crash backoff — unthrottled respawn storm — Pending release verification.
+- [x] [#154](https://github.com/Nimblesite/SharpLsp/issues/154) READY echoes the requested endpoint even when the listener bound a relocated path — Both official engines on macOS/Linux announce reachable shortened paths for222-byte requests, pass real ping/shutdown and remove their sockets. Evidence posted, issue closed.
+- [ ] [#153](https://github.com/Nimblesite/SharpLsp/issues/153) SidecarHost.MessageLoopAsync hot-loops on persistent transport exceptions — Sixteen official macOS/Linux broken-peer controls terminate in8–14ms with socket cleanup. Original persistent exception/Windows pipe branch remains unverified. Partial evidence posted, issue open.
+- [x] [#152](https://github.com/Nimblesite/SharpLsp/issues/152) Sidecar spawn-time failures bypass crash backoff — unthrottled respawn storm — Published host allows only3 genuine pre-READY failures during243/291 requests, with1s/2s backoff, then both languages recover on fourth launch. Test launcher execs real published engines. Evidence posted, issue closed.
 - [ ] [#151](https://github.com/Nimblesite/SharpLsp/issues/151) Deterministic sidecar IPC endpoint collides across hosts on the same workspace — Pending release verification.
-- [ ] [#150](https://github.com/Nimblesite/SharpLsp/issues/150) Sidecar listener failure is invisible: exit 0, no stderr, error only in temp log — Pending release verification.
+- [x] [#150](https://github.com/Nimblesite/SharpLsp/issues/150) Sidecar listener failure is invisible: exit 0, no stderr, error only in temp log — Real EADDRINUSE failures in both released engines on macOS/Linux exit1 with one typed fatal/log hint and written logs. Released host reports reaped status/log path and recovers. Evidence posted, issue closed.
 - [ ] [#123](https://github.com/Nimblesite/SharpLsp/issues/123) NuGet browser: finish post-install sidecar workspace reload + prerelease/restore polish — Pending release verification.
 - [ ] [#122](https://github.com/Nimblesite/SharpLsp/issues/122) F#: completion auto-`open` insertion (FSAC parity) needs an unopened-symbol entity index — Pending release verification.
 - [ ] [#48](https://github.com/Nimblesite/SharpLsp/issues/48) Windows code signing — current position — Pending release verification.
