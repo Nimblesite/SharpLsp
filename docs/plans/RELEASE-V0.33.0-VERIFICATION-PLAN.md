@@ -19,9 +19,11 @@ VSIX startup logs show that explicit binary settings are bypassed by bundled res
 
 ## [RELEASE-VERIFICATION-RESULTS]
 
-The initial snapshot contains 149 open issues. Issue #566 was subsequently added for release-specific reproduction. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
+The initial snapshot contains 149 open issues. Issues #566 and #574 were subsequently added for release-specific reproduction. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
 
 Confirmed failures have enabled regression tests that fail on the official release and default to explicit skips. Tests live in `tools/release/`. Run them with `RUN_RELEASE_REGRESSIONS=1 SHARPLSP_RELEASE_BUNDLE=/absolute/path/to/extracted/bundle SHARPLSP_RELEASE_VSIX=/absolute/path/to/extracted/extension node --test --test-concurrency=1 tools/release/*.test.cjs`.
+
+- [x] [#574](https://github.com/Nimblesite/SharpLsp/issues/574) MTP build preflight errors leave Test Results run output empty — Four published VSIX regressions reproduce eight empty Run/Coverage output streams after genuine MSBuild errors. Failure messages remain intact, baseline and repaired runs pass. Tests skipped by default, issue open.
 
 - [ ] [#566](https://github.com/Nimblesite/SharpLsp/issues/566) F# sidecar high memory during editing — Pending release-specific reproduction. Exact engine identity and retained-growth timeline requested from reporter.
 
