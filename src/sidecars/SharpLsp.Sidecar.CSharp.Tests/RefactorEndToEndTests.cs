@@ -119,23 +119,46 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     }
 
     [Theory]
-    [InlineData(3, 13, "Calculator")]
-    [InlineData(3, 13, "   ")]
-    [InlineData(3, 13, "bad-name")]
-    [InlineData(3, 13, "Program")]
-    [InlineData(0, 12, "MetaProbe")]
+    [InlineData(3, 13, "Calculator", false)]
+    [InlineData(3, 13, "   ", true)]
+    [InlineData(3, 13, "bad-name", true)]
+    [InlineData(3, 13, "", true)]
+    [InlineData(3, 13, "123bad", true)]
+    [InlineData(3, 13, "bad name", true)]
+    [InlineData(3, 13, "class", true)]
+    [InlineData(3, 13, "Program", false)]
+    [InlineData(0, 12, "MetaProbe", false)]
     public async Task Rename_rejects_invalid_unchanged_and_conflicting_names(
         int line,
         int character,
-        string newName
+        string newName,
+        bool invalidIdentifier
     )
     {
-        // [RENAME-ERRORS] Rejected names never leak partial Roslyn edits.
-        var edit = await fixture.SendAndDeserializeAsync<RenameRequest, WorkspaceEditResult>(
+        // [RENAME-ERRORS] #559: invalid identifiers are errors, never silent no-ops.
+        var response = await fixture.SendAsync(
             "textDocument/rename",
-            RenameRequestAt(line, character, newName)
+            MessagePackSerializer.Serialize(RenameRequestAt(line, character, newName))
         );
-        Assert.Empty(edit.DocumentChanges);
+        if (invalidIdentifier)
+        {
+            Assert.NotNull(response.Error);
+            Assert.Contains(
+                "Invalid C# rename identifier",
+                response.Error,
+                StringComparison.Ordinal
+            );
+            Assert.Empty(response.Payload);
+        }
+        else
+        {
+            Assert.Null(response.Error);
+            Assert.Empty(
+                MessagePackSerializer
+                    .Deserialize<WorkspaceEditResult>(response.Payload)
+                    .DocumentChanges
+            );
+        }
     }
 
     private RenameRequest RenameRequestAt(int line, int character, string newName)

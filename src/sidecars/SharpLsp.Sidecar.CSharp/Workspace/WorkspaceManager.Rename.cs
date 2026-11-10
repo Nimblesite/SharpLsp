@@ -85,8 +85,10 @@ internal sealed partial class WorkspaceManager
     {
         var (target, _) = await FindRenameTargetAsync(filePath, line, character, ct)
             .ConfigureAwait(false);
-        return target is null || _solution is null || !CanUseNewName(target.Value, newName)
-                ? EmptyRenameResult()
+        // [RENAME-ERRORS] Invalid names must reach the client as a failure, not a no-op.
+        return target is null || _solution is null ? EmptyRenameResult()
+            : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
+            : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
             : target.Value.Foreign
                 ? await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
                     .ConfigureAwait(false)
@@ -241,7 +243,7 @@ internal sealed partial class WorkspaceManager
 
     private static bool CanUseNewName(RenameTarget target, string newName)
     {
-        if (!IsValidIdentifier(newName) || newName == target.Token.Text)
+        if (newName == target.Token.Text)
         {
             return false;
         }
