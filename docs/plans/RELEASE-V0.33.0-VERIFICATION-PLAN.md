@@ -75,7 +75,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#461](https://github.com/Nimblesite/SharpLsp/issues/461) Honor Linux-only chunks in full VS Code test runs — Pending release verification.
 - [ ] [#459](https://github.com/Nimblesite/SharpLsp/issues/459) Honor auto_restore_on_open before compiler workspace creation — Pending release verification.
 - [ ] [#458](https://github.com/Nimblesite/SharpLsp/issues/458) Report missing project-level compiler failures in workspace diagnostics — Pending release verification.
-- [ ] [#452](https://github.com/Nimblesite/SharpLsp/issues/452) Implement promised diagnostic severity and per-file limits — Pending release verification.
+- [x] [#452](https://github.com/Nimblesite/SharpLsp/issues/452) Implement promised diagnostic severity and per-file limits — Official VSIX passes16 policy steps across pulls/Problems. Invalid settings rejected and3 legacy restore-publication arms converge. Evidence posted, issue closed.
 - [ ] [#449](https://github.com/Nimblesite/SharpLsp/issues/449) Background diagnostics force-kill a healthy sidecar during shutdown — Pending release verification.
 - [ ] [#447](https://github.com/Nimblesite/SharpLsp/issues/447) Restore exact .NET Framework Run exit-code checks — Pending release verification.
 - [ ] [#446](https://github.com/Nimblesite/SharpLsp/issues/446) Test Explorer CI shard exceeds its whole-run ceiling after fresh-build coverage — Pending release verification.
@@ -123,7 +123,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#271](https://github.com/Nimblesite/SharpLsp/issues/271) [SE-ACTIONS-ARGS] Build/Run extra arguments are specified but entirely unimplemented — Pending release verification.
 - [ ] [#270](https://github.com/Nimblesite/SharpLsp/issues/270) nuget.update installs whatever version is latest today, and a test drives it into a checked-in fixture — Pending release verification.
 - [ ] [#243](https://github.com/Nimblesite/SharpLsp/issues/243) PR #242: nine branch-added assertions that cannot pass against any implementation — Pending release verification.
-- [ ] [#238](https://github.com/Nimblesite/SharpLsp/issues/238) [Bug]: .editorconfig severity overrides are read once at load and never refreshed — Pending release verification.
+- [x] [#238](https://github.com/Nimblesite/SharpLsp/issues/238) [Bug]: .editorconfig severity overrides are read once at load and never refreshed — Editorconfig/props/targets/SDK switching pass. New globalconfig remains stale against SDK oracle. Evidence posted, skipped regression preserved, issue open.
 - [ ] [#237](https://github.com/Nimblesite/SharpLsp/issues/237) LSP host serializes all requests: one slow sidecar call blocks the entire server for up to 2 minutes — Pending release verification.
 - [ ] [#235](https://github.com/Nimblesite/SharpLsp/issues/235) Release: publish the two sidecar dotnet tool packages to NuGet — Pending release verification.
 - [ ] [#221](https://github.com/Nimblesite/SharpLsp/issues/221) F# completion can never offer the auto-open hint C# offers — Pending release verification.
