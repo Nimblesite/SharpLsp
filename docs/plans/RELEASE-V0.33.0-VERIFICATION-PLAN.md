@@ -152,7 +152,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#123](https://github.com/Nimblesite/SharpLsp/issues/123) NuGet browser: finish post-install sidecar workspace reload + prerelease/restore polish — Pending release verification.
 - [x] [#122](https://github.com/Nimblesite/SharpLsp/issues/122) F#: completion auto-`open` insertion (FSAC parity) needs an unopened-symbol entity index — Published F# alone offers framework/project-local hints, resolves exact opens, compiles accepted protocol edits and handles in-scope/invalid/stale controls. Evidence posted, issue closed. Performance remains on #221.
 - [ ] [#48](https://github.com/Nimblesite/SharpLsp/issues/48) Windows code signing — current position — Pending release verification.
-- [ ] [#47](https://github.com/Nimblesite/SharpLsp/issues/47) Sign + notarize the macOS binaries — Pending release verification.
+- [x] [#47](https://github.com/Nimblesite/SharpLsp/issues/47) Sign + notarize the macOS binaries — Official host and both engines pass signature integrity checks but carry ad-hoc signatures with no Developer ID authority. Three enabled regressions fail the signing requirement and default to skips. Evidence posted, issue open.
 - [ ] [#46](https://github.com/Nimblesite/SharpLsp/issues/46) Add Zed LSP-initialize version enforcement — Pending release verification.
 - [ ] [#45](https://github.com/Nimblesite/SharpLsp/issues/45) Enforce the expected version during resolution — Pending release verification.
 - [ ] [#43](https://github.com/Nimblesite/SharpLsp/issues/43) Shipwright deployment-contract hardening checklist — Pending release verification.

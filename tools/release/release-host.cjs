@@ -168,6 +168,7 @@ async function withReleaseHost(
 
 module.exports = {
     withReleaseHost,
+    requireBundle,
     skipUnlessEnabled: (reason) =>
         process.env.RUN_RELEASE_REGRESSIONS === "1" ? false : reason,
 };
