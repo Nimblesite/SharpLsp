@@ -64,7 +64,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#473](https://github.com/Nimblesite/SharpLsp/issues/473) Imported package references can skip workspace restore — Pending release verification.
 - [ ] [#472](https://github.com/Nimblesite/SharpLsp/issues/472) Resolve compiler apphost aliases in recovery fixtures — Pending release verification.
 - [ ] [#471](https://github.com/Nimblesite/SharpLsp/issues/471) Use compiler-owned projects in diagnostic protocol smoke tests — Pending release verification.
-- [ ] [#470](https://github.com/Nimblesite/SharpLsp/issues/470) Cold compiler engines return false-clean document diagnostics before owner adoption — Pending release verification.
+- [x] [#470](https://github.com/Nimblesite/SharpLsp/issues/470) Cold compiler engines return false-clean document diagnostics before owner adoption — Both cold directions return -32802 with retriggerRequest false, failing required true. SDK/selected controls pass. Evidence posted, two skipped regressions, issue open.
 - [ ] [#469](https://github.com/Nimblesite/SharpLsp/issues/469) F# lint findings are missing and compiler API failures become false-clean lint results — Pending release verification.
 - [ ] [#468](https://github.com/Nimblesite/SharpLsp/issues/468) Build the real SDK fixture before verifying native diagnostic repair — Pending release verification.
 - [ ] [#466](https://github.com/Nimblesite/SharpLsp/issues/466) Native diagnostic watching misses newly created SDK source files — Pending release verification.

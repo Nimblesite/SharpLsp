@@ -4,7 +4,7 @@ const assert = require("node:assert");
 const {
     createMessageConnection,
 } = require("../../src/editors/vscode/node_modules/vscode-jsonrpc/lib/node/main.js");
-const { spawn, execFileSync } = require("node:child_process");
+const { spawn, spawnSync, execFileSync } = require("node:child_process");
 const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join, dirname, resolve, isAbsolute } = require("node:path");
@@ -36,7 +36,7 @@ function requireBundle() {
 }
 
 // Creates write files, restore+build the entry project (dotnet only).
-function buildFixture(prefix, files, entry) {
+function buildFixture(prefix, files, entry, expectedCompilerError) {
     const root = mkdtempSync(join(tmpdir(), prefix));
     for (const [name, text] of Object.entries(files)) {
         mkdirSync(dirname(join(root, name)), { recursive: true });
@@ -48,7 +48,7 @@ function buildFixture(prefix, files, entry) {
         stdio: "pipe",
         timeout: 120000,
     });
-    execFileSync(
+    const build = spawnSync(
         "dotnet",
         [
             "build",
@@ -59,26 +59,40 @@ function buildFixture(prefix, files, entry) {
         ],
         {
             env: { ...process.env, DOTNET_PROCESSOR_COUNT: "2" },
-            stdio: "pipe",
+            encoding: "utf8",
             timeout: 120000,
         },
     );
+    assert.strictEqual(
+        build.status,
+        expectedCompilerError ? 1 : 0,
+        build.stdout + build.stderr,
+    );
+    if (expectedCompilerError)
+        assert.ok(
+            build.stdout.includes(expectedCompilerError),
+            `SDK must prove ${expectedCompilerError}`,
+        );
     return root;
 }
 
 // Spawns the bundle host + both bundled engines, wires a 90s-bounded request channel,
 // and always disposes the child and fixture. Returns { request, open, uri }.
-async function withReleaseHost({ prefix, files, entry, prepare }, run) {
+async function withReleaseHost(
+    { prefix, files, entry, prepare, expectedCompilerError, workspaceFolder },
+    run,
+) {
     const { host, csharp, fsharp } = requireBundle();
-    const root = buildFixture(prefix, files, entry);
+    const root = buildFixture(prefix, files, entry, expectedCompilerError);
     try {
         await prepare?.(root);
     } catch (error) {
         rmSync(root, { recursive: true, force: true });
         throw error;
     }
+    const workspace = workspaceFolder ? join(root, workspaceFolder) : root;
     const child = spawn(host, [], {
-        cwd: root,
+        cwd: workspace,
         env: {
             ...process.env,
             DOTNET_PROCESSOR_COUNT: "2",
@@ -116,7 +130,7 @@ async function withReleaseHost({ prefix, files, entry, prepare }, run) {
         connection.listen();
         await request("initialize", {
             processId: process.pid,
-            rootUri: pathToFileURL(root).href,
+            rootUri: pathToFileURL(workspace).href,
             capabilities: {},
         });
         await connection.sendNotification("initialized", {});
