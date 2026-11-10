@@ -39,6 +39,8 @@ type FSharpWorkspaceState =
         LifecycleLock: obj
         /// Live editor buffers keyed by canonical absolute file path.
         Overlays: ConcurrentDictionary<string, string>
+        /// A digest of the source the compiler last read, by file. [HOVER-FSHARP-OVERLAY]
+        Reads: ConcurrentDictionary<string, string>
         /// Every loaded project, keyed by its project file. [NETFX-PROJECTS-FSHARP]
         Projects: ConcurrentDictionary<string, FSharpDesignTime.FSharpProjectEntry>
         /// The F# projects each loaded project references, read once at load.
@@ -64,10 +66,13 @@ let create () : FSharpWorkspaceState =
     let overlays =
         ConcurrentDictionary<string, string>(NativePaths.Comparer)
 
+    let reads = ConcurrentDictionary<string, string>(NativePaths.Comparer)
+
     let readDocument filePath =
         async {
             let! ct = Async.CancellationToken
             let! source = FSharpWorkspaceRuntime.tryReadSourceAsync overlays filePath ct |> Async.AwaitTask
+            FSharpWorkspaceRuntime.recordRead reads filePath source
             return source |> Option.map SourceText.ofString
         }
 
@@ -78,6 +83,7 @@ let create () : FSharpWorkspaceState =
       Epoch = 0
       LifecycleLock = obj ()
       Overlays = overlays
+      Reads = reads
       Projects = ConcurrentDictionary(NativePaths.Comparer)
       References = ConcurrentDictionary(NativePaths.Comparer)
       CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
@@ -248,16 +254,29 @@ let private buildsCompiling (state: FSharpWorkspaceState) (filePath: string) =
 
     Option.toList (optionsFor state filePath) @ byFramework
 
-/// Record the editor's in-memory buffer and invalidate the file in every build that
-/// compiles it.
-let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
-    let normalizedPath = NativePaths.NormalizeFullPath filePath
-    state.Overlays[normalizedPath] <- newText
-
+/// Invalidate `normalizedPath` in every build that compiles it.
+let private invalidate (state: FSharpWorkspaceState) normalizedPath =
     for options in buildsCompiling state normalizedPath do
         match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
         | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
         | None -> ()
+
+/// Record the editor's in-memory buffer and invalidate the file in every build that
+/// compiles it, unless the buffer is unedited and the compiler already read that very
+/// text: opening a file must not re-check its project and every project using it.
+/// [HOVER-FSHARP-OVERLAY]
+let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: string) =
+    let normalizedPath = NativePaths.NormalizeFullPath filePath
+
+    let edited =
+        match state.Overlays.TryGetValue normalizedPath with
+        | true, previous -> not (String.Equals(previous, newText, StringComparison.Ordinal))
+        | _ -> false
+
+    state.Overlays[normalizedPath] <- newText
+
+    if edited || not (FSharpWorkspaceRuntime.alreadyRead state.Reads normalizedPath newText) then
+        invalidate state normalizedPath
 
 /// Drop the editor buffer for `filePath` (the file's didClose) and invalidate the
 /// builds that compile it, so the next check reads the file from disk again — the
@@ -265,11 +284,7 @@ let applyDidChange (state: FSharpWorkspaceState) (filePath: string) (newText: st
 let removeOverlay (state: FSharpWorkspaceState) (filePath: string) =
     let normalizedPath = NativePaths.NormalizeFullPath filePath
     state.Overlays.TryRemove(normalizedPath) |> ignore
-
-    for options in buildsCompiling state normalizedPath do
-        match FSharpWorkspaceRuntime.tryProjectSourcePath options normalizedPath with
-        | Some projectPath -> FSharpWorkspaceRuntime.notifyFileChanged state.Checker projectPath options
-        | None -> ()
+    invalidate state normalizedPath
 
 /// Read the live overlay when present, otherwise the source on disk.
 let internal readSource (state: FSharpWorkspaceState) (filePath: string) : string =

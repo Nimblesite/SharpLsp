@@ -201,6 +201,50 @@ let ``an unsaved edit in the referenced project reaches the project that uses it
             cleanup root
     }
 
+/// Opening a file hands over the text the compiler already read, so no project is
+/// checked again; an edit re-checks the file and the project using it, repeating
+/// that edit checks nothing more, and undoing it re-checks once. [HOVER-FSHARP-OVERLAY]
+[<Fact>]
+let ``a buffer carrying the text the compiler already read checks nothing again`` () =
+    task {
+        let! state, root, core, app = openSolution ()
+        try
+            let checkedFiles = Collections.Generic.List<string>()
+            use _subscription = state.Checker.FileChecked.Subscribe(fun (file, _) -> lock checkedFiles (fun () -> checkedFiles.Add file))
+            let drain () = lock checkedFiles (fun () -> let seen = List.ofSeq checkedFiles in checkedFiles.Clear(); seen)
+            let checkedNow file seen = seen |> List.exists (fun path -> NativePaths.AreEqual(path, file))
+            let usages () = FSharpReferences.getProjectUsages state core 3 5
+            let! cold = usages ()
+            Assert.Equal<int list>([ 4; 8 ], linesIn app cold)
+            Assert.True(checkedNow core (drain ()), "the first query checks Core")
+
+            FSharpWorkspace.applyDidChange state core (File.ReadAllText core)
+            FSharpWorkspace.applyDidChange state app (File.ReadAllText app)
+            let! opened = usages ()
+            Assert.Equal<int list>([ 4; 8 ], linesIn app opened)
+            Assert.Equal<int list>([ 3 ], linesIn core opened)
+            Assert.Equal<string list>([], drain ())
+
+            FSharpWorkspace.applyDidChange state core coreRenamed
+            let! renamed = usages ()
+            Assert.Equal<int list>([], linesIn app renamed)
+            Assert.Equal<int list>([ 3 ], linesIn core renamed)
+            let edited = drain ()
+            Assert.True(checkedNow core edited && checkedNow app edited, $"an edit re-checks Core and App: {edited}")
+
+            FSharpWorkspace.applyDidChange state core coreRenamed
+            let! repeated = usages ()
+            Assert.Equal<int list>([ 3 ], linesIn core repeated)
+            Assert.Equal<string list>([], drain ())
+
+            FSharpWorkspace.applyDidChange state core coreSource
+            let! undone = usages ()
+            Assert.Equal<int list>([ 4; 8 ], linesIn app undone)
+            Assert.True(checkedNow core (drain ()), "undoing the edit re-checks Core")
+        finally
+            cleanup root
+    }
+
 [<Fact>]
 let ``references, code lens and subtypes count what every project does`` () =
     task {

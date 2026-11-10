@@ -163,7 +163,7 @@ shows its signature alone (GitHub #388).
 
 ### [HOVER-FSHARP-OVERLAY] Live-Buffer Resolution
 
-Hover MUST resolve against the editor's **in-memory buffer**, not the on-disk file. The Rust host routes `textDocument/didOpen` and `didChange` by document language to the owning sidecar. The F# sidecar keeps an authoritative document-state overlay keyed by absolute file path, and every per-file analysis (hover, completion, signature help, and others) reads from it, falling back to disk only when no open buffer exists. This overlay is state, not memoization. The C# sidecar updates its Roslyn workspace in place on `didChange`.
+Hover MUST resolve against the editor's **in-memory buffer**, not the on-disk file. The Rust host routes `textDocument/didOpen` and `didChange` by document language to the owning sidecar. The F# sidecar keeps an authoritative document-state overlay keyed by absolute file path, and every per-file analysis (hover, completion, signature help, and others) reads from it, falling back to disk only when no open buffer exists. This overlay is state, not memoization. A buffer that is unedited (no earlier buffer differs) and carries exactly the text FCS last read for that file, as when opening a file, MUST NOT invalidate any build: opening a file never re-checks its project or the projects that use it. The C# sidecar updates its Roslyn workspace in place on `didChange`.
 
 #### [HOVER-FSHARP-OVERLAY-CHECK] Canonical Check Funnel
 
