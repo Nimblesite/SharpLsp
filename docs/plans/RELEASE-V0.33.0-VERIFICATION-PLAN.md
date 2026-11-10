@@ -1,0 +1,179 @@
+# Released v0.33.0 issue verification
+
+## [RELEASE-VERIFICATION-SCOPE]
+
+Verify every open issue that may have been fixed, including fixes predating v0.32.1. Only live behavior from official published v0.33.0 host, bundled engines and editor packages can justify closing a runtime bug. Post passing or failing evidence to each issue. Preserve every confirmed failing scenario as an explicitly skipped regression test. Platform-specific and infrastructure issues require matching evidence before closure.
+
+## [RELEASE-VERIFICATION-PROVENANCE]
+
+- [x] Download official macOS arm64 archive for v0.33.0.
+- [x] Verify SHA-256 against release SHA256SUMS and asset digest.
+- [x] Verify extracted host reports `sharplsp 0.33.0`.
+- [x] Pin both compiler engines to that same extracted archive.
+
+Archive SHA-256 `4d8e760fb71ccd9bf11e68ea7b0de4d33ba2e2141f223be3681caea0c53729da`. Published 2026-11-10T06:06:01Z. Live probes and raw results are retained under `target/codex1-release-v0330/`. Fixture builds compile only test input projects.
+
+## [RELEASE-VERIFICATION-RESULTS]
+
+The initial snapshot contains 149 open issues. A checked row means the verification disposition is recorded with live evidence, including a failing disposition. Unchecked rows still require work.
+
+Confirmed failures have enabled regression tests that fail on the official release and default to explicit skips. Tests live in `tools/release/`. Run them with `RUN_RELEASE_REGRESSIONS=1 SHARPLSP_RELEASE_BUNDLE=/absolute/path/to/extracted/bundle node --test --test-concurrency=1 tools/release/*.test.cjs`.
+
+- [ ] [#564](https://github.com/Nimblesite/SharpLsp/issues/564) Logging is far too verbose by default: add config-controlled logging modes (quiet/normal/verbose/trace) with a quieter default — Pending release verification.
+- [ ] [#563](https://github.com/Nimblesite/SharpLsp/issues/563) Initial TestFixtures.sln load is 30-110s: F# sidecar restores and loads every .fsproj under the folder (33 projects), re-restoring 'stale' projects on every open — Pending release verification.
+- [ ] [#562](https://github.com/Nimblesite/SharpLsp/issues/562) F# references, implementations and call hierarchy ignore request cancellation — Pending release verification.
+- [ ] [#561](https://github.com/Nimblesite/SharpLsp/issues/561) Host can deadlock after sharplsp/loadSolution: synchronous Salsa invalidate on a Tokio worker — Pending release verification.
+- [x] [#559](https://github.com/Nimblesite/SharpLsp/issues/559) C# rename silently returns null for invalid identifiers instead of an LSP error — Passed live release test, evidence posted, issue closed.
+- [x] [#557](https://github.com/Nimblesite/SharpLsp/issues/557) Find references on a C# symbol from F# omits its C# declaration and uses — Failed or partial, evidence posted, skipped regression preserved, issue open.
+- [x] [#555](https://github.com/Nimblesite/SharpLsp/issues/555) F# signature help disappears inside multiline calls — Passed live release test, evidence posted, issue closed.
+- [x] [#554](https://github.com/Nimblesite/SharpLsp/issues/554) Opening only a C# file starts the F# compiler too — Passed live release test, evidence posted, issue closed.
+- [x] [#553](https://github.com/Nimblesite/SharpLsp/issues/553) Rootless F# script: hover and other semantic requests answer null — Passed live release test, evidence posted, issue closed.
+- [x] [#552](https://github.com/Nimblesite/SharpLsp/issues/552) F# signature help always highlights the first parameter — Passed live release test, evidence posted, issue closed.
+- [ ] [#540](https://github.com/Nimblesite/SharpLsp/issues/540) Scaffolding e2e (Windows): a previous test's new file lands in the comment-trap csproj — Pending release verification.
+- [ ] [#536](https://github.com/Nimblesite/SharpLsp/issues/536) Profiler messages misled .NET users: ':0' leak offer, 'press Continue', 'csharp/fsharp' — Pending release verification.
+- [ ] [#533](https://github.com/Nimblesite/SharpLsp/issues/533) Running an .fsx: the dotnet fsi task never reports an exit on Windows CI — Pending release verification.
+- [ ] [#532](https://github.com/Nimblesite/SharpLsp/issues/532) Test Explorer silently drops a framework from a multi-targeted test project on Windows — Pending release verification.
+- [ ] [#530](https://github.com/Nimblesite/SharpLsp/issues/530) Memory autopilot stops capturing after a stop lands while a capture is in flight — Pending release verification.
+- [ ] [#521](https://github.com/Nimblesite/SharpLsp/issues/521) Test output (ITestOutputHelper, TestContext, captured console) is never shown in Test Results — Pending release verification.
+- [ ] [#519](https://github.com/Nimblesite/SharpLsp/issues/519) F# task {} logical await stack drops to the leaf frame on a slow Linux runner — Pending release verification.
+- [ ] [#518](https://github.com/Nimblesite/SharpLsp/issues/518) Diagnostic policy F# workspace assertion counts a C# warning from another suite's open document (Windows) — Pending release verification.
+- [ ] [#517](https://github.com/Nimblesite/SharpLsp/issues/517) Owner adoption through a symlinked spelling makes the user's next C# build recompile (Linux) — Inconclusive, owning-project hover unavailable in macOS host probe. Linux incremental-build proof pending.
+- [ ] [#513](https://github.com/Nimblesite/SharpLsp/issues/513) F# solution-wide queries pay a cold full check: warm projects in the background after load — Pending release verification.
+- [ ] [#511](https://github.com/Nimblesite/SharpLsp/issues/511) DAP handshake test checks for the disconnect's answer before it can arrive — Pending release verification.
+- [ ] [#510](https://github.com/Nimblesite/SharpLsp/issues/510) Problems checks in the diagnostic suites race the editor's own pull — Pending release verification.
+- [ ] [#509](https://github.com/Nimblesite/SharpLsp/issues/509) Diagnostic accuracy tests fail when the server asks for a superseded pull to be retriggered — Pending release verification.
+- [ ] [#508](https://github.com/Nimblesite/SharpLsp/issues/508) Router's continue past its injected entry stop cancels the client's in-flight threads request — Pending release verification.
+- [ ] [#507](https://github.com/Nimblesite/SharpLsp/issues/507) Windows Test Explorer discovery intermittently lists one of two VSTest assemblies, and the timed-out test then unloads the next test's solution — Pending release verification.
+- [ ] [#504](https://github.com/Nimblesite/SharpLsp/issues/504) F# code lens on a cold solution blocks every F# request for ~13 s — Pending release verification.
+- [ ] [#496](https://github.com/Nimblesite/SharpLsp/issues/496) Windows: exception panel loses the exception message when netcoredbg reports <unknown module> — Pending release verification.
+- [ ] [#493](https://github.com/Nimblesite/SharpLsp/issues/493) [Feature]: Add code files automatically linked `.fsproj` — Pending release verification.
+- [ ] [#491](https://github.com/Nimblesite/SharpLsp/issues/491) Solution replacement can discard current unsaved diagnostic inputs — Pending release verification.
+- [ ] [#490](https://github.com/Nimblesite/SharpLsp/issues/490) Native watcher overflow drops rescan signals and leaves closed compiler diagnostics stale — Pending release verification.
+- [ ] [#489](https://github.com/Nimblesite/SharpLsp/issues/489) Windows F# diagnostic refresh can collide with project-file edits (EBUSY) — Pending release verification.
+- [ ] [#486](https://github.com/Nimblesite/SharpLsp/issues/486) Preserved project timestamps hide changes to the target framework set — Pending release verification.
+- [ ] [#485](https://github.com/Nimblesite/SharpLsp/issues/485) Preserved project timestamps hide package changes and compiler errors — Pending release verification.
+- [ ] [#484](https://github.com/Nimblesite/SharpLsp/issues/484) C# sidecar still exposes the forbidden eager bulk diagnostic route — Pending release verification.
+- [ ] [#483](https://github.com/Nimblesite/SharpLsp/issues/483) Restore can falsely succeed for invalid imported MSBuild inputs — Pending release verification.
+- [ ] [#482](https://github.com/Nimblesite/SharpLsp/issues/482) Imported MSBuild package changes leave stale F# and C# diagnostics — Pending release verification.
+- [ ] [#481](https://github.com/Nimblesite/SharpLsp/issues/481) F# diagnostics ignore assemblies in NuGet fallback package folders — Pending release verification.
+- [ ] [#479](https://github.com/Nimblesite/SharpLsp/issues/479) Reference graph type picker closes before a selection in an existing workspace — Pending release verification.
+- [ ] [#477](https://github.com/Nimblesite/SharpLsp/issues/477) CPU attribution regression compares different sampling and Stopwatch windows — Pending release verification.
+- [ ] [#476](https://github.com/Nimblesite/SharpLsp/issues/476) CPU snapshot can retain only the previous workload after a live phase change — Pending release verification.
+- [ ] [#475](https://github.com/Nimblesite/SharpLsp/issues/475) Cancelled diagnostic requests leave obsolete compiler work blocking fresh results — Pending release verification.
+- [ ] [#474](https://github.com/Nimblesite/SharpLsp/issues/474) Completed SDK restores can leave workspace opening waiting on output pipes — Pending release verification.
+- [ ] [#473](https://github.com/Nimblesite/SharpLsp/issues/473) Imported package references can skip workspace restore — Pending release verification.
+- [ ] [#472](https://github.com/Nimblesite/SharpLsp/issues/472) Resolve compiler apphost aliases in recovery fixtures — Pending release verification.
+- [ ] [#471](https://github.com/Nimblesite/SharpLsp/issues/471) Use compiler-owned projects in diagnostic protocol smoke tests — Pending release verification.
+- [ ] [#470](https://github.com/Nimblesite/SharpLsp/issues/470) Cold compiler engines return false-clean document diagnostics before owner adoption — Pending release verification.
+- [ ] [#469](https://github.com/Nimblesite/SharpLsp/issues/469) F# lint findings are missing and compiler API failures become false-clean lint results — Pending release verification.
+- [ ] [#468](https://github.com/Nimblesite/SharpLsp/issues/468) Build the real SDK fixture before verifying native diagnostic repair — Pending release verification.
+- [ ] [#466](https://github.com/Nimblesite/SharpLsp/issues/466) Native diagnostic watching misses newly created SDK source files — Pending release verification.
+- [ ] [#465](https://github.com/Nimblesite/SharpLsp/issues/465) Automatic workspace restore can leave corrupt SDK assets after reporting success — Pending release verification.
+- [ ] [#464](https://github.com/Nimblesite/SharpLsp/issues/464) Restore sidecar coverage gates for diagnostic and SDK restore lifecycles — Pending release verification.
+- [ ] [#463](https://github.com/Nimblesite/SharpLsp/issues/463) Closed diagnostics outside the selected solution directory do not refresh — Pending release verification.
+- [ ] [#462](https://github.com/Nimblesite/SharpLsp/issues/462) External F# projects stay unloaded after selecting a C#-only solution — Pending release verification.
+- [ ] [#461](https://github.com/Nimblesite/SharpLsp/issues/461) Honor Linux-only chunks in full VS Code test runs — Pending release verification.
+- [ ] [#459](https://github.com/Nimblesite/SharpLsp/issues/459) Honor auto_restore_on_open before compiler workspace creation — Pending release verification.
+- [ ] [#458](https://github.com/Nimblesite/SharpLsp/issues/458) Report missing project-level compiler failures in workspace diagnostics — Pending release verification.
+- [ ] [#452](https://github.com/Nimblesite/SharpLsp/issues/452) Implement promised diagnostic severity and per-file limits — Pending release verification.
+- [ ] [#449](https://github.com/Nimblesite/SharpLsp/issues/449) Background diagnostics force-kill a healthy sidecar during shutdown — Pending release verification.
+- [ ] [#447](https://github.com/Nimblesite/SharpLsp/issues/447) Restore exact .NET Framework Run exit-code checks — Pending release verification.
+- [ ] [#446](https://github.com/Nimblesite/SharpLsp/issues/446) Test Explorer CI shard exceeds its whole-run ceiling after fresh-build coverage — Pending release verification.
+- [ ] [#445](https://github.com/Nimblesite/SharpLsp/issues/445) Website F# film intermittently stalls after seeking in Linux Chromium — Pending release verification.
+- [ ] [#444](https://github.com/Nimblesite/SharpLsp/issues/444) SDK fixtures preserve installation links instead of copying SDK files — Pending release verification.
+- [ ] [#443](https://github.com/Nimblesite/SharpLsp/issues/443) Stopping multi-host test debugging leaves other hosts and the run terminal alive — Pending release verification.
+- [ ] [#442](https://github.com/Nimblesite/SharpLsp/issues/442) Test run failures copy compiler output into the persisted extension log — Pending release verification.
+- [ ] [#441](https://github.com/Nimblesite/SharpLsp/issues/441) Solution diagnostics are missing or stale despite pull diagnostic truth guarantees — Pending release verification.
+- [ ] [#440](https://github.com/Nimblesite/SharpLsp/issues/440) Failed language-server startup leaks build discovery observers — Pending release verification.
+- [ ] [#439](https://github.com/Nimblesite/SharpLsp/issues/439) Windows Defender blocks the generated Release test fixture DLL — Pending release verification.
+- [ ] [#438](https://github.com/Nimblesite/SharpLsp/issues/438) Windows attach can pause a process but exposes no inspectable managed stack — Pending release verification.
+- [ ] [#437](https://github.com/Nimblesite/SharpLsp/issues/437) Shared profiler UI with Osprey: interactive flame graph, palettes, debugger links — Pending release verification.
+- [ ] [#435](https://github.com/Nimblesite/SharpLsp/issues/435) Test Explorer hides VSTest compiler diagnostics after build failures — Pending release verification.
+- [x] [#434](https://github.com/Nimblesite/SharpLsp/issues/434) C# local hover omits inferred types and nullable flow context — Passed live release test, evidence posted, issue closed.
+- [ ] [#433](https://github.com/Nimblesite/SharpLsp/issues/433) NuGet restore failures lose MSBuild diagnostics written to stdout — Pending release verification.
+- [ ] [#431](https://github.com/Nimblesite/SharpLsp/issues/431) Track unpatched Undertow build-tool advisory in Rider dependency graph — Pending release verification.
+- [ ] [#430](https://github.com/Nimblesite/SharpLsp/issues/430) Just My Code and exception caller projection misclassify symbol-bearing sibling libraries — Pending release verification.
+- [ ] [#429](https://github.com/Nimblesite/SharpLsp/issues/429) Test Explorer must default test builds to Debug with shared configuration — Pending release verification.
+- [ ] [#428](https://github.com/Nimblesite/SharpLsp/issues/428) Test Explorer stays stale after extension and external builds — Pending release verification.
+- [ ] [#427](https://github.com/Nimblesite/SharpLsp/issues/427) Blazor WebAssembly relaunch races the previous DevServer for its port — Pending release verification.
+- [ ] [#426](https://github.com/Nimblesite/SharpLsp/issues/426) Unlisted Razor code-action requests leave stale edits resolvable — Pending release verification.
+- [ ] [#425](https://github.com/Nimblesite/SharpLsp/issues/425) Razor code-behind extraction drops generic component type parameters and constraints — Pending release verification.
+- [ ] [#424](https://github.com/Nimblesite/SharpLsp/issues/424) Blazor WebAssembly leaves dotnet run alive after the browser debugger stops — Pending release verification.
+- [ ] [#394](https://github.com/Nimblesite/SharpLsp/issues/394) Website videos stop after one frame in Windows Chrome and Edge — Pending release verification.
+- [ ] [#391](https://github.com/Nimblesite/SharpLsp/issues/391) Metadata as source decompiles reference assemblies: every member body is throw null — Pending release verification.
+- [x] [#390](https://github.com/Nimblesite/SharpLsp/issues/390) Diagnostics never carry DiagnosticTag.Unnecessary: unused opens and dead code are not greyed out — Passed live release test, evidence posted, issue closed.
+- [x] [#389](https://github.com/Nimblesite/SharpLsp/issues/389) F# inlay hints: fully qualified types, parameter names on operators, and hints stacked before the function — Passed live release test, evidence posted, issue closed.
+- [x] [#388](https://github.com/Nimblesite/SharpLsp/issues/388) F# hover on a .NET type shows its signature but none of its XML documentation — Failed or partial, evidence posted, skipped regression preserved, issue open.
+- [ ] [#387](https://github.com/Nimblesite/SharpLsp/issues/387) F#: Go to Definition on Checkout.checkout finds nothing until Checkout.fs has been opened — Pending release verification.
+- [ ] [#386](https://github.com/Nimblesite/SharpLsp/issues/386) Sidecar restart never reopens the workspace: after a crash, the replacement answers every request empty — Pending release verification.
+- [ ] [#367](https://github.com/Nimblesite/SharpLsp/issues/367) Flaky: Windows realrepo-netfx-fsharp GlobTests hang to the 600 s timeout — Pending release verification.
+- [ ] [#363](https://github.com/Nimblesite/SharpLsp/issues/363) Flaky on Windows: CPU snapshot test asserts samples after a fixed 2 s sleep — Pending release verification.
+- [ ] [#355](https://github.com/Nimblesite/SharpLsp/issues/355) Profiler: Show Reference Graph started during an auto-capture never returns, and the suspect list resets — Pending release verification.
+- [ ] [#354](https://github.com/Nimblesite/SharpLsp/issues/354) Profiler: a memory capture in flight when the target exits never finishes and blocks the next Track Memory — Pending release verification.
+- [ ] [#343](https://github.com/Nimblesite/SharpLsp/issues/343) [Bug]: C# LSP does not report diagnostics from external analyzers such as StyleCop — Pending release verification.
+- [ ] [#324](https://github.com/Nimblesite/SharpLsp/issues/324) BUG: website dependency audit blocks release on unpatched braces stack exhaustion — Pending release verification.
+- [ ] [#318](https://github.com/Nimblesite/SharpLsp/issues/318) Upstream our netcoredbg patches to Samsung/netcoredbg (hot reload over DAP, symbol-less exception stepping) — Pending release verification.
+- [ ] [#314](https://github.com/Nimblesite/SharpLsp/issues/314) F#: a project-wide query right after an unsaved edit re-checks every in-memory reader — Pending release verification.
+- [ ] [#310](https://github.com/Nimblesite/SharpLsp/issues/310) CI runs vsce 4 on Node 20 (EOL), below its declared engine node >= 22 — Pending release verification.
+- [ ] [#308](https://github.com/Nimblesite/SharpLsp/issues/308) [DIST-CI-ARTIFACT-TESTS] is specified but not implemented: Rust and Zed test jobs still compile — Pending release verification.
+- [ ] [#305](https://github.com/Nimblesite/SharpLsp/issues/305) Cross-validate the SDK version predicate against a reference semver implementation — Pending release verification.
+- [ ] [#304](https://github.com/Nimblesite/SharpLsp/issues/304) Test-host workspace shapes: the folder editor always starts, and recursive globs skip the multi-root one — Pending release verification.
+- [ ] [#303](https://github.com/Nimblesite/SharpLsp/issues/303) A test run can leave the committed workspace fixture's settings.json dirty — Pending release verification.
+- [ ] [#293](https://github.com/Nimblesite/SharpLsp/issues/293) NuGetBrowserPanel.waitForInitialLoad() resolves on a load that never ran — Pending release verification.
+- [ ] [#271](https://github.com/Nimblesite/SharpLsp/issues/271) [SE-ACTIONS-ARGS] Build/Run extra arguments are specified but entirely unimplemented — Pending release verification.
+- [ ] [#270](https://github.com/Nimblesite/SharpLsp/issues/270) nuget.update installs whatever version is latest today, and a test drives it into a checked-in fixture — Pending release verification.
+- [ ] [#243](https://github.com/Nimblesite/SharpLsp/issues/243) PR #242: nine branch-added assertions that cannot pass against any implementation — Pending release verification.
+- [ ] [#238](https://github.com/Nimblesite/SharpLsp/issues/238) [Bug]: .editorconfig severity overrides are read once at load and never refreshed — Pending release verification.
+- [ ] [#237](https://github.com/Nimblesite/SharpLsp/issues/237) LSP host serializes all requests: one slow sidecar call blocks the entire server for up to 2 minutes — Pending release verification.
+- [ ] [#235](https://github.com/Nimblesite/SharpLsp/issues/235) Release: publish the two sidecar dotnet tool packages to NuGet — Pending release verification.
+- [ ] [#221](https://github.com/Nimblesite/SharpLsp/issues/221) F# completion can never offer the auto-open hint C# offers — Pending release verification.
+- [ ] [#210](https://github.com/Nimblesite/SharpLsp/issues/210) Editor integrations: Rider is at 4.09% line coverage, Zed capped at 85% by its WASM-host shell — Pending release verification.
+- [ ] [#207](https://github.com/Nimblesite/SharpLsp/issues/207) FluentValidation real-repo diagnostics test: timeout budget is 5 minutes short, and the 18-error baseline is a brittle pin — Pending release verification.
+- [ ] [#205](https://github.com/Nimblesite/SharpLsp/issues/205) F# sidecar coverage gate has zero headroom and under-reports inlined functions — Pending release verification.
+- [ ] [#203](https://github.com/Nimblesite/SharpLsp/issues/203) Restore C# and F# sidecar coverage to the 95% stored threshold — Pending release verification.
+- [ ] [#202](https://github.com/Nimblesite/SharpLsp/issues/202) Flaky: profiler heap-dump test races the target's first allocations — Pending release verification.
+- [ ] [#198](https://github.com/Nimblesite/SharpLsp/issues/198) [Feature]: DataProvider Migrations UI — Pending release verification.
+- [ ] [#196](https://github.com/Nimblesite/SharpLsp/issues/196) Flaky e2e: profiler object-graph test fails when the baseline heap dump has no StringBuilder instances — Pending release verification.
+- [ ] [#176](https://github.com/Nimblesite/SharpLsp/issues/176) [Feature]: MacOS support — Pending release verification.
+- [ ] [#170](https://github.com/Nimblesite/SharpLsp/issues/170) NuGet: packages-root prefix strip lacks a separator boundary; parse.rs scrapes MSBuild XML line-wise — Pending release verification.
+- [ ] [#168](https://github.com/Nimblesite/SharpLsp/issues/168) Profiler: default output paths are CWD-relative and ProfilerConfig.output_directory is dead — Pending release verification.
+- [ ] [#166](https://github.com/Nimblesite/SharpLsp/issues/166) MSBuildInstanceSelector: exact Roslyn version equality — SDK servicing skew falls back to a known-broken registration — Pending release verification.
+- [ ] [#164](https://github.com/Nimblesite/SharpLsp/issues/164) Sidecar protocol hardening: response-id correlation + health-check lock race — Pending release verification.
+- [ ] [#162](https://github.com/Nimblesite/SharpLsp/issues/162) make _test-vsix cannot go green on Windows — Linux-shaped staging assertions + temp-dir EPERM cleanup flakes — Pending release verification.
+- [ ] [#154](https://github.com/Nimblesite/SharpLsp/issues/154) READY echoes the requested endpoint even when the listener bound a relocated path — Pending release verification.
+- [ ] [#153](https://github.com/Nimblesite/SharpLsp/issues/153) SidecarHost.MessageLoopAsync hot-loops on persistent transport exceptions — Pending release verification.
+- [ ] [#152](https://github.com/Nimblesite/SharpLsp/issues/152) Sidecar spawn-time failures bypass crash backoff — unthrottled respawn storm — Pending release verification.
+- [ ] [#151](https://github.com/Nimblesite/SharpLsp/issues/151) Deterministic sidecar IPC endpoint collides across hosts on the same workspace — Pending release verification.
+- [ ] [#150](https://github.com/Nimblesite/SharpLsp/issues/150) Sidecar listener failure is invisible: exit 0, no stderr, error only in temp log — Pending release verification.
+- [ ] [#123](https://github.com/Nimblesite/SharpLsp/issues/123) NuGet browser: finish post-install sidecar workspace reload + prerelease/restore polish — Pending release verification.
+- [ ] [#122](https://github.com/Nimblesite/SharpLsp/issues/122) F#: completion auto-`open` insertion (FSAC parity) needs an unopened-symbol entity index — Pending release verification.
+- [ ] [#48](https://github.com/Nimblesite/SharpLsp/issues/48) Windows code signing — current position — Pending release verification.
+- [ ] [#47](https://github.com/Nimblesite/SharpLsp/issues/47) Sign + notarize the macOS binaries — Pending release verification.
+- [ ] [#46](https://github.com/Nimblesite/SharpLsp/issues/46) Add Zed LSP-initialize version enforcement — Pending release verification.
+- [ ] [#45](https://github.com/Nimblesite/SharpLsp/issues/45) Enforce the expected version during resolution — Pending release verification.
+- [ ] [#43](https://github.com/Nimblesite/SharpLsp/issues/43) Shipwright deployment-contract hardening checklist — Pending release verification.
+- [ ] [#33](https://github.com/Nimblesite/SharpLsp/issues/33) feat: update Shipwright repo fixtures for Forge after all deployment issues are resolved — Pending release verification.
+- [x] [#23](https://github.com/Nimblesite/SharpLsp/issues/23) Rename: F# active patterns — Failed or partial, evidence posted, skipped regression preserved, issue open.
+- [x] [#22](https://github.com/Nimblesite/SharpLsp/issues/22) Rename: F# discriminated union cases — Failed or partial, evidence posted, skipped regression preserved, issue open.
+- [x] [#21](https://github.com/Nimblesite/SharpLsp/issues/21) Rename: F# record fields — Failed or partial, evidence posted, skipped regression preserved, issue open.
+- [ ] [#20](https://github.com/Nimblesite/SharpLsp/issues/20) Rename: aliases and type abbreviations — Pending release verification.
+- [ ] [#19](https://github.com/Nimblesite/SharpLsp/issues/19) Rename: generic type parameters — Pending release verification.
+- [ ] [#18](https://github.com/Nimblesite/SharpLsp/issues/18) Rename: namespaces and modules — Pending release verification.
+- [ ] [#17](https://github.com/Nimblesite/SharpLsp/issues/17) Rename: parameters and lambda parameters — Pending release verification.
+- [ ] [#16](https://github.com/Nimblesite/SharpLsp/issues/16) Rename: local variables and pattern/deconstruction bindings — Pending release verification.
+- [ ] [#15](https://github.com/Nimblesite/SharpLsp/issues/15) Rename: fields and events — Pending release verification.
+- [ ] [#14](https://github.com/Nimblesite/SharpLsp/issues/14) Rename: properties and indexers — Pending release verification.
+- [ ] [#13](https://github.com/Nimblesite/SharpLsp/issues/13) Rename: constructors through containing type rename — Pending release verification.
+- [ ] [#12](https://github.com/Nimblesite/SharpLsp/issues/12) Rename: methods, functions, local functions, and operators — Pending release verification.
+- [x] [#11](https://github.com/Nimblesite/SharpLsp/issues/11) Rename: enum members — Passed live release test, evidence posted, issue closed.
+- [x] [#10](https://github.com/Nimblesite/SharpLsp/issues/10) Rename: enums — Passed live release test, evidence posted, issue closed.
+- [ ] [#9](https://github.com/Nimblesite/SharpLsp/issues/9) Rename: classes, structs, interfaces, records, and delegates — Pending release verification.
+
+## [RELEASE-VERIFICATION-REMAINING]
+
+- [ ] Finish all unchecked runtime candidates and post evidence.
+- [ ] Exercise released VSIX for editor-only bugs.
+- [ ] Verify Windows and Linux reports on matching released binaries and platforms.
+- [ ] Verify CI/tooling issues against the published release run where runtime testing is inapplicable.
+- [ ] Confirm every failed runtime scenario has a skipped regression, and every closure has complete acceptance evidence.
+- [ ] Remove this plan when the exhaustive audit is complete.
