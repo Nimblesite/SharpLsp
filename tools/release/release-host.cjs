@@ -1,5 +1,5 @@
 // Shared helper: spawns only the downloaded bundle host with both
-// bundled engines against an isolated temp fixture. Offers { request, open, uri } to tests.
+// bundled engines against an isolated temp fixture. Offers { request, open, uri, pid } to tests.
 const assert = require("node:assert");
 const {
     createMessageConnection,
@@ -77,9 +77,17 @@ function buildFixture(prefix, files, entry, expectedCompilerError) {
 }
 
 // Spawns the bundle host + both bundled engines, wires a 90s-bounded request channel,
-// and always disposes the child and fixture. Returns { request, open, uri }.
+// and always disposes the child and fixture. Returns { request, open, uri, pid }.
 async function withReleaseHost(
-    { prefix, files, entry, prepare, expectedCompilerError, workspaceFolder },
+    {
+        prefix,
+        files,
+        entry,
+        prepare,
+        expectedCompilerError,
+        workspaceFolder,
+        capabilities = {},
+    },
     run,
 ) {
     const { host, csharp, fsharp } = requireBundle();
@@ -110,8 +118,11 @@ async function withReleaseHost(
             90000,
         );
     });
-    const request = (method, params) =>
-        Promise.race([connection.sendRequest(method, params), deadline]);
+    const request = (method, params, ...cancellation) =>
+        Promise.race([
+            connection.sendRequest(method, params, ...cancellation),
+            deadline,
+        ]);
     const uri = (name) => pathToFileURL(join(root, name)).href;
     const open = (name, languageId, text = files[name]) =>
         connection.sendNotification("textDocument/didOpen", {
@@ -131,10 +142,10 @@ async function withReleaseHost(
         await request("initialize", {
             processId: process.pid,
             rootUri: pathToFileURL(workspace).href,
-            capabilities: {},
+            capabilities,
         });
         await connection.sendNotification("initialized", {});
-        await run({ request, open, uri });
+        await run({ request, open, uri, pid: child.pid });
     } finally {
         try {
             await request("shutdown", null);

@@ -21,7 +21,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 
 - [ ] [#564](https://github.com/Nimblesite/SharpLsp/issues/564) Logging is far too verbose by default: add config-controlled logging modes (quiet/normal/verbose/trace) with a quieter default — Pending release verification.
 - [ ] [#563](https://github.com/Nimblesite/SharpLsp/issues/563) Initial TestFixtures.sln load is 30-110s: F# sidecar restores and loads every .fsproj under the folder (33 projects), re-restoring 'stale' projects on every open — Pending release verification.
-- [ ] [#562](https://github.com/Nimblesite/SharpLsp/issues/562) F# references, implementations and call hierarchy ignore request cancellation — Pending release verification.
+- [x] [#562](https://github.com/Nimblesite/SharpLsp/issues/562) F# references, implementations and call hierarchy ignore request cancellation — All three ignore real cancellation until the native FCS source read releases after20s. Three enabled regressions fail the2s cancellation assertion, skipped by default. Evidence posted, issue open.
 - [ ] [#561](https://github.com/Nimblesite/SharpLsp/issues/561) Host can deadlock after sharplsp/loadSolution: synchronous Salsa invalidate on a Tokio worker — Pending release verification.
 - [x] [#559](https://github.com/Nimblesite/SharpLsp/issues/559) C# rename silently returns null for invalid identifiers instead of an LSP error — Passed live release test, evidence posted, issue closed.
 - [x] [#557](https://github.com/Nimblesite/SharpLsp/issues/557) Find references on a C# symbol from F# omits its C# declaration and uses — Failed or partial, evidence posted, skipped regression preserved, issue open.
