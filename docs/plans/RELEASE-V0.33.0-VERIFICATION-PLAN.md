@@ -110,7 +110,7 @@ Confirmed failures have enabled regression tests that fail on the official relea
 - [ ] [#363](https://github.com/Nimblesite/SharpLsp/issues/363) Flaky on Windows: CPU snapshot test asserts samples after a fixed 2 s sleep — Pending release verification.
 - [ ] [#355](https://github.com/Nimblesite/SharpLsp/issues/355) Profiler: Show Reference Graph started during an auto-capture never returns, and the suspect list resets — Pending release verification.
 - [ ] [#354](https://github.com/Nimblesite/SharpLsp/issues/354) Profiler: a memory capture in flight when the target exits never finishes and blocks the next Track Memory — Pending release verification.
-- [ ] [#343](https://github.com/Nimblesite/SharpLsp/issues/343) [Bug]: C# LSP does not report diagnostics from external analyzers such as StyleCop — Pending release verification.
+- [x] [#343](https://github.com/Nimblesite/SharpLsp/issues/343) [Bug]: C# LSP does not report diagnostics from external analyzers such as StyleCop — Published release reports StyleCop/CA/IDE diagnostics and documentation links, including alongside unsaved compiler errors. Evidence posted, issue closed.
 - [ ] [#324](https://github.com/Nimblesite/SharpLsp/issues/324) BUG: website dependency audit blocks release on unpatched braces stack exhaustion — Pending release verification.
 - [ ] [#318](https://github.com/Nimblesite/SharpLsp/issues/318) Upstream our netcoredbg patches to Samsung/netcoredbg (hot reload over DAP, symbol-less exception stepping) — Pending release verification.
 - [ ] [#314](https://github.com/Nimblesite/SharpLsp/issues/314) F#: a project-wide query right after an unsaved edit re-checks every in-memory reader — Pending release verification.
