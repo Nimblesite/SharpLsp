@@ -341,6 +341,20 @@ mod load_completion_tests {
     use super::*;
     use std::time::{Duration, Instant};
 
+    /// [DIAG-ARCHITECTURE-SALSA] A stopped connection can establish a fresh session.
+    #[test]
+    fn diagnostics_session_reinitializes_after_shutdown() -> Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let capabilities = ClientCapabilities::default();
+        let config = DiagnosticsConfig::default();
+        initialize(&capabilities, &config, &runtime, [None, None], sender.clone())?;
+        shutdown()?;
+        initialize(&capabilities, &config, &runtime, [None, None], sender)?;
+        assert!(store().is_ok(), "replacement connection owns a usable store");
+        shutdown()
+    }
+
     /// [DIAG-TRUTH-GUARANTEES] #561: a held session cannot stall Tokio's timer worker.
     #[test]
     fn load_completion_does_not_block_a_tokio_worker() {
