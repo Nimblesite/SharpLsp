@@ -121,6 +121,7 @@ F# first.
 | C# | Use null propagation / coalesce | IDE0031, IDE0029, IDE0030 | `dotnet_style_null_propagation`, `dotnet_style_coalesce_expression = true` | — |
 | C# | Remove unused value assignment | IDE0059 | `csharp_style_unused_value_assignment_preference = discard_variable` | — |
 | C# | Inline temporary variable | — | — (fix-all only) | — |
+| F#/C# | Update vulnerable package ([PKG-VULN-FIX]) | NU1903, NU1904 (error-mapped codes of [PKG-VULN-SEVERITY]) | TOML `[nuget.vulnerabilities] enforce_in_build = true`; MSBuild `WarningsAsErrors += NU1903;NU1904` | — |
 
 Every row also writes `dotnet_diagnostic.<ID>.severity = error` (the default enforce
 severity; the user may pick `warning`) and, for C# IDE rules, MSBuild

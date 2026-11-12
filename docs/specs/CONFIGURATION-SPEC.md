@@ -56,6 +56,7 @@ force, and the failure is logged. A valid one is applied as follows:
 |---|---|
 | `[analyzers]` | When changed, pushed to both compilers (`analyzers/configure`) before diagnostics refresh, so the next pull is analyzed under them |
 | `[diagnostics]` | Pushed to both compilers (`diagnostics/configure`); cached reports are invalidated and the client is asked to refresh |
+| `[nuget.vulnerabilities]` | Advisory-severity → diagnostic-severity mapping ([PKG-VULN-SEVERITY]); vulnerable-package diagnostics are recomputed and the client is asked to refresh |
 | `[csharp] solution_path` | The C# workspace reopens on the new solution |
 | `[debug]`, `[testing]` | Read for each launch, attach or test build |
 | `[server]`, `[csharp] enabled`, `[fsharp] enabled`, `[profiler]` | Read only at startup. A change produces one `window/showMessage` warning that names it and asks for a restart |
