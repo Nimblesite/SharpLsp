@@ -2,6 +2,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpRenameNames
 
 open System
+open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken
@@ -15,7 +16,7 @@ let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
     | :? FSharpEntity as entity when entity.IsFSharpExceptionDeclaration -> Char.IsUpper(first)
     | _ -> true
 
-let isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
+let isValidNewName (checker: FSharpChecker) (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
     if String.IsNullOrWhiteSpace(newName) then false
     else
         let genericPrefix =
@@ -34,7 +35,8 @@ let isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (newName:
                 PrettyNaming.IsIdentifierName(newName)
                 || (newName.Length > 4
                     && newName.StartsWith("``", StringComparison.Ordinal)
-                    && newName.EndsWith("``", StringComparison.Ordinal))
+                    && newName.EndsWith("``", StringComparison.Ordinal)
+                    && (checker.TokenizeFile(newName) |> Array.sumBy Array.length) = 1)
         newName <> "_"
         && newName <> token.Text
         && (if genericPrefix = "" then not genericName

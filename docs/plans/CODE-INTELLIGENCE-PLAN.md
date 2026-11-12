@@ -51,6 +51,7 @@ The five completed core items were verified against the latest published v0.32.1
   - [x] Enforce uppercase exception labels — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
   - [x] Preserve the caret in statically resolved generic prepare/rename spans and accept compiler-valid `^U` and `'U` replacements — `FSharpRenameSemanticTests`, [RENAME-FSHARP-PREPARE], [RENAME-FSHARP-APPLY]
   - [x] Reject lowercase active-pattern case names forbidden by FS0623 — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
+  - [x] Reject escaped names that FCS lexes as multiple adjacent tokens but the compiler rejects with FS3563 — `FSharpRenameNameValidationTests`, [RENAME-ERRORS]
 - [x] Wire F# sidecar to FCS rename/symbol-use pipeline — `FSharpRename.fs`, `FSharpReferences.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-APPLY]
 - [x] Emit edits for every declaration and usage location in F# projects — `FSharpRenameSemanticTests` asserts exact declaration and usage edits across two ordered files, [RENAME-FSHARP-APPLY]
 - [x] Preserve F# file-ordering semantics during project-wide rename — `FSharpRenameFileOrderTests` proves nonalphabetical compile order, all cross-file edits, and binding to the later shadowing declaration, [RENAME-FSHARP-APPLY]
