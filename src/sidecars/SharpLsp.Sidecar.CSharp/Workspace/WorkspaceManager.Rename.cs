@@ -87,11 +87,14 @@ internal sealed partial class WorkspaceManager
             .ConfigureAwait(false);
         // [RENAME-ERRORS] Invalid names must reach the client as a failure, not a no-op.
         return target is null || _solution is null ? EmptyRenameResult()
+            : target.Value.Foreign
+                ? !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
+                    : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
+                    : await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct).ConfigureAwait(false)
+            : target.Value.Symbol is IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator }
+                ? await RenameOperatorAsync(_solution, target.Value, newName, ct).ConfigureAwait(false)
             : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
             : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
-            : target.Value.Foreign
-                ? await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
-                    .ConfigureAwait(false)
             : await RenameSourceSymbolAsync(_solution, target.Value.Symbol, newName, ct)
                 .ConfigureAwait(false);
     }
@@ -176,7 +179,10 @@ internal sealed partial class WorkspaceManager
         var foreign =
             targetSymbol is not null
             && FSharpProjectSymbols.Declares(document.Project, targetSymbol);
-        return targetSymbol is not null && (foreign || IsSourceSymbol(targetSymbol))
+        return targetSymbol is not null
+            && (foreign || IsSourceSymbol(targetSymbol))
+            && (targetSymbol is not IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method
+                || method.Parameters.Length == 2)
             ? new RenameTarget(document, text, targetSymbol, token!.Value, foreign)
             : null;
     }
@@ -194,51 +200,14 @@ internal sealed partial class WorkspaceManager
 
     private static bool IsIdentifierAtPosition(SyntaxToken? token, int position)
     {
-        return token is { RawKind: (int)SyntaxKind.IdentifierToken }
-            && token.Value.Span.Contains(position);
+        return token is { } candidate
+            && ((candidate.IsKind(SyntaxKind.IdentifierToken) && candidate.Span.Contains(position))
+                || IsOperatorAtPosition(candidate, position));
     }
 
     private static bool IsSourceSymbol(ISymbol symbol)
     {
         return symbol.Locations.Any(location => location.IsInSource);
-    }
-
-    private static PrepareRenameResult PrepareResult(RenameTarget? target)
-    {
-        if (target is null)
-        {
-            return new PrepareRenameResult(
-                CanRename: false,
-                StartLine: 0,
-                StartCharacter: 0,
-                EndLine: 0,
-                EndCharacter: 0,
-                Placeholder: ""
-            );
-        }
-
-        var lineSpan = target.Value.Text.Lines.GetLinePositionSpan(target.Value.Token.Span);
-        return CreatePrepareResult(target.Value.Token.Text, lineSpan);
-    }
-
-    private static PrepareRenameResult CreatePrepareResult(
-        string placeholder,
-        LinePositionSpan span
-    )
-    {
-        return new PrepareRenameResult(
-            CanRename: true,
-            StartLine: span.Start.Line,
-            StartCharacter: span.Start.Character,
-            EndLine: span.End.Line,
-            EndCharacter: span.End.Character,
-            Placeholder: placeholder
-        );
-    }
-
-    private static PrepareRenameQueryResult PrepareSuccess(PrepareRenameResult result)
-    {
-        return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(result);
     }
 
     private static bool CanUseNewName(RenameTarget target, string newName)

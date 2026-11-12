@@ -63,6 +63,7 @@ The five completed core items were verified against the latest published v0.32.1
 - [x] Enums
 - [x] Enum members
 - [ ] Methods, functions, local functions, operators, and conversion operators
+  - [x] Rename a C# binary `+` overload to `-` from its declaration or `+` use, updating bound `+` and `+=` uses and rejecting duplicate signatures; reject unary `+` until its distinct metadata mapping is supported — `WorkspaceManagerRenameRoslynEditsTests`, [RENAME-COVERAGE]
 - [x] Constructors via containing type rename
 - [x] Properties and indexers
 - [x] Fields and events
@@ -75,7 +76,7 @@ The five completed core items were verified against the latest published v0.32.1
 - [x] F# discriminated union cases
 - [x] F# active patterns
 
-The real-editor C# 37-case symbol suite and F# 27-case symbol suite passed on 2026-11-12. The F# 15-case edge suite separately verified indexer and namespace rename. Each symbol case prepares, applies, rechecks, and reverses its exact edits; direct C# operator and conversion-operator rename remains open.
+The real-editor C# 37-case symbol suite and F# 27-case symbol suite passed on 2026-11-12. The F# 15-case edge suite separately verified indexer and namespace rename. Each symbol case prepares, applies, rechecks, and reverses its exact edits; other C# operators and conversion-operator rename remain open.
 
 ### Rename Tests
 

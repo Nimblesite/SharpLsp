@@ -434,6 +434,15 @@ public sealed class WorkspaceManagerQueryFixture : IAsyncLifetime, IDisposable
         }
 
         public partial class PartialThing { }
+
+        public readonly struct Number
+        {
+            public static Number operator +(Number a, Number b) => a;
+            public static Number operator +(Number a) => a;
+            public static Number Sum(Number a, Number b) => a + b;
+            public static Number Accumulate(Number a, Number b) { a += b; return a; }
+        }
+        public readonly struct ConflictingNumber { public static ConflictingNumber operator +(ConflictingNumber a, ConflictingNumber b) => a; public static ConflictingNumber operator -(ConflictingNumber a, ConflictingNumber b) => a; }
         """;
 
     private readonly string _root = NativePaths.Temp($"sharplsp-wmq-tests-{Guid.NewGuid():N}");
