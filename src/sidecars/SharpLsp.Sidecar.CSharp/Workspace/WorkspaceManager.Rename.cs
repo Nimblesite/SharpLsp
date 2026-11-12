@@ -274,10 +274,22 @@ internal sealed partial class WorkspaceManager
         }
 
         var target = RenameConflictTarget(symbol);
-        return target.ContainingType is { } type
+        return target is IMethodSymbol { MethodKind: MethodKind.Ordinary } method
+                ? HasMethodConflict(method, valueText)
+            : target.ContainingType is { } type
                 ? HasDifferentSymbol(type.GetMembers(valueText), target)
             : target is INamedTypeSymbol named ? HasNamedTypeConflict(named, valueText)
             : target is INamespaceSymbol ns && HasNamespaceConflict(ns, valueText);
+    }
+
+    private static bool HasMethodConflict(IMethodSymbol method, string valueText)
+    {
+        // [RENAME-CSHARP] Distinct signatures can legally share a method name.
+        return method.ContainingType.GetMembers(valueText).Any(candidate =>
+            !SymbolEqualityComparer.Default.Equals(candidate, method)
+            && (candidate is not IMethodSymbol other
+                || SymbolSignatureComparer.SameMethod(method, other))
+        );
     }
 
     /// <summary>
@@ -316,9 +328,10 @@ internal sealed partial class WorkspaceManager
     private static bool HasNamedTypeConflict(INamedTypeSymbol symbol, string valueText)
     {
         var candidates =
-            symbol.ContainingType?.GetTypeMembers(valueText).Cast<ISymbol>()
+            symbol.ContainingType?.GetTypeMembers(valueText)
             ?? symbol.ContainingNamespace.GetTypeMembers(valueText);
-        return HasDifferentSymbol(candidates, symbol);
+        // [RENAME-CSHARP] A generic type and a non-generic type may share a name.
+        return HasDifferentSymbol(candidates.Where(candidate => candidate.Arity == symbol.Arity), symbol);
     }
 
     private static bool HasNamespaceConflict(INamespaceSymbol symbol, string valueText)
