@@ -9,6 +9,7 @@ open MessagePack
 open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
+open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDiagnosticsDocumentsTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpScriptDiagnosticsTests
 
@@ -132,4 +133,37 @@ type ScriptCancellationTests(fixture: EngineDiagnosticsFixture) =
         do! this.CancelQueuedWhileHeld(held)
         do! this.AfterCancellation(held)
         do! this.Alive()
+    }
+
+    [<Theory>]
+    [<InlineData("textDocument/references")>]
+    [<InlineData("textDocument/implementation")>]
+    [<InlineData("callHierarchy/incomingCalls")>]
+    member _.``project navigation cancellation releases the serial request queue``(methodName: string) = task {
+        let fixture = EngineDiagnosticsFixture()
+        use cleanup = { new IAsyncDisposable with
+            member _.DisposeAsync() = ValueTask((fixture :> IAsyncLifetime).DisposeAsync()) }
+        do! (fixture :> IAsyncLifetime).InitializeAsync()
+        let savedExtra = File.ReadAllText(fixture.Extra)
+        use! held = NativeHeldSource.create fixture.Extra savedExtra
+        let payload =
+            if methodName = "textDocument/references" then
+                MessagePackSerializer.Serialize({ ReferencesRequest.FilePath = fixture.Valid; Line = 2; Character = 5; IncludeDeclaration = true })
+            else
+                MessagePackSerializer.Serialize({ PositionRequest.FilePath = fixture.Valid; Line = 2; Character = 5 })
+        let id, pending = fixture.Begin(methodName, payload)
+        do! held.Opened.WaitAsync(TimeSpan.FromSeconds(20.0))
+        do! fixture.Cancel(id)
+        try
+            let! response = pending.WaitAsync(TimeSpan.FromSeconds(5.0))
+            assertCancelled id response
+            Assert.True(held.IsHeld, "navigation cancellation must precede releasing obsolete source I/O")
+            let! ping = fixture.Send("ping", [||]).WaitAsync(TimeSpan.FromSeconds(5.0))
+            Assert.Null(ping.Error)
+            Assert.Equal("pong", SidecarEndToEndTests.deserialize<string>(ping.Payload))
+            do! held.Release()
+        with error ->
+            do! held.Release()
+            let! _ = pending.WaitAsync(TimeSpan.FromSeconds(20.0))
+            return raise error
     }
