@@ -11,7 +11,9 @@ Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI
 - [x] Restore missing refactoring videos in three locales: all 9 desktop/phone checks pass.
 - [x] Verify Rust and Zed formatting/clippy with CI targets (November 12).
 - [ ] Finish full website suite (1,035 cases) and full CI gates. First run: 1,020 passed, 11 skipped, four failed. Refactoring fixes passed all nine targeted checks; the caption 404 did not reproduce in 27 repeated checks. A fresh full pass is running; do not count the first run as green.
-- [ ] Resolve local CSharpier configuration discovery failure: `dotnet csharpier check src/sidecars/` exits before formatting because macOS denies enumeration of `/Users/christianfindlay/Documents`; explicit `--config-path .editorconfig` has the same failure. No suppression or source change applied.
+- [x] Check all 313 .NET files with the existing EditorConfig passed as an absolute `--config-path`; relative paths failed during parent-directory configuration discovery on macOS. No formatter settings or source changed.
+- [x] Verify VS Code formatting and full `_lint-vsix`: regenerate profiler contributions to restore canonical menu ordering after #576; generator checks, 45 tooling checks, ESLint and typecheck pass.
+- [x] Run `make audit`: all ecosystem gates pass; RustSec reports one pre-existing allowed rustix warning (RUSTSEC-2026-0486), so this is not a claim of zero advisories.
 - [x] Review pi's dependency audit; align Java setup and Gradle task pins, reject incompatible npm majors.
 - [x] Complete merge (`fd26b19c`); staging ancestry is included. Retain the staging ref required by the Dependabot workflow and its target-branch configuration.
 - [ ] Push after validation.
