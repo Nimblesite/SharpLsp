@@ -163,11 +163,13 @@ pub fn load_started() {
 /// A compiler finished loading a selected solution, successfully or not. The
 /// revision moves first, so a refusal computed during the load can never reply
 /// as settled in the gap before the load's own invalidation. [DIAG-TRUTH-GUARANTEES]
-pub fn load_finished() {
-    if let Err(error) = invalidate() {
-        warn!(%error, "Diagnostic inputs not invalidated after a solution load");
+pub async fn load_finished() {
+    match tokio::task::spawn_blocking(invalidate).await {
+        Ok(Err(error)) => warn!(%error, "Diagnostic inputs not invalidated after a solution load"),
+        Err(error) => warn!(%error, "Diagnostic load completion task failed"),
+        Ok(Ok(())) => {}
     }
-    // Saturating: a finish without its start can never underflow the count.
+    // Invalidation completes before the load can appear settled.
     let _ = LOADS.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
 }
 
@@ -231,8 +233,9 @@ pub fn begin_change() {
 
 /// Apply one store change and retain the standard debounced refresh.
 fn change_store(operation: impl FnOnce(&PullStore)) -> Result<()> {
+    let store = store()?;
+    operation(&store);
     with_session(|session| {
-        operation(&session.store);
         schedule_refresh(session);
         Ok(())
     })
@@ -329,7 +332,7 @@ fn analyzer(
                 Some(cancel),
             ))
             .map(Arc::new)
-        .map_err(|error| AnalysisError(format!("{error:#}")))
+            .map_err(|error| AnalysisError(format!("{error:#}")))
     })
 }
 
@@ -356,13 +359,16 @@ mod load_completion_tests {
         let elapsed = runtime.block_on(async {
             load_started();
             let started = Instant::now();
-            let completion = tokio::spawn(async { load_finished() });
+            let completion = tokio::spawn(async { load_finished().await });
             tokio::time::sleep(Duration::from_millis(20)).await;
             let elapsed = started.elapsed();
             completion.await.expect("load completion task");
             elapsed
         });
         holder.join().expect("test holder");
-        assert!(elapsed < Duration::from_millis(100), "Tokio timer stalled for {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "Tokio timer stalled for {elapsed:?}"
+        );
     }
 }

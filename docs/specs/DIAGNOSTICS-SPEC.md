@@ -441,6 +441,7 @@ When a file changes:
 
 ### [DIAG-TRUTH-GUARANTEES] Guarantees
 
+- Solution-load completion invalidates diagnostics before clearing the loading state. Salsa invalidation runs off Tokio workers, and store mutations do not hold the diagnostics session lock across Salsa writes (#561).
 - If `dotnet build` succeeds with zero errors against the same source, the next pull (after refresh debounce + restore completion) returns zero Error-severity diagnostics.
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.
