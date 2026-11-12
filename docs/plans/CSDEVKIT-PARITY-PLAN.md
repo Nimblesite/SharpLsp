@@ -293,6 +293,7 @@ Features users expect within the first day of use.
   - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
   - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
   - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
+  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`).
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
   - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`

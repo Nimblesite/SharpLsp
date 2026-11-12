@@ -462,7 +462,7 @@ async function runTargets(
     const rebuilt = await rebuild(target, modules, context.options);
     const one = rebuilt.ok
       ? await runModules(await relisted(rebuilt.value, testIds, context), testIds, context)
-      : emptyOutcome(rebuilt.error);
+      : { ...emptyOutcome(rebuilt.error), output: rebuilt.error };
     if (one === undefined) continue;
     merged = merged === undefined ? one : mergeKeepingFailures(merged, one);
   }

@@ -17,7 +17,6 @@ import { removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
 const MARKER = 'SHARPLSP_RELEASE_PREFLIGHT_OUTPUT_SENTINEL';
-const regression = process.env['RUN_RELEASE_REGRESSIONS'] === '1' ? test : test.skip;
 
 function failBuild(root: string): string {
   const file = joinPath(root, 'Directory.Build.targets');
@@ -89,13 +88,10 @@ async function scenario(fixture: MtpFixture, optIn: boolean): Promise<void> {
 suite('Released MTP build failure output', () => {
   for (const fixture of MTP_FIXTURES.filter((item) => item.framework === 'xunit')) {
     for (const optIn of [false, true]) {
-      regression(
-        `${fixture.language} SDK opt-in ${String(optIn)} keeps build errors in run output`,
-        async function () {
-          this.timeout(FIXTURE_BUILD_MS);
-          await scenario(fixture, optIn);
-        },
-      );
+      test(`${fixture.language} SDK opt-in ${String(optIn)} keeps build errors in run output`, async function () {
+        this.timeout(FIXTURE_BUILD_MS);
+        await scenario(fixture, optIn);
+      });
     }
   }
 });
