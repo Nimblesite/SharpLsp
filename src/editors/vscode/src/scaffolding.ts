@@ -255,9 +255,12 @@ async function newFile(): Promise<void> {
   const uri = vscode.Uri.file(filePath);
 
   const edit = new vscode.WorkspaceEdit();
-  edit.createFile(uri, { ignoreIfExists: true });
+  edit.createFile(uri);
   edit.insert(uri, new vscode.Position(0, 0), content);
-  await vscode.workspace.applyEdit(edit);
+  if (!(await vscode.workspace.applyEdit(edit))) {
+    await vscode.window.showWarningMessage(`Could not create ${name}.cs. The file may already exist.`);
+    return;
+  }
 
   await vscode.window.showTextDocument(uri);
 

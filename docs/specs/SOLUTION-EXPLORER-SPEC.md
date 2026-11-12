@@ -658,6 +658,9 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 tier splices project XML as text; the glob-project decision belongs to the
 `MSBuild` DOM, not a string probe.
 
+If the target file already exists, creation fails without changing its saved
+content or unsaved editor buffer, and without adding it to a project.
+
 ## Remove Source File `[SE-REMOVE]`
 
 The counterpart of [SE-ADD-FILE]: a file leaves its project's compile order without anyone editing the project file by hand (#493).

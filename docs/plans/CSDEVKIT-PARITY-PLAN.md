@@ -185,7 +185,7 @@ All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
 | New Project from template | Yes | No | **MISSING** |
-| New File from template (class, interface, etc.) | Yes | No | **MISSING** |
+| New File from template (class, interface, etc.) | Yes | Yes | **DONE** — all five templates; existing saved/unsaved contents preserved |
 
 ### Features Where SharpLsp is Already Ahead
 
@@ -327,7 +327,7 @@ Features that make the daily experience smooth.
 - [x] **P3.1: Project Scaffolding**
   - [x] "SharpLsp: New Project" command using `dotnet new` templates — `sharplsp.newProject` (`scaffolding-e2e.test.ts`)
   - [x] Template selection quick pick (console, web, classlib, test, etc.) — `scaffolding.ts` templates: console, classlib, webapi, xunit, mstest, F# console
-  - [x] "SharpLsp: New File" command (class, interface, enum, struct, record) — `sharplsp.newFile` (`scaffolding-e2e.test.ts`)
+  - [x] "SharpLsp: New File" command (class, interface, enum, struct, record) — `sharplsp.newFile` (`scaffolding-e2e.test.ts`); five collision regressions fail before the fix, all eight new-file flows pass afterward, preserving saved and unsaved work
   - [x] Auto-add file to project — `add-source-file.ts` through `project/addCompileItem` (`scaffolding-e2e.test.ts` comment trap, #493)
   - [x] "SharpLsp: Add Project to Solution" command — `sharplsp.addProjectToSolution` (`scaffolding-e2e.test.ts`)
 
