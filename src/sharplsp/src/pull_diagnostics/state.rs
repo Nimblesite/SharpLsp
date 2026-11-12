@@ -93,10 +93,15 @@ pub fn is_pull() -> bool {
 
 /// Effective policy; standalone protocol publications use defaults before session creation.
 pub fn configuration() -> Result<DiagnosticsConfig> {
-    if SESSION.get().is_none() {
+    let Some(slot) = SESSION.get() else {
         return Ok(DiagnosticsConfig::default());
-    }
-    with_session(|session| Ok(session.config.clone()))
+    };
+    let current = slot
+        .lock()
+        .map_err(|error| anyhow::anyhow!("diagnostics session poisoned: {error}"))?;
+    Ok(current
+        .as_ref()
+        .map_or_else(DiagnosticsConfig::default, |session| session.config.clone()))
 }
 
 /// Record the workspace request before asynchronous opening, so old completions cannot replace it.
@@ -273,6 +278,8 @@ pub fn shutdown() -> Result<()> {
             .map_err(|error| anyhow::anyhow!("diagnostic shutdown lock poisoned: {error}"))?;
         let _session = session.take();
     }
+    PULL.store(false, Ordering::Release);
+    LOADS.store(0, Ordering::Release);
     Ok(())
 }
 
@@ -348,6 +355,7 @@ mod load_completion_tests {
     /// [DIAG-ARCHITECTURE-SALSA] A stopped connection can establish a fresh session.
     #[test]
     fn diagnostics_session_reinitializes_after_shutdown() -> Result<()> {
+        shutdown()?;
         let runtime = tokio::runtime::Runtime::new()?;
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let capabilities = ClientCapabilities::default();
@@ -371,6 +379,7 @@ mod load_completion_tests {
     /// [DIAG-ARCHITECTURE-SALSA] Shutdown cannot leak the old connection's mode or loads.
     #[test]
     fn diagnostics_shutdown_clears_connection_state() -> Result<()> {
+        shutdown()?;
         let runtime = tokio::runtime::Runtime::new()?;
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let capabilities: ClientCapabilities =
@@ -378,9 +387,15 @@ mod load_completion_tests {
         let config = DiagnosticsConfig::default();
         initialize(&capabilities, &config, &runtime, [None, None], sender)?;
         load_started();
-        assert!(is_pull(), "the first connection negotiated pull diagnostics");
+        assert!(
+            is_pull(),
+            "the first connection negotiated pull diagnostics"
+        );
         shutdown()?;
-        assert!(!loading(), "stopped compiler loads cannot outlive the connection");
+        assert!(
+            !loading(),
+            "stopped compiler loads cannot outlive the connection"
+        );
         assert!(!is_pull(), "the old connection's pull mode is discarded");
         assert!(configuration().is_ok(), "stopped state uses default policy");
         Ok(())

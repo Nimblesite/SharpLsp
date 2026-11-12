@@ -25,6 +25,8 @@ Instead:
 
 Rust-host salsa is the only diagnostic memoization mechanism. Its inputs include document text and version, project version, `global_state_version`, and effective diagnostic configuration; its tracked query returns the per-document diagnostic report and result identity.
 
+Shutdown releases the connection's session and clears its mode and in-flight load count. Until a later connection initializes a fresh session in the same host process, configuration lookup returns defaults; an active session cannot be silently replaced.
+
 The extension and sidecars may retain protocol, UI, compiler-workspace, and process state, but MUST NOT retain diagnostic arrays, result lookups, compilation-result memoization, or other client-side/sidecar-local caches. A sidecar computes a document on a salsa miss and returns the value without storing a SharpLsp cache. Workspace and configuration changes update salsa inputs, and salsa dependency tracking performs invalidation; no LRU, map-backed memo table, or parallel ad-hoc cache is permitted.
 
 ### [DIAG-ARCHITECTURE-EAGER-SCAN] No Eager Solution Scan
