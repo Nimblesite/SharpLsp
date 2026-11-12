@@ -329,6 +329,40 @@ fn analyzer(
                 Some(cancel),
             ))
             .map(Arc::new)
-            .map_err(|error| AnalysisError(format!("{error:#}")))
+        .map_err(|error| AnalysisError(format!("{error:#}")))
     })
+}
+
+#[cfg(test)]
+mod load_completion_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// [DIAG-TRUTH-GUARANTEES] #561: a held session cannot stall Tokio's timer worker.
+    #[test]
+    fn load_completion_does_not_block_a_tokio_worker() {
+        let session = SESSION.get_or_init(|| Mutex::new(None));
+        let (locked, ready) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _guard = session.lock().expect("test session mutex");
+            locked.send(()).expect("signal held lock");
+            std::thread::sleep(Duration::from_millis(200));
+        });
+        ready.recv().expect("wait for held lock");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let elapsed = runtime.block_on(async {
+            load_started();
+            let started = Instant::now();
+            let completion = tokio::spawn(async { load_finished() });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let elapsed = started.elapsed();
+            completion.await.expect("load completion task");
+            elapsed
+        });
+        holder.join().expect("test holder");
+        assert!(elapsed < Duration::from_millis(100), "Tokio timer stalled for {elapsed:?}");
+    }
 }
