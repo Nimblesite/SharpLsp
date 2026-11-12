@@ -421,6 +421,49 @@ let ``generic parameter rename refuses a reserved bang and accepts a plain name`
         cleanup dir
 }
 
+/// [RENAME-FSHARP-PREPARE] Statically resolved generic parameters use ^, not '.
+[<Fact>]
+let ``statically resolved generic parameter prepares and renames with caret`` () = task {
+    let input = source [ "module Generic"; "let inline twice (value: ^T) : ^T = value + value" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    try
+        let! prepared = FSharpRename.prepareRename state paths[0] 1 25
+        match prepared with
+        | None -> failwith "prepare refused the statically resolved generic parameter"
+        | Some range ->
+            Assert.Equal("^T", range.Placeholder)
+            Assert.Equal(25, range.StartCharacter)
+            Assert.Equal(27, range.EndCharacter)
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 25 "^U" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"valid caret generic rename was rejected: {message}"
+        | Ok edits ->
+            Assert.Equal<string list>(
+                [ "Generic.fs:1.25-1.27=>^U"; "Generic.fs:1.31-1.33=>^U" ],
+                edits |> List.map editKey |> List.sort)
+    finally
+        cleanup dir
+}
+
+/// [RENAME-FSHARP-APPLY] Inline constraints also permit an apostrophe spelling.
+[<Fact>]
+let ``statically resolved generic parameter accepts an apostrophe rename`` () = task {
+    let input = source [ "module Generic"; "let inline twice (value: ^T) : ^T = value + value" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 25 "'U" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"valid apostrophe rename was rejected: {message}"
+        | Ok edits ->
+            Assert.Equal<string list>(
+                [ "Generic.fs:1.25-1.27=>'U"; "Generic.fs:1.31-1.33=>'U" ],
+                edits |> List.map editKey |> List.sort)
+    finally
+        cleanup dir
+}
+
 // ── Compiler identity for fields and union cases ───────────────────
 
 let private IDENTITY_SOURCE =

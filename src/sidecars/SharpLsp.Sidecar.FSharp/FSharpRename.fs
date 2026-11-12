@@ -241,8 +241,14 @@ let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
 let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
     if String.IsNullOrWhiteSpace(newName) then false
     else
-        let genericName = newName.StartsWith("'", StringComparison.Ordinal)
-        let genericSymbol = symbol :? FSharpGenericParameter
+        let genericPrefix =
+            match symbol with
+            | :? FSharpGenericParameter as parameter ->
+                if parameter.IsSolveAtCompileTime then "^" else "'"
+            | _ -> ""
+        let genericName =
+            newName.StartsWith("'", StringComparison.Ordinal)
+            || newName.StartsWith("^", StringComparison.Ordinal)
         let compilerName =
             match token.Kind with
             | OperatorToken -> true
@@ -254,7 +260,9 @@ let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (
                     && newName.EndsWith("``", StringComparison.Ordinal))
         newName <> "_"
         && newName <> token.Text
-        && genericName = genericSymbol
+        && (if genericPrefix = "" then not genericName
+            elif genericPrefix = "^" then genericName
+            else newName.StartsWith(genericPrefix, StringComparison.Ordinal))
         && compilerName
         && allowsSymbolName symbol newName
         && classifyName checker newName = Some token.Kind
