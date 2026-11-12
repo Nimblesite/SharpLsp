@@ -13,11 +13,11 @@ use lsp_types::{
         CodeActionRequest, CodeActionResolveRequest, Completion, DocumentDiagnosticRequest,
         DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration,
         GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
-        LinkedEditingRange, PrepareRenameRequest, References, Rename, Request as _,
-        ResolveCompletionItem, SelectionRangeRequest, SemanticTokensFullDeltaRequest,
-        SemanticTokensFullRequest, SemanticTokensRangeRequest, SignatureHelpRequest,
-        TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
-        WorkspaceDiagnosticRequest, WorkspaceSymbolRequest,
+        LinkedEditingRange, PrepareRenameRequest, References, Request as _, ResolveCompletionItem,
+        SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
+        SemanticTokensRangeRequest, SignatureHelpRequest, TypeHierarchyPrepare,
+        TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
+        WorkspaceSymbolRequest,
     },
     Uri,
 };
@@ -147,11 +147,6 @@ pub(crate) fn handle_request(
         PrepareRenameRequest::METHOD => {
             semantic::rename::handle_prepare_rename(req, runtime, sidecar)
         }
-        Rename::METHOD => {
-            let (primary, fallback) =
-                pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-            semantic::rename::handle_rename(req, runtime, primary, fallback)
-        }
         // Call hierarchy
         CallHierarchyPrepare::METHOD => {
             hierarchy::handle_prepare(req, runtime, sidecar, call_hierarchy::map_hierarchy_item)
@@ -226,10 +221,10 @@ pub(crate) fn handle_request(
     if result.is_ok() && reveals_semantic_state(&method) {
         converge_provisional_publication(
             document_uri.as_ref(),
-            runtime,
+            runtime.handle(),
             csharp_sidecar,
             fsharp_sidecar,
-            connection,
+            &connection.sender,
         );
     }
 
@@ -412,7 +407,7 @@ pub(crate) fn pick_sidecar<'a>(
 ///
 /// Primary is chosen by document language. Fallback is the other sidecar,
 /// used when the primary can't resolve the symbol (cross-language reference).
-fn pick_sidecar_with_fallback<'a>(
+pub(crate) fn pick_sidecar_with_fallback<'a>(
     req: &Request,
     csharp: Option<&'a Arc<SidecarManager>>,
     fsharp: Option<&'a Arc<SidecarManager>>,

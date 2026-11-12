@@ -211,7 +211,10 @@ impl Requests {
 fn handles(request: &Request) -> bool {
     matches!(
         request.method.as_str(),
-        "textDocument/diagnostic" | "workspace/diagnostic" | "textDocument/codeLens"
+        "textDocument/diagnostic"
+            | "workspace/diagnostic"
+            | "textDocument/codeLens"
+            | "textDocument/rename"
     )
 }
 
@@ -223,6 +226,7 @@ impl Drop for Requests {
 
 /// Cancellation answers immediately; the worker stops between documents.
 async fn compute(request: Request, context: Context, snapshot: Snapshot) -> HandlerResult {
+    let rename = request.method == "textDocument/rename";
     let cancel = snapshot.cancel.clone();
     let worker = tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot));
     let result = tokio::select! {
@@ -232,6 +236,9 @@ async fn compute(request: Request, context: Context, snapshot: Snapshot) -> Hand
     };
     match result {
         Ok(value) => HandlerResult::Ok(value),
+        Err(error) if rename && !error.is::<Interrupted>() => {
+            HandlerResult::Err(JsonRpcError::new(-32603, format!("{error:#}")))
+        }
         Err(error) => HandlerResult::Err(rpc_error(&error)),
     }
 }
@@ -257,7 +264,30 @@ fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<V
 
 /// Compiler-backed editor work shares the same lifetime and stays off the input loop.
 fn document_request(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
-    if request.method == "textDocument/codeLens" {
+    if request.method == "textDocument/rename" {
+        let uri = serde_json::from_value::<lsp_types::RenameParams>(request.params.clone())?
+            .text_document_position
+            .text_document
+            .uri;
+        let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
+        let (primary, fallback) =
+            crate::dispatch::pick_sidecar_with_fallback(&request, csharp, fsharp);
+        let value = crate::semantic::rename::handle_rename(
+            request,
+            &context.runtime,
+            primary,
+            fallback,
+            snapshot.cancellation(),
+        )?;
+        crate::diagnostic_publish::converge_provisional_publication(
+            Some(&uri),
+            &context.runtime,
+            csharp,
+            fsharp,
+            &context.sender,
+        );
+        Ok(value)
+    } else if request.method == "textDocument/codeLens" {
         let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
         let sidecar = crate::dispatch::pick_sidecar(&request, csharp, fsharp);
         crate::code_lens::handle_code_lens(

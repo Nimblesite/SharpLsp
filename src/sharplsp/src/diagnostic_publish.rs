@@ -36,10 +36,10 @@ pub(crate) fn sidecar_for_uri<'a>(
 /// stream. [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE]
 pub(crate) fn converge_provisional_publication(
     uri: Option<&Uri>,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
-    connection: &Connection,
+    sender: &crossbeam_channel::Sender<lsp_server::Message>,
 ) {
     let Some(uri) = uri else { return };
     if !diagnostics::published_set_is_provisional(uri) {
@@ -52,10 +52,7 @@ pub(crate) fn converge_provisional_publication(
         return;
     };
     runtime.block_on(diagnostics::converge_provisional(
-        sidecar,
-        &connection.sender,
-        uri,
-        &file_path,
+        sidecar, sender, uri, &file_path,
     ));
 }
 

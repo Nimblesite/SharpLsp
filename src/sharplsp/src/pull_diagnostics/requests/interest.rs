@@ -1,6 +1,6 @@
 //! Input observation retains no versions or diagnostic results. [DIAG-ANALYSIS-CANCELLATION]
 use lsp_server::{Notification, Request};
-use lsp_types::{CodeLensParams, DocumentDiagnosticParams, Uri};
+use lsp_types::{CodeLensParams, DocumentDiagnosticParams, RenameParams, Uri};
 use lspkit_server::{CancellationHandle, RequestInterest};
 
 use crate::paths;
@@ -36,6 +36,9 @@ fn document_input(request: &Request) -> Option<(Uri, Option<String>)> {
         "textDocument/codeLens" => serde_json::from_value::<CodeLensParams>(request.params.clone())
             .ok()
             .map(|params| (params.text_document.uri, None)),
+        "textDocument/rename" => serde_json::from_value::<RenameParams>(request.params.clone())
+            .ok()
+            .map(|params| (params.text_document_position.text_document.uri, None)),
         _ => None,
     }
 }
@@ -51,7 +54,11 @@ pub(super) fn changed(cancellation: &CancellationHandle, notification: &Notifica
     let Some(key) = change_uri(notification).and_then(|uri| resource(&uri)) else {
         return;
     };
-    for method in ["textDocument/diagnostic", "textDocument/codeLens"] {
+    for method in [
+        "textDocument/diagnostic",
+        "textDocument/codeLens",
+        "textDocument/rename",
+    ] {
         cancellation.supersede(method, &key);
     }
     cancellation.supersede(WORKSPACE, WORKSPACE_RESOURCE);
