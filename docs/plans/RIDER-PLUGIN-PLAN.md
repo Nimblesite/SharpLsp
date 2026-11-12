@@ -108,15 +108,16 @@ only — Community editions are not supported.
 
 ### Phase 2: LSP server integration
 
-- [ ] `SharpLspLspServerSupportProvider` implements
+- [x] `SharpLspServerSupportProvider` implements
       `com.intellij.platform.lsp.api.LspServerSupportProvider`
-- [ ] `SharpLspLspServerDescriptor` extends `ProjectWideLspServerDescriptor`
+- [ ] `SharpLspServerDescriptor` extends `ProjectWideLspServerDescriptor`
       and overrides:
-    - [ ] `isSupportedFile(VirtualFile)` — `.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`
-    - [ ] `createCommandLine()` — resolves `sharplsp` via the same
-          priority list as the VS Code extension
-    - [ ] `lsp4jServerClass` — points at `SharpLspLsp4jServer`
-- [ ] `SharpLspLsp4jServer` interface with `@JsonRequest` methods for
+    - [x] `isSupportedFile(VirtualFile)` — `.cs`, `.csx`, `.fs`, `.fsx`, `.fsi`
+    - [ ] `createCommandLine()` — align binary resolution with the VS Code extension;
+          Rider currently uses project setting → `~/.local/bin` → `PATH`, while
+          VS Code delegates installation to Shipwright
+    - [x] `lsp4jServerClass` — points at `SharpLsp4jServer`
+- [x] `SharpLsp4jServer` interface with `@JsonRequest` methods for
       `sharplsp/workspaceSymbols`, `sharplsp/nuget/installed`, `sharplsp/nuget/targets`,
       `sharplsp/loadSolution`
 - [ ] DTO data classes matching the Rust JSON wire format exactly
@@ -125,7 +126,7 @@ only — Community editions are not supported.
 
 ### Phase 3: Solution Explorer tool window
 
-- [ ] `SharpLspSolutionToolWindowFactory` registered via `toolWindow` EP
+- [x] `SharpLspSolutionToolWindowFactory` registered via `toolWindow` EP
 - [ ] `SharpLspSolutionTreeModel` extends `StructureTreeModel` with
       `AsyncTreeModel` wrapping
 - [ ] Node hierarchy:
@@ -143,7 +144,7 @@ only — Community editions are not supported.
 
 ### Phase 4: Navigation and actions
 
-- [ ] Double-click on a file / symbol leaf opens the file at the symbol's
+- [x] Double-click on a file / symbol leaf opens the file at the symbol's
       range via `OpenFileDescriptor`
 - [ ] Right-click context menu:
     - [ ] `RevealInExplorerAction` on project nodes
@@ -155,8 +156,8 @@ only — Community editions are not supported.
 
 ### Phase 5: Auto-refresh on filesystem changes
 
-- [ ] Subscribe to `VirtualFileManager.VFS_CHANGES` for the project
-- [ ] Filter events to `.sln`, `.csproj`, `.fsproj`, `Directory.Build.props`,
+- [x] Subscribe to `VirtualFileManager.VFS_CHANGES` for the project
+- [x] Filter events to `.sln`, `.csproj`, `.fsproj`, `Directory.Build.props`,
       `Directory.Packages.props`
 - [ ] Debounce 300 ms, then reload the smallest affected subtree
 - [ ] Integration test: modifying a csproj triggers exactly one reload
@@ -165,9 +166,9 @@ only — Community editions are not supported.
 
 - [ ] `SharpLspSettings` — `PersistentStateComponent<SharpLspSettings.State>`,
       project-level, stored in `workspace.xml`
-- [ ] `SharpLspSettingsConfigurable` registered at `Settings → Tools → SharpLsp`
-- [ ] Fields: server path, log level, auto-load solution
-- [ ] `SharpLspLspServerDescriptor` reads settings when building the command
+- [x] `SharpLspSettingsConfigurable` registered at `Settings → Tools → SharpLsp`
+- [x] Fields: server path, log level, auto-load solution
+- [x] `SharpLspServerDescriptor` reads settings when building the command
       line
 
 ### Phase 7: Build infrastructure
@@ -180,9 +181,9 @@ only — Community editions are not supported.
 - [ ] Add `test-rider` Makefile target — `./gradlew test`
 - [ ] Add `lint-rider` Makefile target — `./gradlew check`
 - [ ] Add `clean-rider` Makefile target — `./gradlew clean`
-- [ ] Wire `build-rider` into the top-level `build` target
-- [ ] Wire `test-rider` into the top-level `test` target
-- [ ] Update README `Install` section with a one-paragraph Rider block
+- [x] Wire Rider build into the top-level `build` target (`_build-rider`)
+- [x] Wire Rider tests into the top-level `test` target (`_test-rider`)
+- [x] Update README `Install` section with a one-paragraph Rider block
 
 ### Phase 8: Tests
 
@@ -242,7 +243,7 @@ how it was installed — and CI built and coverage-gated it in that state.
 
 ### Phase 10: Docs
 
-- [ ] `docs/specs/RIDER-PLUGIN-SPEC.md` — sibling (done in this change)
+- [x] `docs/specs/RIDER-PLUGIN-SPEC.md` — sibling
 - [ ] Add a row for Rider to the `CSDEVKIT-PARITY-PLAN.md` feature matrix
 - [ ] Update `docs/specs/SHARPLSP-SPEC.md` editor matrix with Rider
 - [x] Add a troubleshooting note: "LSP API is paid-tier only — Community
