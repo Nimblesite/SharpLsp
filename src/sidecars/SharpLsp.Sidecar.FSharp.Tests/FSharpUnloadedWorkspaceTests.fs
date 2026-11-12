@@ -51,7 +51,7 @@ let ``checking a file against an unloaded workspace declines instead of throwing
     let fresh = FSharpWorkspace.create ()
     let path = NativePaths.Temp("sharplsp-unloaded-check.fs")
 
-    let! withSource = FSharpWorkspace.checkFileWithSource fresh path "module Unloaded\nlet x = 1\n"
+    let! withSource = FSharpWorkspace.checkFileWithSource fresh path "module Unloaded\nlet x = 1\n" System.Threading.CancellationToken.None
     let! project = FSharpWorkspace.checkProject fresh
 
     Assert.True(withSource.IsNone)

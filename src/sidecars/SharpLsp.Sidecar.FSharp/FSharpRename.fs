@@ -132,8 +132,7 @@ let private locateFileUses (state: FSharpWorkspace.FSharpWorkspaceState) (filePa
     task {
         if String.IsNullOrWhiteSpace(filePath) then return uses |> Array.map (fun _ -> None)
         else
-            let! text = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays filePath ct
-            let source = text |> Option.defaultWith (fun () -> raise (System.IO.FileNotFoundException("F# source file was not found.", filePath)))
+            let! source = FSharpWorkspace.readSourceWithCancellation state filePath ct
             let tokenized = tokenizeSource state.Checker source
             let! checkedFile = FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct
             let syntaxes = checkedFile |> Option.map (fun (parse, _, _) -> collectSyntaxes parse) |> Option.defaultValue [||]
@@ -296,8 +295,8 @@ let private renameChecked state parseResults checkResults source line character 
 
 /// Every use of the symbol `assemblyName` and `xmlDocSig` name. A rename by identity, from
 /// the other language with no F# file to anchor on, walks every loaded project.
-let private collectMatchingUses (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig =
-    FSharpForeignSymbols.usesIn state assemblyName xmlDocSig (FSharpWorkspace.allSourceFiles state)
+let private collectMatchingUses (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig ct =
+    FSharpForeignSymbols.usesIn state assemblyName xmlDocSig (FSharpWorkspace.allSourceFiles state) ct
 
 let private signatureHeaderEnd (xmlDocSig: string) =
     [| xmlDocSig.IndexOf('('); xmlDocSig.IndexOf('~') |]
@@ -403,15 +402,15 @@ let private matchingProjectedEdits
 
 let private transientFileEdits
     (state: FSharpWorkspace.FSharpWorkspaceState)
-    assemblyName staleXml currentName newName filePath =
+    assemblyName staleXml currentName newName filePath ct =
     task {
-        let source = FSharpWorkspace.readSource state filePath
+        let! source = FSharpWorkspace.readSourceWithCancellation state filePath ct
         let candidates = tokenCandidates state filePath source currentName
         if Array.isEmpty candidates then return [||]
         else
             let projectedCandidates = projectCandidatePositions newName candidates
             let projectedSource = projectSource source newName candidates
-            let! checkedFile = FSharpWorkspace.checkFileWithSource state filePath projectedSource
+            let! checkedFile = FSharpWorkspace.checkFileWithSource state filePath projectedSource ct
             let _, checkResults, checkedSource = FSharpForeignSymbols.requireCheckedFile filePath checkedFile
             return matchingProjectedEdits
                 assemblyName staleXml newName checkResults checkedSource projectedCandidates
@@ -419,7 +418,7 @@ let private transientFileEdits
 
 let private transientForeignEdits
     (state: FSharpWorkspace.FSharpWorkspaceState)
-    assemblyName xmlDocSig newName =
+    assemblyName xmlDocSig newName (ct: CancellationToken) =
     task {
         match declarationNameFromXmlDocSignature xmlDocSig with
         | None -> return []
@@ -431,13 +430,14 @@ let private transientForeignEdits
             if String.IsNullOrWhiteSpace(staleXml) then return []
             else
                 for filePath in files do
-                    let! fileEdits = transientFileEdits state assemblyName staleXml currentName newName filePath
+                    ct.ThrowIfCancellationRequested()
+                    let! fileEdits = transientFileEdits state assemblyName staleXml currentName newName filePath ct
                     edits.AddRange(fileEdits)
                 return edits.ToArray() |> distinctEdits
     }
 
 /// [SHARPLSP-FEATURES-REFACTORING] Rename references declared by another language sidecar.
-let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig newName =
+let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig newName ct =
     task {
         try
             if not state.IsLoaded then
@@ -445,11 +445,11 @@ let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xml
             elif [ assemblyName; xmlDocSig; newName ] |> List.exists String.IsNullOrWhiteSpace then
                 return []
             else
-                let! uses = collectMatchingUses state assemblyName xmlDocSig
-                let! located = tryEditsForUses state newName uses CancellationToken.None
+                let! uses = collectMatchingUses state assemblyName xmlDocSig ct
+                let! located = tryEditsForUses state newName uses ct
                 match located with
                 | Some edits -> return edits
-                | None -> return! transientForeignEdits state assemblyName xmlDocSig newName
+                | None -> return! transientForeignEdits state assemblyName xmlDocSig newName ct
         with ex ->
             Log.Debug(ex, "[F# RenameForeign] failed")
             return raise ex

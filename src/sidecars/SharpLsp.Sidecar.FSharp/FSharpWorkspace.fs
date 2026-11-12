@@ -294,6 +294,13 @@ let internal readSource (state: FSharpWorkspaceState) (filePath: string) : strin
         let normalizedPath = NativePaths.NormalizeFullPath filePath
         raise (FileNotFoundException("F# source file was not found.", normalizedPath))
 
+let internal readSourceWithCancellation (state: FSharpWorkspaceState) (filePath: string) ct =
+    task {
+        let! source = FSharpWorkspaceRuntime.tryReadSourceAsync state.Overlays filePath ct
+        return source |> Option.defaultWith (fun () ->
+            raise (FileNotFoundException("F# source file was not found.", NativePaths.NormalizeFullPath filePath)))
+    }
+
 /// Resolve a request path to the spelling held in project options.
 let internal projectFilePath (state: FSharpWorkspaceState) (filePath: string) : string =
     match optionsFor state filePath with
@@ -359,11 +366,12 @@ let internal checkFileWithParseWithCancellation (state: FSharpWorkspaceState) (f
 let internal checkFileWithParse state filePath =
     checkFileWithParseWithCancellation state filePath CancellationToken.None
 
-let internal checkFileWithSource state filePath source =
+let internal checkFileWithSource state filePath source (ct: CancellationToken) =
     task {
         if isLooseScript state filePath then
-            let! options, _ = FSharpProjectLoading.scriptOptions state.Checker filePath source CancellationToken.None
-            let! parseResults, checkAnswer = state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options)
+            let! options, _ = FSharpProjectLoading.scriptOptions state.Checker filePath source ct
+            let! parseResults, checkAnswer =
+                Async.StartAsTask(state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options), cancellationToken = ct)
             return interpretAnswer parseResults checkAnswer source
         elif not state.IsLoaded then
             return None
@@ -371,12 +379,13 @@ let internal checkFileWithSource state filePath source =
             let projectPath = projectFilePath state filePath
 
             let! parseResults, checkAnswer =
-                state.Checker.ParseAndCheckFileInProject(
-                    projectPath,
-                    0,
-                    SourceText.ofString source,
-                    (optionsFor state projectPath).Value
-                )
+                Async.StartAsTask(
+                    state.Checker.ParseAndCheckFileInProject(
+                        projectPath,
+                        0,
+                        SourceText.ofString source,
+                        (optionsFor state projectPath).Value
+                    ), cancellationToken = ct)
 
             return interpretAnswer parseResults checkAnswer source
     }

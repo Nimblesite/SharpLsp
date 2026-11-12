@@ -6,6 +6,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpForeignSymbols
 
 open System
+open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open SharpLsp.Sidecar.Common
@@ -48,9 +49,9 @@ let internal requireCheckedFile filePath checkedFile =
     |> Option.defaultWith (fun () -> raise (InvalidOperationException($"FCS could not check {filePath}")))
 
 /// Every use in `filePath` of the symbol `assemblyName` and `xmlDocSig` name.
-let internal usesInFile state assemblyName xmlDocSig filePath =
+let internal usesInFile state assemblyName xmlDocSig filePath (ct: CancellationToken) =
     task {
-        let! fileCheck = FSharpWorkspace.checkFile state filePath
+        let! fileCheck = FSharpWorkspace.checkFileWithCancellation state filePath ct
         let checkResults, _ = requireCheckedFile filePath fileCheck
         return
             checkResults.GetAllUsesOfAllSymbolsInFile()
@@ -59,11 +60,12 @@ let internal usesInFile state assemblyName xmlDocSig filePath =
     }
 
 /// Every use in `files` of the symbol `assemblyName` and `xmlDocSig` name, file by file.
-let internal usesIn state assemblyName xmlDocSig (files: string array) =
+let internal usesIn state assemblyName xmlDocSig (files: string array) (ct: CancellationToken) =
     task {
         let collected = ResizeArray<FSharpSymbolUse>()
         for filePath in files do
-            let! uses = usesInFile state assemblyName xmlDocSig filePath
+            ct.ThrowIfCancellationRequested()
+            let! uses = usesInFile state assemblyName xmlDocSig filePath ct
             collected.AddRange(uses)
         return collected.ToArray()
     }
@@ -107,7 +109,7 @@ let private inScope (state: FSharpWorkspace.FSharpWorkspaceState) (identity: Sym
             return []
         else
             let files = scopeOf state identity.AssemblyName
-            let! uses = usesIn state identity.AssemblyName identity.XmlDocSig files
+            let! uses = usesIn state identity.AssemblyName identity.XmlDocSig files System.Threading.CancellationToken.None
             return FSharpReferences.nameLocations state (query uses)
     }
 

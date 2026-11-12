@@ -479,7 +479,7 @@ module internal Helpers =
             toRenameIdentityWire
 
     let renameForeignHandler workspace =
-        requestHandler
-            (fun (request: RenameForeignRequest) ->
-                FSharpRename.renameForeign workspace request.AssemblyName request.XmlDocSig request.NewName)
-            toWorkspaceEdit
+        handleWithCancellation
+            (fun (request: RenameForeignRequest) ct ->
+                FSharpRename.renameForeign workspace request.AssemblyName request.XmlDocSig request.NewName ct)
+            (fun edits ct -> serializeOk (toWorkspaceEdit edits) ct)

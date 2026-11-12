@@ -221,7 +221,7 @@ let ``renaming by compiler identity reaches the same uses as a positional rename
         | None -> failwith "the record type carried no cross-language identity"
         | Some target ->
             let! edits =
-                FSharpRename.renameForeign state target.AssemblyName target.XmlDocSig "RenamedRecord"
+                FSharpRename.renameForeign state target.AssemblyName target.XmlDocSig "RenamedRecord" System.Threading.CancellationToken.None
             let actual = edits |> List.map editKey |> List.sort
             Assert.Equal<string list>(
                 List.sort
@@ -241,7 +241,7 @@ let ``renaming by an empty compiler identity produces no edits`` () = task {
     let! (state, dir, _fsproj, paths) = recordProject ()
     try
         Assert.NotEmpty(paths)
-        let! edits = FSharpRename.renameForeign state "" "" "RenamedRecord"
+        let! edits = FSharpRename.renameForeign state "" "" "RenamedRecord" System.Threading.CancellationToken.None
         Assert.Empty(edits)
     finally
         cleanup dir
