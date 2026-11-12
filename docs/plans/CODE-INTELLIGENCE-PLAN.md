@@ -52,21 +52,23 @@ The five completed core items were verified against the latest published v0.32.1
 
 ### Rename Code Element Coverage
 
-- [ ] Classes, structs, interfaces, records, and delegates
-- [ ] Enums
-- [ ] Enum members
+- [x] Classes, structs, interfaces, records, and delegates
+- [x] Enums
+- [x] Enum members
 - [ ] Methods, functions, local functions, operators, and conversion operators
-- [ ] Constructors via containing type rename
-- [ ] Properties and indexers
-- [ ] Fields and events
-- [ ] Local variables and pattern/deconstruction bindings
-- [ ] Parameters and lambda parameters
-- [ ] Namespaces and modules
-- [ ] Generic type parameters
-- [ ] Aliases and type abbreviations
-- [ ] F# record fields
-- [ ] F# discriminated union cases
-- [ ] F# active patterns
+- [x] Constructors via containing type rename
+- [x] Properties and indexers
+- [x] Fields and events
+- [x] Local variables and pattern/deconstruction bindings
+- [x] Parameters and lambda parameters
+- [x] Namespaces and modules
+- [x] Generic type parameters
+- [x] Aliases and type abbreviations
+- [x] F# record fields
+- [x] F# discriminated union cases
+- [x] F# active patterns
+
+The real-editor C# 37-case symbol suite and F# 27-case symbol suite passed on 2026-11-12. The F# 15-case edge suite separately verified indexer and namespace rename. Each symbol case prepares, applies, rechecks, and reverses its exact edits; direct C# operator and conversion-operator rename remains open.
 
 ### Rename Tests
 
