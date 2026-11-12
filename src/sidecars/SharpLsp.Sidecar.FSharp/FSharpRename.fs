@@ -241,7 +241,8 @@ let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (
             | IdentifierToken when genericName -> PrettyNaming.IsIdentifierName(newName.Substring(1))
             | IdentifierToken ->
                 PrettyNaming.IsIdentifierName(newName)
-                || (newName.StartsWith("``", StringComparison.Ordinal)
+                || (newName.Length > 4
+                    && newName.StartsWith("``", StringComparison.Ordinal)
                     && newName.EndsWith("``", StringComparison.Ordinal))
         newName <> "_"
         && newName <> token.Text

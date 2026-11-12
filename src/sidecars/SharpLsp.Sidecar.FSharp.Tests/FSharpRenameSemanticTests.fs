@@ -364,6 +364,21 @@ let ``renaming an escaped identifier replaces the backticks with it`` () = task 
         cleanup dir
 }
 
+/// [RENAME-ERRORS] An empty escaped identifier cannot compile.
+[<Fact>]
+let ``rename refuses an empty escaped identifier`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace [ "Rename.fs", source [ "module Rename"; "let compute n = n + 1" ] ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 4 "````" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"empty escaped rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
+
 /// [RENAME-ERRORS] The FCS lexer calls a trailing-bang word an identifier, but
 /// the compiler reserves it (FS1141). Rename must refuse edits that cannot compile.
 [<Fact>]
