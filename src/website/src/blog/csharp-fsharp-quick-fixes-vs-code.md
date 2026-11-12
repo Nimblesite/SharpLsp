@@ -15,12 +15,6 @@ category: announcement
 excerpt: "Choose a namespace import, qualify one use, or import static members. SharpLsp's quick fixes now spell out the edit before you apply it."
 ---
 
-{# Google Trends checked 2026-11-10, Worldwide, past 12 months, Web Search.
-Comparison averages: C# 55, Visual Studio Code 20, F# 3, code refactoring 1 (normalized interest, not search counts).
-https://trends.google.com/trends/explore?date=today%2012-m&q=Visual%20Studio%20Code,C%23,F%23,code%20refactoring
-Title uses the broader relevant terms. No rising-trend claim.
-Header generated with the built-in image tool: ivory F# and C# ceramic tiles joined by an emerald connector, off-white studio background, soft shadows, no extra text. #}
-
 An unresolved name can need a namespace, a qualified name or a missing project reference. SharpLsp's C# and F# quick fixes now tell you which change they will make. These improvements ship in version 0.32 and remain available in 0.33.
 
 In Visual Studio Code, put the cursor on the error and press **Ctrl+.** (**Cmd+.** on macOS).
