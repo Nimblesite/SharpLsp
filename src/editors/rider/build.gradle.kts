@@ -181,6 +181,6 @@ tasks {
 
     // Let Gradle wire the wrapper task so `./gradlew wrapper` regenerates.
     wrapper {
-        gradleVersion = "9.0.0"
+        gradleVersion = "9.9.0"
     }
 }

@@ -7,8 +7,9 @@ Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI
 - [x] Verify extension lint/type checks, website build, F# sidecar build, SDK pins and 22 workflow tests.
 - [ ] Verify Gradle 9.9 and IntelliJ platform plugin 2.20 configuration and Rider tests.
 - [ ] Run affected editor, website and F# test suites and full CI gates.
-- [ ] Review pi's dependency audit against the resolved diff.
-- [ ] Complete merge, push and remove the merged staging branch after checking automation ownership.
+- [x] Review pi's dependency audit; align Java setup and Gradle task pins, reject incompatible npm majors.
+- [x] Complete merge (`fd26b19c`); staging ancestry is included. Retain the staging ref required by the Dependabot workflow and its target-branch configuration.
+- [ ] Push after validation.
 
 TypeScript 7 is excluded: current typescript-eslint requires `<6.1.0`. Language client 11 is excluded: lsp-profiler-ui 0.4 requires client 9 or 10. Both failed dependency compatibility checks; no forced peer overrides are accepted. Upgrade their consumers first before reconsidering these versions.
 
