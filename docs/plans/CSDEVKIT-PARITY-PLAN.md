@@ -21,10 +21,10 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Multi-solution prompt | Yes | Yes (selectSolution) | **DONE** |
 | Close/Open Solution commands | Yes | Partial (select only) | **PARTIAL** |
 | Solution Folders display | Yes | No | **MISSING** |
-| Add New Project to solution | Yes | No | **MISSING** |
-| Add New File to project | Yes | No | **MISSING** |
-| Project templates (console, web, class lib) | Yes | No | **MISSING** |
-| View/edit .csproj from tree | Yes | No | **MISSING** |
+| Add New Project to solution | Yes | Yes | **DONE** |
+| Add New File to project | Yes | Yes | **DONE** |
+| Project templates (console, web, class lib) | Yes | Yes | **DONE** |
+| View/edit .csproj from tree | Yes | Yes | **DONE** |
 | Build/Rebuild/Clean from context menu | Yes | No | **MISSING** |
 | Dependencies folder | Yes | Yes | **DONE** |
 | NuGet package display with versions | Yes | Yes | **DONE** |
@@ -177,14 +177,14 @@ All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The
 | Update packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
 | Remove packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
 | NuGet browser webview | No | Yes (needs design fixes) | **IN PROGRESS** |
-| Auto-restore on load/build | Yes | No | **MISSING** |
-| Prerelease toggle | Yes | No | **MISSING** |
+| Auto-restore on load/build | Yes | Yes (on load) | **PARTIAL** |
+| Prerelease toggle | Yes | Yes | **DONE** |
 
 ### Project Scaffolding
 
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
-| New Project from template | Yes | No | **MISSING** |
+| New Project from template | Yes | Yes | **DONE** |
 | New File from template (class, interface, etc.) | Yes | Yes | **DONE** — all five templates; existing saved/unsaved contents preserved |
 
 ### Features Where SharpLsp is Already Ahead
