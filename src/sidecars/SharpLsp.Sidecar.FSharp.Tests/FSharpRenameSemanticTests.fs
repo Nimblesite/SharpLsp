@@ -364,6 +364,28 @@ let ``renaming an escaped identifier replaces the backticks with it`` () = task 
         cleanup dir
 }
 
+/// [RENAME-ERRORS] The FCS lexer calls a trailing-bang word an identifier, but
+/// the compiler reserves it (FS1141). Rename must refuse edits that cannot compile.
+[<Fact>]
+let ``rename refuses an unescaped identifier ending in a reserved bang`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace [ "Rename.fs", source [ "module Rename"; "let compute n = n + 1" ] ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 4 "compute!" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"reserved bang rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+        let! escaped =
+            FSharpRename.renameResult state paths[0] 1 4 "``compute!``" System.Threading.CancellationToken.None
+        match escaped with
+        | Error message -> failwith $"escaped bang identifier was rejected: {message}"
+        | Ok edits ->
+            Assert.Contains(edits, fun edit -> edit.NewText = "``compute!``")
+    finally
+        cleanup dir
+}
+
 // ── Compiler identity for fields and union cases ───────────────────
 
 let private IDENTITY_SOURCE =
