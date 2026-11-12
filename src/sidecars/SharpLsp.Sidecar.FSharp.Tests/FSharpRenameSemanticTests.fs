@@ -69,7 +69,7 @@ let private UNMARKED_INDEXER_SOURCE =
           "    member _.Lookup with get(index: int) = index" ]
 
 /// Render an edit so a failed expectation names the exact span that moved.
-let private editKey (edit: FSharpCodeActions.RawEdit) =
+let internal editKey (edit: FSharpCodeActions.RawEdit) =
     let file = NativePaths.NameOf edit.FilePath
     $"{file}:{edit.StartLine}.{edit.StartCharacter}-{edit.EndLine}.{edit.EndCharacter}=>{edit.NewText}"
 
