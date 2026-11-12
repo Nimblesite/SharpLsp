@@ -80,3 +80,5 @@ SharpLsp は `| CheckedOut _ -> failwith "todo"` を追加します。生成さ�
 アクションを選ぶと編集が計算され、複数のファイルに影響することがあります。アクションの期限が切れている、または適用できない場合は、その理由が報告されます。参照のアクションは、まずインポートを適用してから参照を追加します。参照の追加に失敗した場合、エラーは元に戻すとインポートも取り消されることを説明します。
 
 シンボルの名前変更は **F2** です。フォーマットには、C# 用の [CSharpier](https://csharpier.com/)、F# 用の [Fantomas](https://fsprojects.github.io/fantomas/) をインストールしてください。
+
+{% video "refactoring" %}

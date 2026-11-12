@@ -79,3 +79,5 @@ The ordinary move keeps a nested type nested through partial container declarati
 Picking an action computes its edits, which can affect several files. If the action expired or cannot apply, SharpLsp reports the reason. Reference actions apply the import first, then add the reference. If adding the reference fails, the error explains that Undo removes the import.
 
 For symbol rename, press **F2**. For formatting, install [CSharpier](https://csharpier.com/) for C# or [Fantomas](https://fsprojects.github.io/fantomas/) for F#.
+
+{% video "refactoring" %}

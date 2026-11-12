@@ -80,3 +80,5 @@ SharpLsp 会添加 `| CheckedOut _ -> failwith "todo"`。把生成的函数体�
 选择一个操作会计算它的编辑，这些编辑可能涉及多个文件。如果操作已过期或无法应用，SharpLsp 会说明原因。引用类操作会先应用导入，再添加引用；如果添加引用失败，错误信息会说明撤销操作会同时移除该导入。
 
 符号重命名请按 **F2**。格式化方面，C# 请安装 [CSharpier](https://csharpier.com/)，F# 请安装 [Fantomas](https://fsprojects.github.io/fantomas/)。
+
+{% video "refactoring" %}
