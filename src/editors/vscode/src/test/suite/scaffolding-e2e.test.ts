@@ -211,6 +211,15 @@ suite('Scaffolding E2E (drive real commands)', () => {
       ]);
       // The name prompt was shown exactly once.
       assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'one name prompt was shown');
+
+      // [SE-ADD-FILE-CSHARP] A repeated name must preserve saved and unsaved work.
+      await active.edit((edit) => edit.insert(new vscode.Position(0, 0), '// unsaved work\n'));
+      const unsaved = active.document.getText();
+      stubs.queuePick(template).queueInput(name);
+      await vscode.commands.executeCommand(CMD_NEW_FILE);
+      assert.strictEqual(active.document.getText(), unsaved, 'existing buffer must not be modified');
+      assert.strictEqual(comparableText(fs.readFileSync(filePath, 'utf-8')), expected);
+      assert.ok(active.document.isDirty, 'existing unsaved work must remain unsaved');
     });
   }
 
