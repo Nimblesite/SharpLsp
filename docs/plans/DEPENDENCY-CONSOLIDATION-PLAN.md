@@ -9,7 +9,9 @@ Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI
 - [x] Run all F# sidecar tests: 550 pass, none skipped.
 - [x] Run affected MTP output/merge editor checks: 10 pass.
 - [x] Restore missing refactoring videos in three locales: all 9 desktop/phone checks pass.
-- [ ] Finish full website suite (1,035 cases) and full CI gates.
+- [x] Verify Rust and Zed formatting/clippy with CI targets (November 12).
+- [ ] Finish full website suite (1,035 cases) and full CI gates. First run: 1,020 passed, 11 skipped, four failed. Refactoring fixes passed all nine targeted checks; the caption 404 did not reproduce in 27 repeated checks. A fresh full pass is running; do not count the first run as green.
+- [ ] Resolve local CSharpier configuration discovery failure: `dotnet csharpier check src/sidecars/` exits before formatting because macOS denies enumeration of `/Users/christianfindlay/Documents`; explicit `--config-path .editorconfig` has the same failure. No suppression or source change applied.
 - [x] Review pi's dependency audit; align Java setup and Gradle task pins, reject incompatible npm majors.
 - [x] Complete merge (`fd26b19c`); staging ancestry is included. Retain the staging ref required by the Dependabot workflow and its target-branch configuration.
 - [ ] Push after validation.
