@@ -26,6 +26,8 @@ Spec: [RENAME-SPEC.md](../specs/RENAME-SPEC.md). Rename is P0 and must cover eve
 - [x] Add rename request/response IPC messages and MessagePack DTOs for both sidecars — C# `Messages.cs`, F# `FSharpWire.fs`
 - [x] Convert sidecar edit sets into LSP `WorkspaceEdit` — `semantic/rename.rs`
 - [ ] Add cancellation handling for stale rename requests
+  - [x] F# rename carries the request token through file, project, usage-location and indexer checks; a held-source IPC regression cancels before the source is released.
+  - [ ] Verify host-side superseded-version cancellation and cross-language rename paths before checking the parent item.
 - [ ] Add structured tracing for prepare, execute, validation failures, edit counts, and latency
 
 The five completed core items were verified against the latest published v0.32.1 host and its bundled C# and F# sidecars on 2026-11-09. The native `test_full_stack_prepare_rename_returns_range`, `test_full_stack_rename_renames_symbol_across_usages` and `test_full_stack_fsharp_rename` cases all passed, and the released initialize response advertised `renameProvider.prepareProvider = true`.

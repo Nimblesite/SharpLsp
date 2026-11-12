@@ -165,7 +165,7 @@ let ``renaming to an illegal F# identifier is refused`` () = task {
 
     try
         let (line, character) = caretAt "let sample =" "sample"
-        let! renamed = FSharpRename.renameResult state paths[0] line character "9not-an-identifier"
+        let! renamed = FSharpRename.renameResult state paths[0] line character "9not-an-identifier" System.Threading.CancellationToken.None
 
         match renamed with
         | Ok edits -> failwith $"an illegal identifier must be refused, got {List.length edits} edits"
@@ -191,7 +191,7 @@ let ``renaming a binding inside a loaded script rewrites its uses`` () = task {
         match loaded with
         | Error message -> failwith $"script failed to load: {message}"
         | Ok() ->
-            let! renamed = FSharpRename.renameResult state script 0 6 "cubed"
+            let! renamed = FSharpRename.renameResult state script 0 6 "cubed" System.Threading.CancellationToken.None
 
             match renamed with
             | Error message -> failwith $"script rename failed: {message}"

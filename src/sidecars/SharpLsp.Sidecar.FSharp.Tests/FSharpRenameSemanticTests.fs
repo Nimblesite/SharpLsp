@@ -108,7 +108,7 @@ let ``record copy-and-update does not abort renaming the record type`` () = task
     let! (state, dir, _fsproj, paths) = recordProject ()
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5 System.Threading.CancellationToken.None
-        let! renamed = FSharpRename.renameResult state paths[0] 1 5 "RenamedRecord"
+        let! renamed = FSharpRename.renameResult state paths[0] 1 5 "RenamedRecord" System.Threading.CancellationToken.None
         Assert.Equal(3, uses.Length)
         assertEdits
             [ "Decls.fs:1.5-1.16=>RenamedRecord"
@@ -130,7 +130,7 @@ let ``renaming an indexer rewrites the member and records DefaultMember metadata
         loadWorkspace [ "Indexed.fs", INDEXER_SOURCE; "IndexedUses.fs", INDEXER_USAGES ]
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 2 14 System.Threading.CancellationToken.None
-        let! renamed = FSharpRename.renameResult state paths[0] 2 14 "Lookup"
+        let! renamed = FSharpRename.renameResult state paths[0] 2 14 "Lookup" System.Threading.CancellationToken.None
         Assert.Equal(2, uses.Length)
         assertEdits
             [ "Indexed.fs:2.13-2.17=>Lookup"
@@ -155,7 +155,7 @@ let ``prepare and rename resolve an indexer from its call site`` () = task {
             match prepare with
             | None -> failwith $"prepare refused the indexer call site at column {character}"
             | Some result -> Assert.Equal("Item", result.Placeholder)
-        let! renamed = FSharpRename.renameResult state paths[1] 2 34 "Lookup"
+        let! renamed = FSharpRename.renameResult state paths[1] 2 34 "Lookup" System.Threading.CancellationToken.None
         assertEdits
             [ "Indexed.fs:2.13-2.17=>Lookup"
               "Indexed.fs:1.0-1.0=>[<System.Reflection.DefaultMemberAttribute(\"Lookup\")>]\n" ]
@@ -256,7 +256,7 @@ let ``renaming by an empty compiler identity produces no edits`` () = task {
 let ``renaming a module abbreviation rewrites its declaration and its uses`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 5 8 "Brief"
+        let! renamed = FSharpRename.renameResult state paths[0] 5 8 "Brief" System.Threading.CancellationToken.None
         assertEdits
             [ "Aliases.fs:5.7-5.12=>Brief"; "Aliases.fs:6.15-6.20=>Brief" ]
             (state, [||])
@@ -273,7 +273,7 @@ let ``renaming an abbreviated module leaves uses qualified by the abbreviation a
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 2 12 System.Threading.CancellationToken.None
-        let! renamed = FSharpRename.renameResult state paths[0] 2 12 "Inner"
+        let! renamed = FSharpRename.renameResult state paths[0] 2 12 "Inner" System.Threading.CancellationToken.None
         assertEdits
             [ "Aliases.fs:2.11-2.17=>Inner"
               "Aliases.fs:5.20-5.26=>Inner"
@@ -306,7 +306,7 @@ let ``prepare offers a module abbreviation under its own name`` () = task {
 let ``renaming an indexer rewrites existing DefaultMember metadata in place`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot"
+        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot" System.Threading.CancellationToken.None
         assertEdits
             [ "Explicit.fs:3.34-3.41=>\"Slot\""; "Explicit.fs:5.13-5.18=>Slot" ]
             (state, [||])
@@ -322,7 +322,7 @@ let ``renaming an indexer rewrites existing DefaultMember metadata in place`` ()
 let ``renaming an indexer to an escaped name stores the logical name in metadata`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "``My Slot``"
+        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "``My Slot``" System.Threading.CancellationToken.None
         assertEdits
             [ "Explicit.fs:3.34-3.41=>\"My Slot\""
               "Explicit.fs:5.13-5.18=>``My Slot``" ]
@@ -339,7 +339,7 @@ let ``renaming an indexer to an escaped name stores the logical name in metadata
 let ``renaming an indexer with no DefaultMember metadata is refused`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Unmarked.fs", UNMARKED_INDEXER_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 2 15 "Fetch"
+        let! renamed = FSharpRename.renameResult state paths[0] 2 15 "Fetch" System.Threading.CancellationToken.None
         match renamed with
         | Ok edits -> failwith $"expected a refusal, got {edits.Length} edits"
         | Error message -> Assert.Contains("DefaultMember", message)
@@ -354,7 +354,7 @@ let ``renaming an escaped identifier replaces the backticks with it`` () = task 
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Escaped.fs", ESCAPED_SOURCE ]
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 6 System.Threading.CancellationToken.None
-        let! renamed = FSharpRename.renameResult state paths[0] 1 6 "``other value``"
+        let! renamed = FSharpRename.renameResult state paths[0] 1 6 "``other value``" System.Threading.CancellationToken.None
         Assert.Equal(2, uses.Length)
         assertEdits
             [ "Escaped.fs:1.4-1.21=>``other value``"; "Escaped.fs:2.12-2.29=>``other value``" ]
@@ -403,7 +403,7 @@ let ``record fields and union cases expose a cross-language identity`` () = task
 let ``a read-write indexer renames through either accessor`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "RW.fs", RW_INDEXER_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 3 14 "Slot"
+        let! renamed = FSharpRename.renameResult state paths[0] 3 14 "Slot" System.Threading.CancellationToken.None
         match renamed with
         | Error message -> failwith $"read/write indexer rename failed: {message}"
         | Ok edits ->
@@ -431,7 +431,7 @@ let private LITERAL_CONST_SOURCE =
 let ``renaming an indexer named by a literal constant is refused`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "LiteralConst.fs", LITERAL_CONST_SOURCE ]
     try
-        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot"
+        let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot" System.Threading.CancellationToken.None
         match renamed with
         | Ok edits -> failwith $"expected a refusal, got {edits.Length} edits"
         | Error message -> Assert.Contains("literal", message)

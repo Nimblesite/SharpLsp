@@ -452,10 +452,10 @@ module internal Helpers =
         handle query (fun result ct -> serializeOk (toWire result) ct)
 
     let private resultRequestHandler
-        (query: 'Request -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
+        (query: 'Request -> CancellationToken -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
         (toWire: 'Result -> 'Wire)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        handle query (fun result ct ->
+        handleWithCancellation query (fun result ct ->
             match result with
             | Ok value -> serializeOk (toWire value) ct
             | Error message -> ByteResult.Failure(message))
@@ -468,8 +468,8 @@ module internal Helpers =
 
     let renameHandler workspace =
         resultRequestHandler
-            (fun (request: RenameRequest) ->
-                FSharpRename.renameResult workspace request.FilePath request.Line request.Character request.NewName)
+            (fun (request: RenameRequest) ct ->
+                FSharpRename.renameResult workspace request.FilePath request.Line request.Character request.NewName ct)
             toWorkspaceEdit
 
     let renameIdentityHandler workspace =

@@ -218,14 +218,14 @@ let private planForType filePath parseResults (property: FSharpMemberOrFunctionO
             Ok [ insertionEdit filePath newName syntax ]
         | None -> Error "Indexer has no DefaultMember metadata"
 
-let planMetadata (state: FSharpWorkspace.FSharpWorkspaceState) symbol newName =
+let planMetadata (state: FSharpWorkspace.FSharpWorkspaceState) symbol newName ct =
     task {
         match tryNormalize symbol with
         | None -> return Ok []
         | Some property ->
             let declarationRange = property.DeclarationLocation
             let filePath = declarationRange.FileName
-            let! checkedFile = FSharpWorkspace.checkFileWithParse state filePath
+            let! checkedFile = FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct
             match checkedFile with
             | None -> return Error $"FCS could not check {filePath}"
             | Some(parseResults, _, _) ->
