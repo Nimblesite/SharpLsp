@@ -29,7 +29,7 @@ Spec: [RENAME-SPEC.md](../specs/RENAME-SPEC.md). Rename is P0 and must cover eve
   - [x] F# rename carries the request token through file, project, usage-location and indexer checks; a held-source IPC regression cancels before the source is released.
   - [x] F# cross-language rename carries cancellation through symbol scans, source reads and projected-source fallback; a held-source IPC regression cancels before release.
   - [x] Host rename uses cancellable request dispatch; real F# compiler I/O regressions prove explicit cancellation and document-change supersession reply before the held source is released.
-- [ ] Add structured tracing for prepare, execute, validation failures, edit counts, and latency
+- [x] Add structured tracing for prepare, execute, validation failures, edit counts, and latency — `semantic/rename.rs`
 
 The five completed core items were verified against the latest published v0.32.1 host and its bundled C# and F# sidecars on 2026-11-09. The native `test_full_stack_prepare_rename_returns_range`, `test_full_stack_rename_renames_symbol_across_usages` and `test_full_stack_fsharp_rename` cases all passed, and the released initialize response advertised `renameProvider.prepareProvider = true`.
 

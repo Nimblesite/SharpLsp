@@ -2,12 +2,15 @@
 //! Implements [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 use lsp_server::Request;
-use lsp_types::{Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams};
+use lsp_types::{
+    Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams, Uri,
+};
 use lspkit_server::CancellationToken;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::code_actions::{SidecarDocumentEdit, SidecarWorkspaceEdit};
 use crate::paths::uri_to_path;
@@ -16,17 +19,45 @@ use crate::utils::SidecarPositionReq;
 
 // Implements [RENAME-PREPARE]
 
+/// Trace the editor position without recording the requested symbol name or source text.
+fn trace_rename_start(method: &'static str, uri: &Uri, position: Position) {
+    info!(
+        method,
+        uri = uri.as_str(),
+        line = position.line,
+        character = position.character,
+        "Rename request started"
+    );
+}
+
+/// An unavailable compiler answers null while retaining a structured reason.
+fn available_sidecar<'a>(
+    sidecar: Option<&'a Arc<SidecarManager>>,
+    method: &'static str,
+) -> Option<&'a Arc<SidecarManager>> {
+    if sidecar.is_none() {
+        warn!(method, "Rename sidecar unavailable");
+    }
+    sidecar
+}
+
 /// Handle `textDocument/prepareRename` via the sidecar.
 pub fn handle_prepare_rename(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
+    let started = Instant::now();
+    let Some(sidecar) = available_sidecar(sidecar, "textDocument/prepareRename") else {
         return Ok(serde_json::Value::Null);
     };
 
     let params: TextDocumentPositionParams = serde_json::from_value(req.params)?;
+    trace_rename_start(
+        "textDocument/prepareRename",
+        &params.text_document.uri,
+        params.position,
+    );
     let file_path = uri_to_path(params.text_document.uri.as_str())?;
     let request = SidecarPositionReq {
         file_path,
@@ -34,10 +65,16 @@ pub fn handle_prepare_rename(
         character: params.position.character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        runtime.block_on(sidecar.request("textDocument/prepareRename", payload))?;
+    let response_bytes = runtime
+        .block_on(sidecar.request("textDocument/prepareRename", payload))
+        .inspect_err(|error| warn!(error = %error, "Rename prepare sidecar failed"))?;
     let result: SidecarPrepareRenameResult = rmp_serde::from_slice(&response_bytes)?;
 
+    info!(
+        can_rename = result.can_rename,
+        ms = started.elapsed().as_millis(),
+        "Rename prepare completed"
+    );
     if !result.can_rename {
         return Ok(serde_json::Value::Null);
     }
@@ -69,18 +106,39 @@ pub fn handle_rename(
     fallback: Option<&Arc<SidecarManager>>,
     cancel: &CancellationToken,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
+    let started = Instant::now();
+    let Some(sidecar) = available_sidecar(sidecar, "textDocument/rename") else {
         return Ok(serde_json::Value::Null);
     };
     let params: RenameParams = serde_json::from_value(req.params)?;
+    trace_rename_start(
+        "textDocument/rename",
+        &params.text_document_position.text_document.uri,
+        params.text_document_position.position,
+    );
     let request = sidecar_rename_request(params)?;
-    let result = request_workspace_edit(runtime, sidecar, "textDocument/rename", &request, cancel)?;
+    let result = request_workspace_edit(runtime, sidecar, "textDocument/rename", &request, cancel)
+        .inspect_err(|error| warn!(error = %error, "Rename sidecar refused request"))?;
     let result = if result.document_changes.is_empty() {
         result
     } else {
         add_foreign_rename(runtime, sidecar, fallback, &request, result, cancel)
     };
-    workspace_edit_value(result)
+    let documents = result.document_changes.len();
+    let edits: usize = result
+        .document_changes
+        .iter()
+        .map(|change| change.edits.len())
+        .sum();
+    let value = workspace_edit_value(result)
+        .inspect_err(|error| warn!(error = %error, "Rename edit validation failed"))?;
+    info!(
+        requested_documents = documents,
+        requested_edits = edits,
+        ms = started.elapsed().as_millis(),
+        "Rename completed"
+    );
+    Ok(value)
 }
 
 /// Convert LSP rename parameters into the sidecar's compact wire request.
@@ -110,7 +168,7 @@ fn add_foreign_rename(
         Ok(Some(foreign)) => merge_or_keep(result, foreign),
         Ok(None) => result,
         Err(err) => {
-            warn!("Cross-language rename enrichment failed, keeping primary edits: {err:#}");
+            warn!(error = %err, "Cross-language rename enrichment failed; keeping primary edits");
             result
         }
     }
@@ -130,7 +188,7 @@ fn merge_or_keep(
     match merge_workspace_edits(result, foreign) {
         Ok(merged) => merged,
         Err(err) => {
-            warn!("Cross-language rename merge conflicted, keeping primary edits: {err:#}");
+            warn!(error = %err, "Cross-language rename merge conflicted; keeping primary edits");
             primary
         }
     }
