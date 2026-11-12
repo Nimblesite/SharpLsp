@@ -201,6 +201,14 @@ impl<'a> Session<'a> {
         self.begin_request("textDocument/diagnostic")
     }
 
+    /// Rename uses the real document position and can be interrupted mid-check.
+    pub fn begin_rename(&mut self) -> i32 {
+        self.begin_params(
+            "textDocument/rename",
+            json!({"textDocument":{"uri":self.fixture.uri()},"position":{"line":2,"character":5},"newName":"renamed"}),
+        )
+    }
+
     /// Workspace analysis uses the actual protocol schema and default solution-wide scope.
     pub fn begin_workspace(&mut self) -> i32 {
         self.begin_params("workspace/diagnostic", json!({"previousResultIds":[]}))
