@@ -39,7 +39,7 @@ The five completed core items were verified against the latest published v0.32.1
 - [x] Validate new names with Roslyn syntax and symbol services — invalid, escaped and contextual identifiers plus method-signature and type-arity collisions are covered by `RefactorEndToEndTests`, `WorkspaceManagerRenameShadowingTests` and the real-editor rename edge suite, [RENAME-CSHARP]
 - [x] Wire C# sidecar to Roslyn `Renamer.RenameSymbolAsync` — `WorkspaceManager.Rename.cs`, `RefactorEndToEndTests`, [RENAME-CSHARP]
 - [x] Map changed Roslyn documents to LSP text edits — `WorkspaceManager.Rename.cs`, the native C# session edit-application assertions, [RENAME-APPLY]
-- [ ] Preserve Roslyn-provided edits for `nameof`, XML doc references, partial declarations, overrides, and explicit interface implementations
+- [x] Preserve Roslyn-provided edits for `nameof`, XML doc references, partial declarations, overrides, and explicit interface implementations — `WorkspaceManagerRenameRoslynEditsTests` asserts exact applied text for partial type and interface method renames; `WorkspaceManagerFeatureCoverageTests` asserts override propagation, [RENAME-CSHARP]
 
 ### F# Rename
 

@@ -421,6 +421,19 @@ public sealed class WorkspaceManagerQueryFixture : IAsyncLifetime, IDisposable
                 Console.WriteLine(sum);
             }
         }
+
+        public interface IContract { void Execute(); }
+
+        /// <see cref="PartialThing"/>
+        public partial class PartialThing : IContract
+        {
+            public string TypeName => nameof(PartialThing);
+            public string ActionName => nameof(IContract.Execute);
+            /// <see cref="IContract.Execute"/>
+            void IContract.Execute() { }
+        }
+
+        public partial class PartialThing { }
         """;
 
     private readonly string _root = NativePaths.Temp($"sharplsp-wmq-tests-{Guid.NewGuid():N}");
