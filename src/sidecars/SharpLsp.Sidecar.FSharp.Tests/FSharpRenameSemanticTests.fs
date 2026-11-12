@@ -386,6 +386,26 @@ let ``rename refuses an unescaped identifier ending in a reserved bang`` () = ta
         cleanup dir
 }
 
+/// [RENAME-FSHARP-APPLY] The same compiler rule applies after a generic quote.
+[<Fact>]
+let ``generic parameter rename refuses a reserved bang and accepts a plain name`` () = task {
+    let! (state, dir, _fsproj, paths) =
+        loadWorkspace [ "Generic.fs", source [ "module Generic"; "let identity<'T> (value: 'T) = value" ] ]
+    try
+        let! invalid =
+            FSharpRename.renameResult state paths[0] 1 14 "'U!" System.Threading.CancellationToken.None
+        match invalid with
+        | Ok edits -> failwith $"reserved generic rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+        let! valid =
+            FSharpRename.renameResult state paths[0] 1 14 "'U" System.Threading.CancellationToken.None
+        match valid with
+        | Error message -> failwith $"valid generic rename was rejected: {message}"
+        | Ok edits -> Assert.True(edits |> List.exists (fun edit -> edit.NewText = "'U"))
+    finally
+        cleanup dir
+}
+
 // ── Compiler identity for fields and union cases ───────────────────
 
 let private IDENTITY_SOURCE =

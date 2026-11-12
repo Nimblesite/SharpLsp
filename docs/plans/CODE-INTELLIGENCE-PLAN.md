@@ -45,6 +45,7 @@ The five completed core items were verified against the latest published v0.32.1
 
 - [x] Resolve `FSharpSymbolUse` at the cursor — `FSharpRename.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-PREPARE]
 - [ ] Validate new names for F# symbol kinds
+  - [x] Reject compiler-reserved trailing `!` in ordinary and generic identifiers while accepting escaped names — `FSharpRenameSemanticTests`, [RENAME-ERRORS], issue #579
 - [x] Wire F# sidecar to FCS rename/symbol-use pipeline — `FSharpRename.fs`, `FSharpReferences.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-APPLY]
 - [x] Emit edits for every declaration and usage location in F# projects — `FSharpRenameSemanticTests` asserts exact declaration and usage edits across two ordered files, [RENAME-FSHARP-APPLY]
 - [ ] Preserve F# file-ordering semantics during project-wide rename

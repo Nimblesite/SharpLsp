@@ -235,9 +235,18 @@ let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (
     else
         let genericName = newName.StartsWith("'", StringComparison.Ordinal)
         let genericSymbol = symbol :? FSharpGenericParameter
+        let compilerName =
+            match token.Kind with
+            | OperatorToken -> true
+            | IdentifierToken when genericName -> PrettyNaming.IsIdentifierName(newName.Substring(1))
+            | IdentifierToken ->
+                PrettyNaming.IsIdentifierName(newName)
+                || (newName.StartsWith("``", StringComparison.Ordinal)
+                    && newName.EndsWith("``", StringComparison.Ordinal))
         newName <> "_"
         && newName <> token.Text
         && genericName = genericSymbol
+        && compilerName
         && classifyName checker newName = Some token.Kind
 
 let private distinctEdits (edits: FSharpCodeActions.RawEdit array) =
