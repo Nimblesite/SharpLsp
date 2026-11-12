@@ -138,6 +138,7 @@ type ScriptCancellationTests(fixture: EngineDiagnosticsFixture) =
     [<Theory>]
     [<InlineData("textDocument/references")>]
     [<InlineData("textDocument/implementation")>]
+    [<InlineData("textDocument/rename")>]
     [<InlineData("callHierarchy/incomingCalls")>]
     [<InlineData("typeHierarchy/subtypes")>]
     member _.``project navigation cancellation releases the serial request queue``(methodName: string) = task {
@@ -153,6 +154,8 @@ type ScriptCancellationTests(fixture: EngineDiagnosticsFixture) =
         let payload =
             if methodName = "textDocument/references" then
                 MessagePackSerializer.Serialize({ ReferencesRequest.FilePath = fixture.Valid; Line = 2; Character = 5; IncludeDeclaration = true })
+            elif methodName = "textDocument/rename" then
+                MessagePackSerializer.Serialize({ RenameRequest.FilePath = fixture.Valid; Line = 2; Character = 5; NewName = "sum" })
             else
                 MessagePackSerializer.Serialize({ PositionRequest.FilePath = fixture.Valid; Line = 2; Character = 5 })
         let id, pending = fixture.Begin(methodName, payload)
