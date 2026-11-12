@@ -340,7 +340,7 @@ Features that make the daily experience smooth.
 - [ ] **P3.3: Solution Explorer Enhancements**
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
-  - [x] Add existing project to solution — `sharplsp.addProjectToSolution`
+  - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.
   - [x] Add project reference via UI — `sharplsp.addProjectReference` (`context-menus.test.ts`, `nuget-deps-e2e.test.ts`)
   - [x] Add NuGet package from explorer context menu — `sharplsp.nuget.addFromExplorer` / `browseNuGetPackages` on explorer items
 
