@@ -80,6 +80,7 @@
     <Compile Include="FSharpTargetFrameworks.fs" />
     <Compile Include="FSharpPackages.fs" />
     <Compile Include="FSharpRenameToken.fs" />
+    <Compile Include="FSharpRenameNames.fs" />
     <Compile Include="FSharpReferences.fs" />
     <Compile Include="FSharpImplementations.fs" />
     <Compile Include="FSharpForeignSymbols.fs" />
