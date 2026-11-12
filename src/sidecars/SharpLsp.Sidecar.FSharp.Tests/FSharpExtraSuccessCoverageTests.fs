@@ -38,7 +38,7 @@ let ``call hierarchy resolves real callers and callees`` () =
         // `add` is defined on its line and called from `result` + Consumer.
         let addLine = lineOf lines "let add (a"
         let! prep = FSharpHierarchy.prepareCall ws src addLine 4
-        let! incoming = FSharpHierarchy.incomingCalls ws src addLine 4
+        let! incoming = FSharpHierarchy.incomingCalls ws src addLine 4 System.Threading.CancellationToken.None
         Assert.True(Option.isSome prep)
         Assert.NotEmpty(incoming)
         // `useGreeter` calls `Greet` → outgoing callees.
@@ -63,7 +63,7 @@ let ``type hierarchy resolves across class, interface, union and struct`` () =
         // SimpleGreeter implements IGreeter → supertypes include it; IGreeter's
         // subtypes include SimpleGreeter.
         let! supers = FSharpHierarchy.supertypes ws src (lineOf lines "type SimpleGreeter") 5
-        let! subs = FSharpHierarchy.subtypes ws src (lineOf lines "type IGreeter") 5
+        let! subs = FSharpHierarchy.subtypes ws src (lineOf lines "type IGreeter") 5 System.Threading.CancellationToken.None
         Assert.NotEmpty(supers)
         Assert.NotEmpty(subs)
     }
@@ -91,7 +91,7 @@ let ``navigation resolves type-definition, declaration and implementation`` () =
         let greetImplLine = lineOf lines "member _.Greet(name)"
         let! decl = FSharpWorkspace.getDeclaration ws src greetImplLine 17
         // implementation of the abstract `Greet`.
-        let! impl = FSharpImplementations.getImplementations ws src (lineOf lines "abstract Greet") 13
+        let! impl = FSharpImplementations.getImplementations ws src (lineOf lines "abstract Greet") 13 System.Threading.CancellationToken.None
         Assert.True(Option.isSome td)
         Assert.True(Option.isSome decl)
         Assert.NotEmpty(impl)
@@ -276,7 +276,7 @@ let ``hierarchy entry points return empty for a non-symbol position`` () =
         // subtypes [] (the `entityAt` None arms).
         let! pt = FSharpHierarchy.prepareType ws src addLine 4
         let! sup = FSharpHierarchy.supertypes ws src addLine 4
-        let! sub = FSharpHierarchy.subtypes ws src addLine 4
+        let! sub = FSharpHierarchy.subtypes ws src addLine 4 System.Threading.CancellationToken.None
         Assert.True(Option.isNone pt)
         Assert.Empty(sup)
         Assert.Empty(sub)
@@ -340,7 +340,7 @@ let ``incomingCalls resolves callers across typed, paren, as and nested heads`` 
         try
             // `add` is on line 1; callers use Typed/Paren/As/nested/do heads.
             let! prep = FSharpHierarchy.prepareCall ws paths[0] 1 4
-            let! incoming = FSharpHierarchy.incomingCalls ws paths[0] 1 4
+            let! incoming = FSharpHierarchy.incomingCalls ws paths[0] 1 4 System.Threading.CancellationToken.None
             Assert.True(Option.isSome prep)
             Assert.NotEmpty(incoming)
             // The nested `inner` binding must surface as a resolved caller.
@@ -357,7 +357,7 @@ let ``super and sub types resolve across a class inheritance edge`` () =
             // Derived : Base → supertypes(Derived) include Base; subtypes(Base)
             // include Derived (driving the BaseType Some-arm on both sides).
             let! supers = FSharpHierarchy.supertypes ws paths[0] 3 5
-            let! subs = FSharpHierarchy.subtypes ws paths[0] 2 5
+            let! subs = FSharpHierarchy.subtypes ws paths[0] 2 5 System.Threading.CancellationToken.None
             Assert.Contains(supers, fun (i: FSharpHierarchy.HierItem) -> i.Name = "Base")
             Assert.Contains(subs, fun (i: FSharpHierarchy.HierItem) -> i.Name = "Derived")
         finally

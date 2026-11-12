@@ -33,10 +33,10 @@ let private implements (target: FSharpSymbol) (candidate: FSharpSymbol) =
     | _ -> false
 
 /// The names of the definitions that implement `target`, in its project and its readers.
-let private implementationsOf (state: FSharpWorkspace.FSharpWorkspaceState) filePath (target: FSharpSymbol) =
+let private implementationsOf (state: FSharpWorkspace.FSharpWorkspaceState) filePath (target: FSharpSymbol) ct =
     task {
         let anchor = FSharpWorkspace.anchorOf state target filePath
-        let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state anchor)
+        let! projects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state anchor) ct
 
         return
             projects
@@ -47,17 +47,18 @@ let private implementationsOf (state: FSharpWorkspace.FSharpWorkspaceState) file
 
 /// The implementations of the symbol at a position. A symbol nothing implements is its
 /// own implementation, as in C#: a concrete member or a sealed type navigates to itself.
-let getImplementations (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+let getImplementations (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character ct =
     task {
         try
-            match! FSharpWorkspace.checkFile state filePath with
+            match! FSharpWorkspace.checkFileWithCancellation state filePath ct with
             | None -> return []
             | Some(checkResults, source) ->
                 match FSharpWorkspace.getSymbolUse checkResults source line character with
                 | None -> return []
                 | Some symbolUse ->
-                    match! implementationsOf state filePath symbolUse.Symbol with
+                    match! implementationsOf state filePath symbolUse.Symbol ct with
                     | [] ->
+                        ct.ThrowIfCancellationRequested()
                         let! itself = FSharpWorkspace.getDefinition state filePath line character
                         return Option.toList itself
                     | found -> return found

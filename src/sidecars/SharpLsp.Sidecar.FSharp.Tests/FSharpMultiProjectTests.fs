@@ -213,7 +213,7 @@ let ``a buffer carrying the text the compiler already read checks nothing again`
             use _subscription = state.Checker.FileChecked.Subscribe(fun (file, _) -> lock checkedFiles (fun () -> checkedFiles.Add file))
             let drain () = lock checkedFiles (fun () -> let seen = List.ofSeq checkedFiles in checkedFiles.Clear(); seen)
             let checkedNow file seen = seen |> List.exists (fun path -> NativePaths.AreEqual(path, file))
-            let usages () = FSharpReferences.getProjectUsages state core 3 5
+            let usages () = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
             let! cold = usages ()
             Assert.Equal<int list>([ 4; 8 ], linesIn app cold)
             Assert.True(checkedNow core (drain ()), "the first query checks Core")
@@ -251,11 +251,11 @@ let ``references, code lens and subtypes count what every project does`` () =
         let! (state, root, core, app) = openSolution ()
 
         try
-            let! fromDefinition = FSharpReferences.getProjectUsages state core 3 5
+            let! fromDefinition = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app fromDefinition)
             Assert.Equal<int list>([ 3 ], linesIn core fromDefinition)
 
-            let! fromUse = FSharpReferences.getProjectUsages state app 4 13
+            let! fromUse = FSharpReferences.getProjectUsages state app 4 13 System.Threading.CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app fromUse)
             Assert.Equal<int list>([ 3 ], linesIn core fromUse)
 
@@ -264,7 +264,7 @@ let ``references, code lens and subtypes count what every project does`` () =
             Assert.Equal(Some "2 references", titleAt 3)
             Assert.Equal(Some "1 reference", titleAt 5)
 
-            let! subtypes = FSharpHierarchy.subtypes state core 5 6
+            let! subtypes = FSharpHierarchy.subtypes state core 5 6 System.Threading.CancellationToken.None
             let square = subtypes |> List.tryFind (fun item -> item.Name = "Square")
             Assert.True(square.IsSome, $"App's Square implements Core's IShape: {subtypes}")
             Assert.True(NativePaths.AreEqual(app, square.Value.FilePath))
@@ -368,7 +368,7 @@ let ``warming checks each loaded project once, so the first solution-wide query 
             let! past = FSharpWarmUp.warmProject state 2 CancellationToken.None
             Assert.Equal((2, 2), (again, past))
             Assert.Equal(warm, count ())
-            let! references = FSharpReferences.getProjectUsages state core 3 5
+            let! references = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app references)
             Assert.Equal<int list>([ 3 ], linesIn core references)
             Assert.Equal(warm, count ())

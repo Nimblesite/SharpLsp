@@ -101,14 +101,14 @@ let ``an unloaded workspace has no declarations or uses`` () = task {
 let ``F# references and foreign uses place each use on its name alike`` () = task {
     let! (state, dir, _, paths) = domain ()
     try
-        let! own = FSharpReferences.getReferences state paths[0] 2 30 true
+        let! own = FSharpReferences.getReferences state paths[0] 2 30 true System.Threading.CancellationToken.None
         let! foreign = FSharpForeignSymbols.uses state (named "P:Domain.Player.Score") true
         Assert.Equal<(string * int * int) list>(placed foreign, placed own)
         let ends = own |> List.map (fun location -> location.EndCharacter - location.Character) |> List.distinct
         Assert.Equal<int list>([ "Score".Length ], ends)
 
         // From a use, too: the dotted `ada.Score` in Board.fs.
-        let! fromUse = FSharpReferences.getReferences state paths[1] 3 18 false
+        let! fromUse = FSharpReferences.getReferences state paths[1] 3 18 false System.Threading.CancellationToken.None
         Assert.Equal<(string * int * int) list>(
             [ "Board.fs", 2, 26; "Board.fs", 3, 17; "Domain.fs", 5, 82; "Domain.fs", 6, 81 ],
             placed fromUse

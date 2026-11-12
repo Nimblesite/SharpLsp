@@ -107,7 +107,7 @@ let private recordProject () =
 let ``record copy-and-update does not abort renaming the record type`` () = task {
     let! (state, dir, _fsproj, paths) = recordProject ()
     try
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 1 5 "RenamedRecord"
         Assert.Equal(3, uses.Length)
         assertEdits
@@ -129,7 +129,7 @@ let ``renaming an indexer rewrites the member and records DefaultMember metadata
     let! (state, dir, _fsproj, paths) =
         loadWorkspace [ "Indexed.fs", INDEXER_SOURCE; "IndexedUses.fs", INDEXER_USAGES ]
     try
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 2 14
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 2 14 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 2 14 "Lookup"
         Assert.Equal(2, uses.Length)
         assertEdits
@@ -272,7 +272,7 @@ let ``renaming a module abbreviation rewrites its declaration and its uses`` () 
 let ``renaming an abbreviated module leaves uses qualified by the abbreviation alone`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
     try
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 2 12
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 2 12 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 2 12 "Inner"
         assertEdits
             [ "Aliases.fs:2.11-2.17=>Inner"
@@ -353,7 +353,7 @@ let ``renaming an indexer with no DefaultMember metadata is refused`` () = task 
 let ``renaming an escaped identifier replaces the backticks with it`` () = task {
     let! (state, dir, _fsproj, paths) = loadWorkspace [ "Escaped.fs", ESCAPED_SOURCE ]
     try
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 6
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 6 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 1 6 "``other value``"
         Assert.Equal(2, uses.Length)
         assertEdits

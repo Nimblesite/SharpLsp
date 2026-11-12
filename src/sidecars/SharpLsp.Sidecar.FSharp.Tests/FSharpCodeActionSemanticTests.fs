@@ -341,7 +341,7 @@ let ``call hierarchy resolves callers and callees`` () = task {
     try
         let! prepared = FSharpHierarchy.prepareCall state paths[0] 8 5
         Assert.True(prepared.IsSome, "helper must be preparable as a call-hierarchy item")
-        let! incoming = FSharpHierarchy.incomingCalls state paths[0] 8 5
+        let! incoming = FSharpHierarchy.incomingCalls state paths[0] 8 5 System.Threading.CancellationToken.None
         Assert.Contains("caller", names incoming)
         let! outgoing = FSharpHierarchy.outgoingCalls state paths[0] 9 5
         Assert.Contains("helper", names outgoing)
@@ -358,7 +358,7 @@ let ``type hierarchy resolves supertypes and subtypes`` () = task {
         Assert.True(prepared.IsSome, "Square must be preparable as a type-hierarchy item")
         let! supers = FSharpHierarchy.supertypes state paths[0] 4 6
         Assert.Contains("IShape", names supers)
-        let! subs = FSharpHierarchy.subtypes state paths[0] 1 6
+        let! subs = FSharpHierarchy.subtypes state paths[0] 1 6 System.Threading.CancellationToken.None
         Assert.Contains("Square", names subs)
     finally
         cleanup dir

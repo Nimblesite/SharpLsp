@@ -421,6 +421,7 @@ There is no background scan thread. Roslyn analysis happens only when the editor
 
 ### [DIAG-ANALYSIS-CANCELLATION] Cancellation
 
+- F# references, implementations, incoming calls and subtypes carry the request token through file and project checks. Cancellation releases the request queue before obsolete source I/O finishes; the wire boundary rejects a cancelled result rather than returning empty success (#562).
 - The Rust host cancels in-flight per-document IPC requests when the editor sends a fresh pull for the same document with a higher `previousResultId`-implied version (or a different `previousResultId`).
 - An editor open, change or close supersedes older diagnostics and CodeLens work for that document, plus older workspace scans, before foreground compiler IPC. This also applies when the next pull repeats the same `previousResultId`; a cached result identity does not identify the newest editor input. Unrelated document requests remain active.
 - An explicit solution selection supersedes all older diagnostics and CodeLens work before foreground workspace loading. Acknowledging the selection cannot leave old compiler I/O blocking the new solution. New workspace pulls retire excluded reports explicitly, and switching back restores current compiler truth without restarting the host or compiler.

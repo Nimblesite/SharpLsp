@@ -139,11 +139,15 @@ type ScriptCancellationTests(fixture: EngineDiagnosticsFixture) =
     [<InlineData("textDocument/references")>]
     [<InlineData("textDocument/implementation")>]
     [<InlineData("callHierarchy/incomingCalls")>]
+    [<InlineData("typeHierarchy/subtypes")>]
     member _.``project navigation cancellation releases the serial request queue``(methodName: string) = task {
         let fixture = EngineDiagnosticsFixture()
         use cleanup = { new IAsyncDisposable with
             member _.DisposeAsync() = ValueTask((fixture :> IAsyncLifetime).DisposeAsync()) }
         do! (fixture :> IAsyncLifetime).InitializeAsync()
+        if methodName = "typeHierarchy/subtypes" then
+            let! changed = fixture.DidChange(fixture.Valid, "module TestProject.Valid\n\ntype Shape = abstract Area: int\n")
+            Assert.Null(changed.Error)
         let savedExtra = File.ReadAllText(fixture.Extra)
         use! held = NativeHeldSource.create fixture.Extra savedExtra
         let payload =

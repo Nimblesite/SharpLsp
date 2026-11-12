@@ -267,7 +267,7 @@ let private standardRename state newName (resolved: ResolvedRename) =
         match aliases with
         | Error message -> return Error message
         | Ok aliases ->
-            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol
+            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol System.Threading.CancellationToken.None
             let! located = tryEditsForUses state newName (withoutAliasUses symbol aliases uses)
             match located with
             | None -> return Error "F# rename could not classify every semantic use"

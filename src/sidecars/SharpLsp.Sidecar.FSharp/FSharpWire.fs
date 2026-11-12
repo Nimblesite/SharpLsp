@@ -280,6 +280,7 @@ module internal Helpers =
                 try
                     let request = MessagePackSerializer.Deserialize<'Request>(payload, cancellationToken = ct)
                     let! result = query request ct
+                    ct.ThrowIfCancellationRequested()
                     return respond result ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
@@ -292,6 +293,10 @@ module internal Helpers =
     /// `handle` for a query at one position of one file.
     let atPosition (query: string -> int -> int -> Task<'Result>) (respond: 'Result -> CancellationToken -> ByteResult) =
         handle (fun (request: PositionRequest) -> query request.FilePath request.Line request.Character) respond
+
+    /// Position queries retain the request token through FCS. [DIAG-ANALYSIS-CANCELLATION]
+    let atPositionWithCancellation query respond =
+        handleWithCancellation (fun (request: PositionRequest) ct -> query request.FilePath request.Line request.Character ct) respond
 
     /// Answer with every item mapped to its wire shape.
     let listOf (toWire: 'Item -> 'Wire) (items: 'Item list) (ct: CancellationToken) : ByteResult =
@@ -314,9 +319,9 @@ module internal Helpers =
     /// Build a location handler for workspace methods returning a list of locations.
     let locationListHandler
         (workspace: FSharpWorkspace.FSharpWorkspaceState)
-        (getLocations: FSharpWorkspace.FSharpWorkspaceState -> string -> int -> int -> Task<FSharpWorkspace.DefinitionLocation list>)
+        (getLocations: FSharpWorkspace.FSharpWorkspaceState -> string -> int -> int -> CancellationToken -> Task<FSharpWorkspace.DefinitionLocation list>)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
-        atPosition (getLocations workspace) (fun locations ct ->
+        atPositionWithCancellation (getLocations workspace) (fun locations ct ->
             serializeOk { Locations = locations |> List.map toLocationResult |> Array.ofList } ct)
 
     /// Answer a request naming a symbol by identity with the locations `query` finds for it.
