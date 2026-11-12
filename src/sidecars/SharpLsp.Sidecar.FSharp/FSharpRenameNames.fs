@@ -27,38 +27,33 @@ let private isInlineGenericParameter (parseResults: FSharpParseFileResults) (par
             found || (isInline && Range.rangeContainsPos binding.RangeOfHeadPattern declaration)
         | _ -> found)
 
-let isValidNewName (parseResults: FSharpParseFileResults) (checker: FSharpChecker) (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
-    if String.IsNullOrWhiteSpace(newName) then false
-    else
-        let genericPrefix =
-            match symbol with
-            | :? FSharpGenericParameter as parameter ->
-                if parameter.IsSolveAtCompileTime then "^" else "'"
-            | _ -> ""
-        let permitsCaret =
-            match symbol with
-            | :? FSharpGenericParameter as parameter ->
-                parameter.IsSolveAtCompileTime || isInlineGenericParameter parseResults parameter
-            | _ -> false
-        let genericName =
-            newName.StartsWith("'", StringComparison.Ordinal)
-            || newName.StartsWith("^", StringComparison.Ordinal)
-        let compilerName =
-            match token.Kind with
-            | OperatorToken -> true
-            | IdentifierToken when genericName -> PrettyNaming.IsIdentifierName(newName.Substring(1))
-            | IdentifierToken ->
-                PrettyNaming.IsIdentifierName(newName)
-                || (newName.Length > 4
-                    && newName.StartsWith("``", StringComparison.Ordinal)
-                    && newName.EndsWith("``", StringComparison.Ordinal)
-                    && (checker.TokenizeFile(newName) |> Array.sumBy Array.length) = 1)
-        newName <> "_"
-        && newName <> token.Text
-        && (if genericPrefix = "" then not genericName
-            elif permitsCaret then genericName
-            else newName.StartsWith(genericPrefix, StringComparison.Ordinal))
-        && compilerName
-        && allowsSymbolName symbol newName
-        && classifyName checker newName = Some token.Kind
+let private validGenericPrefix parseResults (symbol: FSharpSymbol) (newName: string) =
+    let quoted = newName.StartsWith("'", StringComparison.Ordinal)
+    let caret = newName.StartsWith("^", StringComparison.Ordinal)
+    match symbol with
+    | :? FSharpGenericParameter as parameter ->
+        quoted || (caret && (parameter.IsSolveAtCompileTime || isInlineGenericParameter parseResults parameter))
+    | _ -> not quoted && not caret
+
+let private compilerAcceptsName (checker: FSharpChecker) (token: SourceToken) (newName: string) =
+    match token.Kind with
+    | OperatorToken -> true
+    | IdentifierToken when newName.StartsWith("'", StringComparison.Ordinal)
+                           || newName.StartsWith("^", StringComparison.Ordinal) ->
+        PrettyNaming.IsIdentifierName(newName.Substring(1))
+    | IdentifierToken ->
+        PrettyNaming.IsIdentifierName(newName)
+        || (newName.Length > 4
+            && newName.StartsWith("``", StringComparison.Ordinal)
+            && newName.EndsWith("``", StringComparison.Ordinal)
+            && (checker.TokenizeFile(newName) |> Array.sumBy Array.length) = 1)
+
+let isValidNewName parseResults checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
+    not (String.IsNullOrWhiteSpace(newName))
+    && newName <> "_"
+    && newName <> token.Text
+    && validGenericPrefix parseResults symbol newName
+    && compilerAcceptsName checker token newName
+    && allowsSymbolName symbol newName
+    && classifyName checker newName = Some token.Kind
 
