@@ -18,7 +18,7 @@
         "refactoring/": "refactoring"
       }
     },
-    { "group": "tools", "pages": { "context-menus/": "contextMenus", "nuget/": "nuget", "profiler/": "profiler", "fsharp-profiling/": "fsharpProfiling", "memory-leaks/": "memoryLeaks" } },
+    { "group": "tools", "pages": { "debugging/": "debugging", "context-menus/": "contextMenus", "nuget/": "nuget", "profiler/": "profiler", "fsharp-profiling/": "fsharpProfiling", "memory-leaks/": "memoryLeaks" } },
     { "group": "contributors", "secondary": true, "pages": { "architecture/": "architecture", "contributing/": "contributing" } }
   ],
   "footer": [

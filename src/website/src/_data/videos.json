@@ -524,5 +524,25 @@
         "caption": "ナレーション、オリジナル音楽、字幕付き。リポジトリのクリーンなコピーを使って VS Code で収録しました。早送りの部分は画面上に表示されます。"
       }
     }
+  },
+  "debugging": {
+    "page": "/docs/debugging/",
+    "encodings": [
+      "mp4"
+    ],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT1M46S",
+    "uploadDate": "2026-11-13T07:00:00+11:00",
+    "captions": [
+      "en"
+    ],
+    "chapters": true,
+    "text": {
+      "en": {
+        "label": "Debug C# and F# together in VS Code",
+        "caption": "One real debug session starts in C#, steps into F#, inspects values and returns to C#. Narrated with English captions."
+      }
+    }
   }
 }

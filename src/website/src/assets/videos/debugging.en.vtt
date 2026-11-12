@@ -1,0 +1,49 @@
+WEBVTT
+
+00:00.300 --> 00:06.219
+Start in C#, step into F#, and come back. One debugging session in VS Code.
+
+00:06.269 --> 00:12.271
+Install SharpLsp from the VS Code Marketplace: free C# and F# tooling.
+
+00:12.321 --> 00:15.494
+Subscribe for .NET, C# and F# content.
+
+00:15.944 --> 00:22.745
+This C# console app references an F# library. Build the sample, then open Program.cs.
+
+00:22.795 --> 00:29.159
+Put a breakpoint on the pricing call with F9. Press F5 to launch our checkout configuration.
+
+00:29.209 --> 00:34.081
+The yellow line is the next statement to execute. The pricing call has not run yet.
+
+00:34.531 --> 00:40.696
+Variables shows quantity three and unit price twenty. Expand Locals to inspect the current frame.
+
+00:40.746 --> 00:46.782
+Add quantity times unitPrice to Watch. The result is sixty, before we step into the calculation.
+
+00:47.232 --> 00:52.643
+Step Into with F11. The debugger opens the F# source at calculateTotal.
+
+00:52.693 --> 00:59.289
+The call stack still includes our C# caller. This is the same process and the same debugging session.
+
+00:59.739 --> 01:05.646
+Use F10 to step over each statement. The subtotal becomes sixty, and the discount is five.
+
+01:05.696 --> 01:12.069
+Step again. The F# total is fifty-five. Watch the values beside the highlighted execution line.
+
+01:14.273 --> 01:20.838
+Step Out returns to C#. Advance past the assignment if needed, then inspect total: fifty-five.
+
+01:23.406 --> 01:29.509
+Continue with F5. The Debug Console prints Total: 55, and the program finishes.
+
+01:30.439 --> 01:38.346
+Breakpoint in C#, inspect and watch, step into F#, then return and continue. One session, both languages.
+
+01:38.796 --> 01:44.117
+Install SharpLsp, and subscribe for .NET, C# and F# content!

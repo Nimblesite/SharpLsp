@@ -167,6 +167,7 @@
       "profiler": "Profiler",
       "fsharpProfiling": "Profiling F#",
       "memoryLeaks": "Fix a Memory Leak",
+      "debugging": "Debugging",
       "contributing": "Contributing",
       "menuLabel": "Documentation menu",
       "groups": {
@@ -378,6 +379,7 @@
       "profiler": "性能分析器",
       "fsharpProfiling": "F# 性能分析",
       "memoryLeaks": "修复内存泄漏",
+      "debugging": "调试",
       "contributing": "参与贡献",
       "menuLabel": "文档菜单",
       "groups": {
@@ -589,6 +591,7 @@
       "profiler": "プロファイラー",
       "fsharpProfiling": "F# のプロファイリング",
       "memoryLeaks": "メモリリークの修正",
+      "debugging": "デバッグ",
       "contributing": "コントリビューション",
       "menuLabel": "ドキュメントメニュー",
       "groups": {
