@@ -32,10 +32,11 @@ internal static class RoslynProjectLoading
     internal static async Task<Solution> LoadAsync(
         MSBuildWorkspace workspace,
         string target,
-        CancellationToken ct
+        CancellationToken ct,
+        IReadOnlyList<string>? projects = null
     )
     {
-        var entries = await EntriesAsync(target, ct).ConfigureAwait(false);
+        var entries = projects ?? await EntriesAsync(target, ct).ConfigureAwait(false);
         var fsharp = FSharpReachedFrom(entries);
         var loader = new MSBuildProjectLoader(workspace, PropertiesFor(workspace, target));
         return fsharp.Count is 0 && SolutionFileReader.IsSolutionFile(target)

@@ -12,7 +12,11 @@ internal static class SolutionLoader
     /// What discovery found under a path: the target to load, or — when several solutions
     /// compete and discovery refused to guess — every competitor. Neither means ABSENCE.
     /// </summary>
-    internal sealed record Discovery(string? Target, string[] Competing);
+    internal sealed record Discovery(string? Target, string[] Competing)
+    {
+        /// <summary>All standalone projects found by the same workspace walk.</summary>
+        internal string[] Projects { get; init; } = [];
+    }
 
     public static Result<string?, string> FindSolutionOrProject(string workspacePath)
     {
@@ -85,7 +89,7 @@ internal static class SolutionLoader
         {
             1 => solutionFiles[0],
             > 1 => PickBestSolution(solutionFiles, workspacePath),
-            _ => Array.Find(rootFiles, path => NativePaths.HasExtension(path, ".csproj")),
+            _ => null,
         };
     }
 
@@ -101,7 +105,7 @@ internal static class SolutionLoader
 
     /// <summary>
     /// One solution nested anywhere is the target; several compete and none is guessed, so
-    /// the caller can ask which to load; with none, a lone nested project is the target.
+    /// the caller can ask which to load; with none, all standalone projects load together.
     /// </summary>
     private static Discovery FindRecursiveMatch(string workspacePath)
     {
@@ -117,7 +121,7 @@ internal static class SolutionLoader
         {
             1 => new Discovery(solutionFiles[0], []),
             > 1 => new Discovery(null, solutionFiles),
-            _ => new Discovery(projectFiles.Length is 1 ? projectFiles[0] : null, []),
+            _ => new Discovery(projectFiles.FirstOrDefault(), []) { Projects = projectFiles },
         };
     }
 }

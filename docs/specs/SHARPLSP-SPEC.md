@@ -180,6 +180,11 @@ Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj
 
 The C# sidecar walks the tree **once** per `workspace/open`: the same walk yields the target, or the competing solutions when it refuses to guess. The walk is `NativePaths.WorkspaceFiles`, in the tier's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
 
+Without a solution, all discovered C# projects load into the same workspace, including
+nested siblings of a root project. They are restored before loading; an explicit
+project path still selects that project and its references. Multiple projects never
+fall back to loose-file analysis (#575).
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD] Loading a Solution into Roslyn
 
 Roslyn's `MSBuildProjectLoader` starts and tears down a BuildHost process for every `LoadProjectInfoAsync` call, so loading a solution project by project pays that start once per project (NLog, 15 projects: 21.5s one by one, 8s in one batch). A solution from which **no F# project is reachable** — listed, or referenced by a C# project however deep — is therefore loaded in one `LoadSolutionInfoAsync` batch through one BuildHost.

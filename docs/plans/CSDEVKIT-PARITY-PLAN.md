@@ -338,6 +338,7 @@ Features that make the daily experience smooth.
   - [x] Status bar indicator for hot reload state — `hot-reload.ts` status bar item (`coverage-extension-workflows.test.ts`)
 
 - [ ] **P3.3: Solution Explorer Enhancements**
+  - [x] Load every standalone C# project in a solutionless monorepo (#575): three real-SDK layouts prove nested loading, sibling inclusion and working diagnostics; 21 discovery/regression checks pass.
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
   - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.
