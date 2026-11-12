@@ -55,7 +55,6 @@ pub fn initialize(
     sender: crossbeam_channel::Sender<Message>,
 ) -> Result<()> {
     let runtime = runtime.handle().clone();
-    PULL.store(supports_pull(capabilities), Ordering::Release);
     let analyzer = analyzer(runtime.clone(), sidecars);
     let session = Session {
         inputs: super::monitor::InputMonitor::default(),
@@ -69,9 +68,14 @@ pub fn initialize(
         sender,
         runtime,
     };
-    SESSION
-        .set(Mutex::new(Some(session)))
-        .map_err(|_session| anyhow::anyhow!("diagnostics session already initialized"))
+    let slot = SESSION.get_or_init(|| Mutex::new(None));
+    let mut current = slot
+        .lock()
+        .map_err(|error| anyhow::anyhow!("diagnostics session lock poisoned: {error}"))?;
+    anyhow::ensure!(current.is_none(), "diagnostics session already initialized");
+    *current = Some(session);
+    PULL.store(supports_pull(capabilities), Ordering::Release);
+    Ok(())
 }
 
 /// Prefer explicit pull support, even when the client also supports push.
@@ -348,11 +352,38 @@ mod load_completion_tests {
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let capabilities = ClientCapabilities::default();
         let config = DiagnosticsConfig::default();
-        initialize(&capabilities, &config, &runtime, [None, None], sender.clone())?;
+        initialize(
+            &capabilities,
+            &config,
+            &runtime,
+            [None, None],
+            sender.clone(),
+        )?;
         shutdown()?;
         initialize(&capabilities, &config, &runtime, [None, None], sender)?;
-        assert!(store().is_ok(), "replacement connection owns a usable store");
+        assert!(
+            store().is_ok(),
+            "replacement connection owns a usable store"
+        );
         shutdown()
+    }
+
+    /// [DIAG-ARCHITECTURE-SALSA] Shutdown cannot leak the old connection's mode or loads.
+    #[test]
+    fn diagnostics_shutdown_clears_connection_state() -> Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let capabilities: ClientCapabilities =
+            serde_json::from_value(serde_json::json!({"textDocument":{"diagnostic":{}}}))?;
+        let config = DiagnosticsConfig::default();
+        initialize(&capabilities, &config, &runtime, [None, None], sender)?;
+        load_started();
+        assert!(is_pull(), "the first connection negotiated pull diagnostics");
+        shutdown()?;
+        assert!(!loading(), "stopped compiler loads cannot outlive the connection");
+        assert!(!is_pull(), "the old connection's pull mode is discarded");
+        assert!(configuration().is_ok(), "stopped state uses default policy");
+        Ok(())
     }
 
     /// [DIAG-TRUTH-GUARANTEES] #561: a held session cannot stall Tokio's timer worker.
