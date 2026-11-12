@@ -1442,6 +1442,16 @@
           "command": "sharplsp.profiler.killProcess",
           "when": "view == sharplsp.profiler.processes && viewItem =~ /^(process|blockedProcess)/",
           "group": "9_danger@1"
+        },
+        {
+          "command": "sharplsp.addProjectToSolution",
+          "when": "view == sharplsp.solutionExplorer && viewItem == solution",
+          "group": "2_solution@1"
+        },
+        {
+          "command": "sharplsp.addProjectToSolution",
+          "when": "view == sharplsp.solutionExplorer && viewItem == project",
+          "group": "2_solution@1"
         }
       ],
       "editor/title/run": [

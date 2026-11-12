@@ -146,12 +146,17 @@ suite('Context Menu — Package.json Contributions', () => {
 
   // ── Package maintenance (unused / consolidate) ────────────────
 
-  test('removeUnusedPackages has project + solution menu entries in 5_dependencies', () => {
-    const project = menuEntry('sharplsp.removeUnusedPackages', PROJECT_WHEN);
-    const solution = menuEntry('sharplsp.removeUnusedPackages', SOLUTION_WHEN);
-    assert.strictEqual(project.group, '5_dependencies');
-    assert.strictEqual(solution.group, '5_dependencies');
-  });
+  for (const [command, group] of [
+    ['sharplsp.removeUnusedPackages', '5_dependencies'],
+    ['sharplsp.addProjectToSolution', '2_solution@1'],
+  ] as const) {
+    test(`${command} has project + solution menu entries in ${group}`, () => {
+      const project = menuEntry(command, PROJECT_WHEN);
+      const solution = menuEntry(command, SOLUTION_WHEN);
+      assert.strictEqual(project.group, group);
+      assert.strictEqual(solution.group, group);
+    });
+  }
 
   test('consolidatePackages has a solution-only menu entry in 5_dependencies', () => {
     const entries = menuEntries().filter((m) => m.command === 'sharplsp.consolidatePackages');

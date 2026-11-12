@@ -5,6 +5,7 @@ import { directoryOf, fileNameOf, joinPath } from './paths';
 import { info } from './log';
 import { findSolutions } from './solution.js';
 import * as state from './state.js';
+import { type ExplorerNode, NodeType } from './tree-nodes.js';
 import { getErrorMessage } from './utils.js';
 import { addFileToNearestProject } from './add-source-file.js';
 import {
@@ -268,8 +269,8 @@ async function newFile(): Promise<void> {
   void addFileToNearestProject(filePath, '*.csproj');
 }
 
-/** Add an existing project to the solution. */
-async function addProjectToSolution(): Promise<void> {
+/** Select an existing workspace project for the palette command. */
+async function pickWorkspaceProject(): Promise<vscode.Uri | undefined> {
   const projectFiles = await vscode.workspace.findFiles(
     '**/*.{csproj,fsproj}',
     '**/node_modules/**',
@@ -286,27 +287,46 @@ async function addProjectToSolution(): Promise<void> {
     })),
     { placeHolder: 'Select project to add' },
   );
-  if (pick === undefined) {
-    return;
-  }
+  return pick?.uri;
+}
 
-  const solutionPath = await pickSolutionFile();
-  if (solutionPath === undefined) {
-    return;
+/** Implements [SE-SOLUTION-ADD]: preserve the clicked row's identity. */
+async function projectForSelection(node?: ExplorerNode): Promise<vscode.Uri | undefined> {
+  if (node?.nodeType === NodeType.Project) {
+    return node.projectFilePath === undefined ? undefined : vscode.Uri.file(node.projectFilePath);
   }
+  if (node?.nodeType !== NodeType.Solution) return await pickWorkspaceProject();
+  const picked = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    filters: { '.NET projects': ['fsproj', 'csproj'] },
+    openLabel: 'Add Existing Project',
+  });
+  return picked?.[0];
+}
 
+/** Add an existing project to the selected solution. Implements [SE-SOLUTION-ADD]. */
+async function addProjectToSolution(node?: ExplorerNode): Promise<void> {
+  const project = await projectForSelection(node);
+  if (project === undefined) return;
+  const solutionPath =
+    node?.nodeType === NodeType.Solution
+      ? node.projectFilePath
+      : await pickSolutionFile(node?.nodeType !== NodeType.Project);
+  if (solutionPath === undefined) return;
   try {
-    await addProjectToSolutionFile(solutionPath, pick.uri.fsPath);
-    void vscode.window.showInformationMessage(`Added ${pick.label} to solution`);
+    await addProjectToSolutionFile(solutionPath, project.fsPath);
+    void vscode.window.showInformationMessage(
+      `Added ${vscode.workspace.asRelativePath(project)} to solution`,
+    );
     await vscode.commands.executeCommand(CMD_REFRESH_EXPLORER);
   } catch (err) {
     reportFailure(err);
   }
 }
 
-async function pickSolutionFile(): Promise<string | undefined> {
+async function pickSolutionFile(preferActive = true): Promise<string | undefined> {
   const selected = state.solutionPath.value;
-  if (selected !== undefined) {
+  if (preferActive && selected !== undefined) {
     return selected;
   }
 
