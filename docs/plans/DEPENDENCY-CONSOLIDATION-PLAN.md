@@ -5,7 +5,7 @@ Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI
 - [x] Preserve current editor requirements, security overrides, prepared FSharpLint source and newer package pins.
 - [x] Rebuild npm locks from the resolved manifests; retain both sysinfo versions required by SharpLsp and lsp-profiler.
 - [x] Verify extension lint/type checks, website build, F# sidecar build, SDK pins and 22 workflow tests.
-- [ ] Verify Gradle 9.9 and IntelliJ platform plugin 2.20 configuration and Rider tests.
+- [x] Verify Gradle 9.9 and IntelliJ platform plugin 2.20 through the repo JDK launcher: 8 tests pass; Kover 4.0948% passes the unchanged 4.09% gate.
 - [x] Run all F# sidecar tests: 550 pass, none skipped.
 - [x] Run affected MTP output/merge editor checks: 10 pass.
 - [x] Restore missing refactoring videos in three locales: all 9 desktop/phone checks pass.
