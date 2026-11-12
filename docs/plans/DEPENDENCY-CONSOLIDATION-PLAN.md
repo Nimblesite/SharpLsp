@@ -6,7 +6,10 @@ Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI
 - [x] Rebuild npm locks from the resolved manifests; retain both sysinfo versions required by SharpLsp and lsp-profiler.
 - [x] Verify extension lint/type checks, website build, F# sidecar build, SDK pins and 22 workflow tests.
 - [ ] Verify Gradle 9.9 and IntelliJ platform plugin 2.20 configuration and Rider tests.
-- [ ] Run affected editor, website and F# test suites and full CI gates.
+- [x] Run all F# sidecar tests: 550 pass, none skipped.
+- [x] Run affected MTP output/merge editor checks: 10 pass.
+- [x] Restore missing refactoring videos in three locales: all 9 desktop/phone checks pass.
+- [ ] Finish full website suite (1,035 cases) and full CI gates.
 - [x] Review pi's dependency audit; align Java setup and Gradle task pins, reject incompatible npm majors.
 - [x] Complete merge (`fd26b19c`); staging ancestry is included. Retain the staging ref required by the Dependabot workflow and its target-branch configuration.
 - [ ] Push after validation.
