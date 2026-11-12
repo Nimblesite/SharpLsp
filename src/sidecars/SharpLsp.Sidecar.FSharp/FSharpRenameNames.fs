@@ -11,6 +11,7 @@ let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
     match symbol with
     | :? FSharpUnionCase as unionCase ->
         Char.IsUpper(first) || unionCase.DeclaringEntity.HasAttribute<RequireQualifiedAccessAttribute>()
+    | :? FSharpActivePatternCase -> Char.IsUpper(first)
     | :? FSharpEntity as entity when entity.IsFSharpExceptionDeclaration -> Char.IsUpper(first)
     | _ -> true
 

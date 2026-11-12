@@ -463,3 +463,21 @@ let ``statically resolved generic parameter accepts an apostrophe rename`` () = 
     finally
         cleanup dir
 }
+
+/// [RENAME-ERRORS] Active-pattern case labels must begin uppercase (FS0623).
+[<Fact>]
+let ``rename refuses a lowercase active pattern case`` () = task {
+    let input =
+        source [ "module Patterns"
+                 "let (|Positive|_|) value = if value > 0 then Some value else None"
+                 "let classify value = match value with Positive n -> n | _ -> 0" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Patterns.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 6 "positive" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"lowercase active-pattern rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
