@@ -426,6 +426,42 @@ let ``generic parameter rename refuses a reserved bang and accepts a plain name`
 let private IDENTITY_SOURCE =
     source [ "module Ident"; "type Rec = { Field: int }"; "type Union = | Case of int" ]
 
+/// [RENAME-ERRORS] An ordinary union case must retain an uppercase first letter.
+[<Fact>]
+let ``rename refuses a lowercase ordinary union case`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ident.fs", IDENTITY_SOURCE ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 2 16 "value" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"lowercase union-case rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
+
+/// [RENAME-FSHARP-APPLY] Qualified union cases may use lowercase names.
+[<Fact>]
+let ``rename accepts a lowercase qualified union case`` () = task {
+    let input =
+        source
+            [ "module Qualified"
+              "[<RequireQualifiedAccess>]"
+              "type Union = | Case of int"
+              "let value = Union.Case 1" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Qualified.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 2 16 "value" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"qualified union-case rename failed: {message}"
+        | Ok edits ->
+            let actual = edits |> List.map editKey |> List.sort
+            Assert.Equal<string list>([ "Qualified.fs:2.15-2.19=>value"; "Qualified.fs:3.18-3.22=>value" ], actual)
+    finally
+        cleanup dir
+}
+
 let private RW_INDEXER_SOURCE =
     source
         [ "module RW"
