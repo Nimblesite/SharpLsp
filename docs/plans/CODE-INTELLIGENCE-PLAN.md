@@ -48,6 +48,7 @@ The five completed core items were verified against the latest published v0.32.1
   - [x] Reject compiler-reserved trailing `!` in ordinary and generic identifiers while accepting escaped names — `FSharpRenameSemanticTests`, [RENAME-ERRORS], issue #579
   - [x] Reject empty escaped identifiers that the F# lexer accepts but the compiler rejects with FS3563 — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
   - [x] Enforce uppercase union case names except on `RequireQualifiedAccess` types — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
+  - [x] Enforce uppercase exception labels — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
 - [x] Wire F# sidecar to FCS rename/symbol-use pipeline — `FSharpRename.fs`, `FSharpReferences.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-APPLY]
 - [x] Emit edits for every declaration and usage location in F# projects — `FSharpRenameSemanticTests` asserts exact declaration and usage edits across two ordered files, [RENAME-FSHARP-APPLY]
 - [x] Preserve F# file-ordering semantics during project-wide rename — `FSharpRenameFileOrderTests` proves nonalphabetical compile order, all cross-file edits, and binding to the later shadowing declaration, [RENAME-FSHARP-APPLY]

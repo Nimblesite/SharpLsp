@@ -231,10 +231,11 @@ let private editForLocated newName (located: LocatedUse) : FSharpCodeActions.Raw
       NewText = newName }
 
 let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
+    let first = if newName.StartsWith("``", StringComparison.Ordinal) then newName[2] else newName[0]
     match symbol with
     | :? FSharpUnionCase as unionCase ->
-        let first = if newName.StartsWith("``", StringComparison.Ordinal) then newName[2] else newName[0]
         Char.IsUpper(first) || unionCase.DeclaringEntity.HasAttribute<RequireQualifiedAccessAttribute>()
+    | :? FSharpEntity as entity when entity.IsFSharpExceptionDeclaration -> Char.IsUpper(first)
     | _ -> true
 
 let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =

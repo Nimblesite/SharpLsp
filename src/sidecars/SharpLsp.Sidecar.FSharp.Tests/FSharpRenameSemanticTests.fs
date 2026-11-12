@@ -462,6 +462,21 @@ let ``rename accepts a lowercase qualified union case`` () = task {
         cleanup dir
 }
 
+/// [RENAME-ERRORS] Exception labels must begin with an uppercase letter.
+[<Fact>]
+let ``rename refuses a lowercase exception label`` () = task {
+    let input = source [ "module Exceptions"; "exception Failure of int"; "let useIt = Failure 1" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Exceptions.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 10 "failure" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"lowercase exception rename returned {edits |> List.map editKey}"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
+
 let private RW_INDEXER_SOURCE =
     source
         [ "module RW"
