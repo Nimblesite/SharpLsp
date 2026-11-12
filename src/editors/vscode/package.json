@@ -1818,8 +1818,8 @@
     "@nimblesite/lsp-profiler-ui": "^0.4.0",
     "@nimblesite/shipwright-vscode": "^0.11.0",
     "@preact/signals-core": "^1.14.4",
-    "d3-force": "^3.0.0",
-    "fast-xml-parser": "^5.11.2",
+    "d3-force": "^3.0.1",
+    "fast-xml-parser": "^5.12.0",
     "vscode-languageclient": "^10.1.2"
   },
   "devDependencies": {
@@ -1835,12 +1835,12 @@
     "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
-    "glob": "^14.0.3",
+    "glob": "^14.0.4",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.2.0",
     "mocha": "^12.0.3",
-    "playwright": "^1.64.1",
+    "playwright": "^1.65.0",
     "prettier": "3.9.10",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2"

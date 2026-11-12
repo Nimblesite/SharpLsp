@@ -20,7 +20,7 @@ plugins {
     id("java")
     kotlin("jvm") version "2.4.21"
     // The 2.x plugin requires Gradle 9.0+, matching the wrapper pin.
-    id("org.jetbrains.intellij.platform") version "2.19.0"
+    id("org.jetbrains.intellij.platform") version "2.20.0"
     // Line coverage for the Rider plugin, gated by the repo-wide ratchet in
     // coverage-thresholds.json. [DIST-CI-RIDER]
     id("org.jetbrains.kotlinx.kover") version "0.9.11"
