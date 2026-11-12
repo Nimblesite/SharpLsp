@@ -71,12 +71,12 @@ The five completed core items were verified against the latest published v0.32.1
 ### Rename Tests
 
 - [ ] E2E test: `prepareRename` range and placeholder for every code element category
-- [ ] E2E test: rename updates declarations and references across files
+- [x] E2E test: rename updates declarations and references across files — `fsharp-lsp-rename-symbols.test.ts` checks exact declaration and usage edits across two `.fs` files, applies them, rechecks diagnostics, and undoes them; all 26 matrix cases passed locally on 2026-11-12, [RENAME-TESTS]
 - [x] E2E test: rename after document edit uses latest VFS content — `lsp-rename-edge.test.ts` and `fsharp-lsp-rename-edge.test.ts` prepare, apply, reverse and undo renames of unsaved C# and F# bindings, [RENAME-TESTS]
 - [x] E2E test: invalid new names are rejected — `RefactorEndToEndTests` requires an error and no payload for six invalid C# names; `FSharpNavigationEdgeTests` requires the compiler-backed F# refusal, [RENAME-ERRORS]. The #559 regression also passed a real LSP probe with the fixed C# engine; released v0.32.1 still has the bug.
-- [ ] E2E test: whitespace/comment/string/metadata positions are rejected
+- [x] E2E test: whitespace/comment/string/metadata positions are rejected — `fsharp-lsp-rename-edge.test.ts` and `lsp-rename-edge.test.ts` verify prepare and execute refusals for trivia, strings, and metadata in both languages; 15 F# and 22 C# cases passed locally on 2026-11-12, [RENAME-TESTS]
 - [x] E2E test: cross-language C# <-> F# public symbol rename — `fsharp-lsp-cross-language-rename.test.ts` checks public types and properties in both directions, exact edits in both files, apply/reverse, rebuild and diagnostics, [RENAME-CROSSLANGUAGE]
-- [ ] E2E test: returned `WorkspaceEdit` has valid, non-overlapping LSP edits
+- [x] E2E test: returned `WorkspaceEdit` has valid, non-overlapping LSP edits — the same 26 real-editor cases call `assertWorkspaceEditSafe`, which checks file URIs, ordered ranges within each document, and separation between edits, [RENAME-TESTS]
 
 The unsaved C# case, three F# name variants and four cross-language type/property cases passed in the Linux `lsp` and `fsharp` jobs at `997a1734` on 2026-11-10. The code-element checklist above tracks the remaining category-wide coverage. [CI run](https://github.com/Nimblesite/SharpLsp/actions/runs/42712062747)
 
