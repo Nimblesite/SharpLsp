@@ -5,6 +5,7 @@ open System
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
+open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken
 
 let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
@@ -16,7 +17,17 @@ let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
     | :? FSharpEntity as entity when entity.IsFSharpExceptionDeclaration -> Char.IsUpper(first)
     | _ -> true
 
-let isValidNewName (checker: FSharpChecker) (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
+let private isInlineGenericParameter (parseResults: FSharpParseFileResults) (parameter: FSharpGenericParameter) =
+    let location = parameter.DeclarationLocation
+    let declaration = location.Start
+    (false, parseResults.ParseTree)
+    ||> ParsedInput.fold (fun found _ node ->
+        match node with
+        | SyntaxNode.SynBinding (SynBinding(isInline = isInline) as binding) ->
+            found || (isInline && Range.rangeContainsPos binding.RangeOfHeadPattern declaration)
+        | _ -> found)
+
+let isValidNewName (parseResults: FSharpParseFileResults) (checker: FSharpChecker) (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
     if String.IsNullOrWhiteSpace(newName) then false
     else
         let genericPrefix =
@@ -24,6 +35,11 @@ let isValidNewName (checker: FSharpChecker) (symbol: FSharpSymbol) (token: Sourc
             | :? FSharpGenericParameter as parameter ->
                 if parameter.IsSolveAtCompileTime then "^" else "'"
             | _ -> ""
+        let permitsCaret =
+            match symbol with
+            | :? FSharpGenericParameter as parameter ->
+                parameter.IsSolveAtCompileTime || isInlineGenericParameter parseResults parameter
+            | _ -> false
         let genericName =
             newName.StartsWith("'", StringComparison.Ordinal)
             || newName.StartsWith("^", StringComparison.Ordinal)
@@ -40,7 +56,7 @@ let isValidNewName (checker: FSharpChecker) (symbol: FSharpSymbol) (token: Sourc
         newName <> "_"
         && newName <> token.Text
         && (if genericPrefix = "" then not genericName
-            elif genericPrefix = "^" then genericName
+            elif permitsCaret then genericName
             else newName.StartsWith(genericPrefix, StringComparison.Ordinal))
         && compilerName
         && allowsSymbolName symbol newName

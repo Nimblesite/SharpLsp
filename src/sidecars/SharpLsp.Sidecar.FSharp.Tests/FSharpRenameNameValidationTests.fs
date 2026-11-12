@@ -20,3 +20,36 @@ let ``rename refuses embedded escaped identifier delimiters`` () = task {
     finally
         cleanup dir
 }
+
+/// [RENAME-FSHARP-APPLY] Inline generic parameters may use caret spelling.
+[<Fact>]
+let ``inline generic parameter accepts a caret rename`` () = task {
+    let input = source [ "module Generic"; "let inline identity<'T> (value: 'T) = value" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 20 "^U" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"valid inline generic rename was rejected: {message}"
+        | Ok edits ->
+            Assert.Equal<string list>(
+                [ "Generic.fs:1.20-1.22=>^U"; "Generic.fs:1.32-1.34=>^U" ],
+                edits |> List.map editKey |> List.sort)
+    finally
+        cleanup dir
+}
+
+/// [RENAME-ERRORS] A caret generic in a non-inline binding fails FS0670.
+[<Fact>]
+let ``non-inline generic parameter refuses a caret rename`` () = task {
+    let input = source [ "module Generic"; "let identity<'T> (value: 'T) = value" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 13 "^U" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"invalid non-inline caret rename returned {edits.Length} edits"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
