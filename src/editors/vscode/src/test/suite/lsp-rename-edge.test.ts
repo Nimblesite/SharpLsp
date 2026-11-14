@@ -254,9 +254,22 @@ async function assertNoRenameToken(
   assertCleanBaselines(fixtures);
 }
 
-async function assertOperatorRejected(fixtures: RenameFixtureSet): Promise<void> {
+// [RENAME-COVERAGE] A binary `+` overload prepares on its punctuation, never its keyword, and
+// only accepts another operator token as its new name.
+async function assertOperatorPositions(fixtures: RenameFixtureSet): Promise<void> {
   await assertNoRenameToken(fixtures, 'symbols', 'operator +', 'operator', 'operator keyword');
-  await assertNoRenameToken(fixtures, 'symbols', 'operator +', '+', 'operator punctuation');
+  const fixture = fixtureOf(fixtures, 'symbols');
+  const position = positionOf(fixture.document, 'operator +', '+');
+  const prepared = await prepareAt(fixture.uri, position);
+  assert.strictEqual(prepared?.placeholder, '+', 'operator punctuation prepares as +');
+  const { start, end } = prepared.range;
+  assert.deepStrictEqual(start, { line: position.line, character: position.character });
+  assert.deepStrictEqual(end, { line: position.line, character: position.character + 1 });
+  const raw = await capture(rawRenameAt(fixture.uri, position, 'ShouldNotRename'));
+  assertRejectedOrEmpty(raw, 'operator renamed to an identifier raw rename');
+  const provider = await capture(providerRename(fixture.uri, position, 'ShouldNotRename'));
+  assertRejectedOrEmpty(provider, 'operator renamed to an identifier VS Code rename');
+  assertCleanBaselines(fixtures);
 }
 
 async function assertConversionRejected(fixtures: RenameFixtureSet): Promise<void> {
@@ -298,8 +311,8 @@ function registerBoundaryTests(getFixtures: () => RenameFixtureSet): void {
     ['metadata symbols cannot produce source rename edits', assertMetadataRejected],
     ['the C# indexer this keyword is not a renameable identifier', assertIndexerRejected],
     [
-      'operator declarations reject keyword and punctuation rename positions',
-      assertOperatorRejected,
+      'operator declarations prepare on punctuation only and reject identifier names',
+      assertOperatorPositions,
     ],
     [
       'conversion-operator type tokens cannot masquerade as renameable declarations',
