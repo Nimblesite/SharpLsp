@@ -67,7 +67,14 @@ const CONTEXTUAL_KEYWORD: RenameCase = {
   newName: 'record',
 };
 
-const POSITIVE_CASES = [PARTIAL_TYPE, PARTIAL_MEMBER, CASE_ONLY, UNICODE, ESCAPED_KEYWORD, CONTEXTUAL_KEYWORD];
+const POSITIVE_CASES = [
+  PARTIAL_TYPE,
+  PARTIAL_MEMBER,
+  CASE_ONLY,
+  UNICODE,
+  ESCAPED_KEYWORD,
+  CONTEXTUAL_KEYWORD,
+];
 const INVALID_NAMES = ['', ' ', '123member', 'two words', 'bad-name', '.', 'class'] as const;
 const OVERLAY_CASE: RenameCase = edgeCase(
   'unsaved overlay local',

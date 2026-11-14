@@ -258,7 +258,9 @@ async function newFile(): Promise<void> {
   edit.createFile(uri);
   edit.insert(uri, new vscode.Position(0, 0), content);
   if (!(await vscode.workspace.applyEdit(edit))) {
-    await vscode.window.showWarningMessage(`Could not create ${name}.cs. The file may already exist.`);
+    await vscode.window.showWarningMessage(
+      `Could not create ${name}.cs. The file may already exist.`,
+    );
     return;
   }
 
