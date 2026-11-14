@@ -49,8 +49,7 @@ fn postfix_items(vfs: &Vfs, uri: &Uri, line: u32, character: u32) -> Vec<Complet
         return Vec::new();
     };
     LangId::from_uri(uri)
-        .map(|lang| get_postfix_completions(&source, line, character, lang))
-        .unwrap_or_default()
+        .map_or_default(|lang| get_postfix_completions(&source, line, character, lang))
 }
 
 /// The sidecar's completions for `request`; an unavailable sidecar contributes

@@ -57,13 +57,21 @@ function createSolution(root) {
 }
 
 function snapshotAssets(root) {
-    return findFiles(root, "project.assets.json").map((file) => ({
-        file,
-        mtime: fs.statSync(file).mtimeMs,
-        sha256: createHash("sha256")
-            .update(fs.readFileSync(file))
-            .digest("hex"),
-    }));
+    return findFiles(root, "project.assets.json").map((file) => {
+        // One descriptor for stat and read, so both observe the same file.
+        const fd = fs.openSync(file, "r");
+        try {
+            return {
+                file,
+                mtime: fs.fstatSync(fd).mtimeMs,
+                sha256: createHash("sha256")
+                    .update(fs.readFileSync(fd))
+                    .digest("hex"),
+            };
+        } finally {
+            fs.closeSync(fd);
+        }
+    });
 }
 
 function prepareFixture(root, evidence) {

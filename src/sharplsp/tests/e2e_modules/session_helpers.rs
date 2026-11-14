@@ -92,24 +92,21 @@ pub fn assert_wellformed_file_uri(uri: &str, label: &str) {
 
 /// Collect `(uri, start_line)` pairs from a `Location[]` result.
 pub fn location_entries(result: &Value) -> Vec<(String, u64)> {
-    result
-        .as_array()
-        .map(|locs| {
-            locs.iter()
-                .map(|loc| {
-                    (
-                        loc["uri"]
-                            .as_str()
-                            .expect("location must have uri")
-                            .to_string(),
-                        loc["range"]["start"]["line"]
-                            .as_u64()
-                            .expect("location must have start line"),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    result.as_array().map_or_default(|locs| {
+        locs.iter()
+            .map(|loc| {
+                (
+                    loc["uri"]
+                        .as_str()
+                        .expect("location must have uri")
+                        .to_string(),
+                    loc["range"]["start"]["line"]
+                        .as_u64()
+                        .expect("location must have start line"),
+                )
+            })
+            .collect()
+    })
 }
 
 /// Assert `locations` includes at least one URI ending in `suffix`.

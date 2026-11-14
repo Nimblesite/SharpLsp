@@ -242,8 +242,7 @@ fn unambiguous_declaration(matches: &[InstalledPackageInfo]) -> Result<Declarati
 fn one_version(mut versions: BTreeSet<&String>) -> String {
     versions
         .pop_first()
-        .map(String::as_str)
-        .unwrap_or_default()
+        .map_or_default(String::as_str)
         .to_string()
 }
 
