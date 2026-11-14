@@ -16,6 +16,8 @@ eleventyNavigation:
 
 {% video "refactoring-lesson" %}
 
+{% video "move-type" %}
+
 ## F# のクイックフィックス
 
 | コンテキスト | アクション |

@@ -15,6 +15,8 @@ Open a solution or project, wait for it to load, then put the cursor on an error
 
 {% video "refactoring-lesson" %}
 
+{% video "move-type" %}
+
 ## F# quick fixes
 
 | Context | Action |

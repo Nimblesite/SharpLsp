@@ -10,6 +10,7 @@
       "group": "writeCode",
       "pages": {
         "fsharp/": "fsharp",
+        "csharp-14/": "csharp14",
         "blazor/": "blazor",
         "completions/": "codeCompletions",
         "hover/": "hover",

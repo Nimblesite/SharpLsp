@@ -1,0 +1,49 @@
+WEBVTT
+
+00:00.300 --> 00:04.541
+C# 14 shipped with .NET 10, the long-term support release.
+
+00:04.591 --> 00:10.452
+Here are its best features, in VS Code with SharpLsp: free C# and F# tooling.
+
+00:10.502 --> 00:13.785
+Install SharpLsp from the VS Code Marketplace.
+
+00:13.835 --> 00:16.601
+Subscribe for .NET, C# and F# content.
+
+00:17.051 --> 00:21.036
+Feature one: extension members. Open an extension block for any type...
+
+00:21.086 --> 00:27.049
+...and put properties in it, not just methods. Hover it, and SharpLsp shows exactly what you declared.
+
+00:30.851 --> 00:32.980
+Now every string has an IsBlank property.
+
+00:33.030 --> 00:37.793
+Completion offers it right beside the built-in members, and it reads like it was always there.
+
+00:37.843 --> 00:41.728
+And hover tells you exactly where it lives: the extension block on string.
+
+00:44.384 --> 00:47.320
+Hit F12, and you land straight on the extension block.
+
+00:52.651 --> 00:57.138
+Feature two: the field keyword. Give a setter a body, with no backing field to declare.
+
+00:57.188 --> 01:01.660
+The word field means the one the compiler makes for you. Every name now gets trimmed.
+
+01:04.117 --> 01:09.985
+Feature three: null-conditional assignment. Question-mark-dot works on the left of an equals sign, too.
+
+01:10.035 --> 01:14.178
+If Address is null, the assignment just doesn't happen. No if statement needed.
+
+01:15.251 --> 01:21.533
+Extension members, the field keyword, and null-conditional assignment. That's C# 14 on .NET 10.
+
+01:21.983 --> 01:26.609
+Install SharpLsp, and subscribe for .NET, C# and F# content!

@@ -5,6 +5,7 @@ import { test, expect } from '@playwright/test';
 import { expectFramesAdvance } from './media.js';
 
 const FILMS = [
+  ['/docs/csharp-14/', 0], ['/docs/refactoring/', 1],
   ['/docs/debugging/', 0],
   ['/docs/fsharp/', 0], ['/docs/fsharp-profiling/', 0], ['/docs/blazor/', 0],
   ['/docs/', 0], ['/docs/editors/', 0], ['/docs/configuration/', 0],

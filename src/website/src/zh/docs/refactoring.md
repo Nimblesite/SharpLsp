@@ -16,6 +16,8 @@ eleventyNavigation:
 
 {% video "refactoring-lesson" %}
 
+{% video "move-type" %}
+
 ## F# 快速修复
 
 | 上下文 | 操作 |

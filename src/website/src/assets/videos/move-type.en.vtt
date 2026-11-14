@@ -1,0 +1,40 @@
+WEBVTT
+
+00:00.300 --> 00:08.664
+Visual Studio can move a class to its own file. SharpLsp does that in VS Code, and then goes further: it moves nested classes out.
+
+00:08.714 --> 00:11.997
+Install SharpLsp from the VS Code Marketplace.
+
+00:12.048 --> 00:15.038
+Subscribe for .NET, C# and F# content.
+
+00:15.488 --> 00:21.821
+One: Receipt shares a file with Order. Open the code actions on its name, and move it to Receipt.cs.
+
+00:21.871 --> 00:26.421
+The new file keeps the usings and the namespace. Order's file keeps everything else.
+
+00:31.255 --> 00:38.470
+Two: LineItem is a private record nested inside Order. Visual Studio stops here. SharpLsp moves it out.
+
+00:38.520 --> 00:47.148
+Private becomes internal, because a top-level type can't be private. And the helper it borrowed is now written as Order.Round, so it still compiles.
+
+00:47.788 --> 00:52.386
+Three: Status is public, and Program.cs refers to it as Order.Status.
+
+00:52.436 --> 00:58.996
+Move it out, and every caller in the solution follows: the Order prefix is gone, and nothing is left to fix by hand.
+
+01:04.455 --> 01:08.724
+Four: Totals calls a private method of Order. Moved out, it could never compile.
+
+01:08.774 --> 01:17.901
+So the action simply isn't there. SharpLsp never offers a move it can't finish, and if a move would still break the build, it tells you why instead of applying it.
+
+01:18.351 --> 01:24.472
+Move a type to its own file. Move a nested type out, with its callers rewritten. And nothing offered that can't work.
+
+01:24.922 --> 01:29.799
+Install SharpLsp, and subscribe for .NET, C# and F# content!

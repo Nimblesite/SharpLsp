@@ -544,5 +544,43 @@
         "caption": "One real debug session starts in C#, steps into F#, inspects values and returns to C#. Narrated with English captions."
       }
     }
+  },
+  "csharp-14": {
+    "page": "/docs/csharp-14/",
+    "encodings": [
+      "mp4"
+    ],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT1M28S",
+    "uploadDate": "2026-11-14T00:00:00+11:00",
+    "captions": [
+      "en"
+    ],
+    "text": {
+      "en": {
+        "label": "C# 14 in VS Code with SharpLsp",
+        "caption": "Extension members, the field keyword and null-conditional assignment on .NET 10. Real VS Code footage with English narration and captions."
+      }
+    }
+  },
+  "move-type": {
+    "page": "/docs/refactoring/",
+    "encodings": [
+      "mp4"
+    ],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT1M31S",
+    "uploadDate": "2026-11-14T00:00:00+11:00",
+    "captions": [
+      "en"
+    ],
+    "text": {
+      "en": {
+        "label": "Move C# types into their own files",
+        "caption": "Move a type and nested types into separate files, update callers and see unsafe moves refused. Real VS Code footage with English narration and captions."
+      }
+    }
   }
 }
