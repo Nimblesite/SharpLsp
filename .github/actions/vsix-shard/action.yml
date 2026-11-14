@@ -44,6 +44,17 @@ runs:
         dotnet-version: |
           9.0.x
           10.0.403
+    # The ubuntu-26.04 image added SDK 11.0.100 on 2026-11-11. Suites that build
+    # fixtures under /tmp sit outside global.json and silently switch to it, so
+    # the shard would no longer test the SDK the repo pins. Keep the pin exact.
+    - name: Remove SDKs newer than the pinned major
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |-
+        set -euo pipefail
+        sdk_root="${DOTNET_ROOT:-/usr/share/dotnet}/sdk"
+        sudo find "$sdk_root" -mindepth 1 -maxdepth 1 -type d -regex '.*/sdk/\(1[1-9]\|[2-9][0-9]\)\..*' -exec rm -rf {} +
+        dotnet --list-sdks
     - name: Install VS Code extension deps
       uses: ./.github/actions/vsix-node-deps
     - name: Download the compiled suite
