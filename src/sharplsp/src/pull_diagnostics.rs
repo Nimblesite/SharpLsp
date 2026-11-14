@@ -59,7 +59,9 @@ fn handle_workspace_diagnostic(
     let documents = if config.solution_wide_analysis {
         let documents = runtime.block_on(documents(sidecars))?;
         snapshot.check()?;
-        state::watch_documents(&documents, snapshot.revision)?;
+        if let Some(revision) = snapshot.revision {
+            state::watch_documents(&documents, revision)?;
+        }
         documents
     } else {
         Vec::new()

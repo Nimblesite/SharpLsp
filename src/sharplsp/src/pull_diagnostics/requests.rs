@@ -38,8 +38,10 @@ struct Context {
 pub(super) struct Snapshot {
     /// Shared Salsa owner; computed values are retained only there.
     pub store: PullStore,
-    /// Input revision captured before work was scheduled.
-    pub(super) revision: u64,
+    /// Diagnostic store revision captured before work was scheduled. `None` for
+    /// document requests (rename, codeLens): their own document's changes
+    /// supersede them through [`interest`], never unrelated store churn.
+    pub(super) revision: Option<u64>,
     /// Canonical dispatcher cancellation token.
     cancel: CancellationToken,
     /// Serializes partial sends against the terminal reply.
@@ -60,7 +62,7 @@ impl Snapshot {
             return Err(Interrupted::Cancelled.into());
         }
         let current = self.store.revision();
-        if current != self.revision {
+        if self.revision.is_some_and(|revision| revision != current) {
             tracing::debug!(
                 revision = self.revision,
                 current,
@@ -145,7 +147,7 @@ impl Requests {
         }
         let reply = ReplyGate::default();
         let store = super::state::store()?;
-        let revision = store.revision();
+        let revision = diagnostic(request).then(|| store.revision());
         let future = self.prepare(request.clone(), reply.clone(), store.clone(), revision)?;
         let (id, sender) = (request.id.clone(), self.context.sender.clone());
         drop(runtime.spawn(async move {
@@ -171,7 +173,7 @@ impl Requests {
         request: Request,
         reply: ReplyGate,
         store: PullStore,
-        revision: u64,
+        revision: Option<u64>,
     ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
         let context = self.context.clone();
         let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
@@ -215,6 +217,14 @@ fn handles(request: &Request) -> bool {
             | "workspace/diagnostic"
             | "textDocument/codeLens"
             | "textDocument/rename"
+    )
+}
+
+/// Only diagnostic pulls are reports of the whole store's current truth.
+fn diagnostic(request: &Request) -> bool {
+    matches!(
+        request.method.as_str(),
+        "textDocument/diagnostic" | "workspace/diagnostic"
     )
 }
 
@@ -386,9 +396,9 @@ fn response(id: lsp_server::RequestId, result: HandlerResult) -> Response {
 /// Validate the input epoch at the serialized output boundary as well. A report
 /// or refusal computed for replaced inputs is superseded, never settled; only a
 /// client cancellation keeps its own answer. [DIAG-TRUTH-GUARANTEES]
-fn current(result: HandlerResult, store: &PullStore, revision: u64) -> HandlerResult {
+fn current(result: HandlerResult, store: &PullStore, revision: Option<u64>) -> HandlerResult {
     let cancelled = matches!(&result, HandlerResult::Err(error) if error.code == -32800);
-    if !cancelled && store.revision() != revision {
+    if !cancelled && revision.is_some_and(|revision| store.revision() != revision) {
         HandlerResult::Err(rpc_error(&Interrupted::Superseded.into()))
     } else {
         result
