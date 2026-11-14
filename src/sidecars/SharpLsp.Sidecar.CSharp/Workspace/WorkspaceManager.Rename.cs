@@ -88,11 +88,14 @@ internal sealed partial class WorkspaceManager
         // [RENAME-ERRORS] Invalid names must reach the client as a failure, not a no-op.
         return target is null || _solution is null ? EmptyRenameResult()
             : target.Value.Foreign
-                ? !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
+                ? !IsValidIdentifier(newName)
+                        ? RenameEditResult.Failure("Invalid C# rename identifier")
                     : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
-                    : await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct).ConfigureAwait(false)
+                    : await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
+                        .ConfigureAwait(false)
             : target.Value.Symbol is IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator }
-                ? await RenameOperatorAsync(_solution, target.Value, newName, ct).ConfigureAwait(false)
+                ? await RenameOperatorAsync(_solution, target.Value, newName, ct)
+                    .ConfigureAwait(false)
             : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
             : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
             : await RenameSourceSymbolAsync(_solution, target.Value.Symbol, newName, ct)
@@ -179,10 +182,14 @@ internal sealed partial class WorkspaceManager
         var foreign =
             targetSymbol is not null
             && FSharpProjectSymbols.Declares(document.Project, targetSymbol);
-        return targetSymbol is not null
+        return
+            targetSymbol is not null
             && (foreign || IsSourceSymbol(targetSymbol))
-            && (targetSymbol is not IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method
-                || method.Parameters.Length == 2)
+            && (
+                targetSymbol
+                    is not IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method
+                || method.Parameters.Length == 2
+            )
             ? new RenameTarget(document, text, targetSymbol, token!.Value, foreign)
             : null;
     }
@@ -201,8 +208,10 @@ internal sealed partial class WorkspaceManager
     private static bool IsIdentifierAtPosition(SyntaxToken? token, int position)
     {
         return token is { } candidate
-            && ((candidate.IsKind(SyntaxKind.IdentifierToken) && candidate.Span.Contains(position))
-                || IsOperatorAtPosition(candidate, position));
+            && (
+                (candidate.IsKind(SyntaxKind.IdentifierToken) && candidate.Span.Contains(position))
+                || IsOperatorAtPosition(candidate, position)
+            );
     }
 
     private static bool IsSourceSymbol(ISymbol symbol)
@@ -254,11 +263,15 @@ internal sealed partial class WorkspaceManager
     private static bool HasMethodConflict(IMethodSymbol method, string valueText)
     {
         // [RENAME-CSHARP] Distinct signatures can legally share a method name.
-        return method.ContainingType.GetMembers(valueText).Any(candidate =>
-            !SymbolEqualityComparer.Default.Equals(candidate, method)
-            && (candidate is not IMethodSymbol other
-                || SymbolSignatureComparer.SameMethod(method, other))
-        );
+        return method
+            .ContainingType.GetMembers(valueText)
+            .Any(candidate =>
+                !SymbolEqualityComparer.Default.Equals(candidate, method)
+                && (
+                    candidate is not IMethodSymbol other
+                    || SymbolSignatureComparer.SameMethod(method, other)
+                )
+            );
     }
 
     /// <summary>
@@ -300,7 +313,10 @@ internal sealed partial class WorkspaceManager
             symbol.ContainingType?.GetTypeMembers(valueText)
             ?? symbol.ContainingNamespace.GetTypeMembers(valueText);
         // [RENAME-CSHARP] A generic type and a non-generic type may share a name.
-        return HasDifferentSymbol(candidates.Where(candidate => candidate.Arity == symbol.Arity), symbol);
+        return HasDifferentSymbol(
+            candidates.Where(candidate => candidate.Arity == symbol.Arity),
+            symbol
+        );
     }
 
     private static bool HasNamespaceConflict(INamespaceSymbol symbol, string valueText)

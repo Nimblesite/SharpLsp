@@ -200,12 +200,20 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         for (var index = 0; index < count; index++)
         {
             var folder = index == 0 ? firstFolder : "packages/Library";
-            _ = WriteIn(folder, $"App{index}.csproj", """
+            _ = WriteIn(
+                folder,
+                $"App{index}.csproj",
+                """
                 <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
                 </PropertyGroup><ItemGroup><Compile Include="Code.cs" /></ItemGroup></Project>
-                """);
-            _ = WriteIn(folder, "Code.cs", $"public class Code{index} {{ public int Value => 42; }}");
+                """
+            );
+            _ = WriteIn(
+                folder,
+                "Code.cs",
+                $"public class Code{index} {{ public int Value => 42; }}"
+            );
         }
         using var manager = new WorkspaceManager();
         var opened = await OpenAsync(manager, _root);

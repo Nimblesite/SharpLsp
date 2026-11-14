@@ -357,9 +357,10 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (AutoRestoreOnOpen)
         {
-            var restored = projects.Length > 0
-                ? await WorkspaceRestore.EnsureProjectsAsync(projects, ct).ConfigureAwait(false)
-                : await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false);
+            var restored =
+                projects.Length > 0
+                    ? await WorkspaceRestore.EnsureProjectsAsync(projects, ct).ConfigureAwait(false)
+                    : await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false);
             if (restored.IsError)
             {
                 return restored;

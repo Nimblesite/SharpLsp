@@ -56,7 +56,10 @@ internal static class SymbolSignatureComparer
 
     private static bool SameNamedType(INamedTypeSymbol left, INamedTypeSymbol right)
     {
-        return SymbolEqualityComparer.Default.Equals(left.OriginalDefinition, right.OriginalDefinition)
+        return SymbolEqualityComparer.Default.Equals(
+                left.OriginalDefinition,
+                right.OriginalDefinition
+            )
             && left.TypeArguments.Length == right.TypeArguments.Length
             && left.TypeArguments.Zip(right.TypeArguments)
                 .All(pair => SameType(pair.First, pair.Second));

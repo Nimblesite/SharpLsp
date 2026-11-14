@@ -234,7 +234,10 @@ internal static class HeadlessOverrideCodeAction
             && (left, right) switch
             {
                 (IMethodSymbol a, IMethodSymbol b) => SymbolSignatureComparer.SameMethod(a, b),
-                (IPropertySymbol a, IPropertySymbol b) => SymbolSignatureComparer.SameProperty(a, b),
+                (IPropertySymbol a, IPropertySymbol b) => SymbolSignatureComparer.SameProperty(
+                    a,
+                    b
+                ),
                 (IEventSymbol, IEventSymbol) => true,
                 _ => false,
             };

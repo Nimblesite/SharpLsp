@@ -14,8 +14,13 @@ internal sealed partial class WorkspaceManager
     {
         return token.IsKind(SyntaxKind.PlusToken)
             && token.Span.Contains(position)
-            && ((token.Parent is OperatorDeclarationSyntax declaration && declaration.OperatorToken == token)
-                || (token.Parent is BinaryExpressionSyntax binary && binary.OperatorToken == token));
+            && (
+                (
+                    token.Parent is OperatorDeclarationSyntax declaration
+                    && declaration.OperatorToken == token
+                )
+                || (token.Parent is BinaryExpressionSyntax binary && binary.OperatorToken == token)
+            );
     }
 
     private static bool IsValidOperatorChange(RenameTarget target, string newName)
@@ -26,23 +31,33 @@ internal sealed partial class WorkspaceManager
             && target.Token.IsKind(SyntaxKind.PlusToken)
             && replacement.IsKind(SyntaxKind.MinusToken)
             && replacement.Text == newName
-            && !method.ContainingType.GetMembers("op_Subtraction").OfType<IMethodSymbol>()
+            && !method
+                .ContainingType.GetMembers("op_Subtraction")
+                .OfType<IMethodSymbol>()
                 .Any(other => SymbolSignatureComparer.SameMethod(method, other));
     }
 
     private static async Task<RenameEditResult> RenameOperatorAsync(
-        Solution solution, RenameTarget target, string newName, CancellationToken ct)
+        Solution solution,
+        RenameTarget target,
+        string newName,
+        CancellationToken ct
+    )
     {
         if (!IsValidOperatorChange(target, newName))
         {
             return RenameEditResult.Failure("Invalid C# operator rename");
         }
         var edits = new Dictionary<DocumentId, List<TextEditResult>>();
-        if (!await AddOperatorDeclarationsAsync(solution, target.Symbol, edits, newName, ct).ConfigureAwait(false))
+        if (
+            !await AddOperatorDeclarationsAsync(solution, target.Symbol, edits, newName, ct)
+                .ConfigureAwait(false)
+        )
         {
             return RenameEditResult.Failure("C# operator rename has an unmappable declaration");
         }
-        var references = await SymbolFinder.FindReferencesAsync(target.Symbol, solution, cancellationToken: ct)
+        var references = await SymbolFinder
+            .FindReferencesAsync(target.Symbol, solution, cancellationToken: ct)
             .ConfigureAwait(false);
         if (!await AddOperatorReferencesAsync(references, edits, newName, ct).ConfigureAwait(false))
         {
@@ -59,18 +74,23 @@ internal sealed partial class WorkspaceManager
         ISymbol symbol,
         Dictionary<DocumentId, List<TextEditResult>> edits,
         string newName,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         foreach (var syntax in symbol.DeclaringSyntaxReferences)
         {
             var document = solution.GetDocument(syntax.SyntaxTree);
-            var declaration = await syntax.GetSyntaxAsync(ct).ConfigureAwait(false) as OperatorDeclarationSyntax;
+            var declaration =
+                await syntax.GetSyntaxAsync(ct).ConfigureAwait(false) as OperatorDeclarationSyntax;
             if (document is null || declaration?.OperatorToken.IsKind(SyntaxKind.PlusToken) != true)
             {
                 return false;
             }
             var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-            var edit = DocumentText.ToTextEdit(text, new TextChange(declaration.OperatorToken.Span, newName));
+            var edit = DocumentText.ToTextEdit(
+                text,
+                new TextChange(declaration.OperatorToken.Span, newName)
+            );
             if (!edits.TryGetValue(document.Id, out var documentEdits))
             {
                 edits[document.Id] = documentEdits = [];
@@ -84,11 +104,13 @@ internal sealed partial class WorkspaceManager
         IEnumerable<ReferencedSymbol> references,
         Dictionary<DocumentId, List<TextEditResult>> edits,
         string newName,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         foreach (var reference in references.SelectMany(item => item.Locations))
         {
-            var edit = await OperatorReferenceEditAsync(reference, newName, ct).ConfigureAwait(false);
+            var edit = await OperatorReferenceEditAsync(reference, newName, ct)
+                .ConfigureAwait(false);
             if (edit is null)
             {
                 return false;
@@ -103,7 +125,10 @@ internal sealed partial class WorkspaceManager
     }
 
     private static async Task<TextEditResult?> OperatorReferenceEditAsync(
-        ReferenceLocation reference, string newName, CancellationToken ct)
+        ReferenceLocation reference,
+        string newName,
+        CancellationToken ct
+    )
     {
         var root = await reference.Document.GetSyntaxRootAsync(ct).ConfigureAwait(false);
         if (root is null || reference.IsImplicit)
@@ -112,7 +137,8 @@ internal sealed partial class WorkspaceManager
         }
         var span = reference.Location.SourceSpan;
         var token = root.FindToken(span.Start);
-        var compound = token.IsKind(SyntaxKind.PlusEqualsToken)
+        var compound =
+            token.IsKind(SyntaxKind.PlusEqualsToken)
             && token.Parent is AssignmentExpressionSyntax assignment
             && assignment.OperatorToken == token;
         if ((!IsOperatorAtPosition(token, span.Start) && !compound) || token.Span != span)
@@ -120,11 +146,16 @@ internal sealed partial class WorkspaceManager
             return null;
         }
         var text = await reference.Document.GetTextAsync(ct).ConfigureAwait(false);
-        return DocumentText.ToTextEdit(text, new TextChange(token.Span, compound ? newName + "=" : newName));
+        return DocumentText.ToTextEdit(
+            text,
+            new TextChange(token.Span, compound ? newName + "=" : newName)
+        );
     }
 
     private static List<DocumentEditResult>? OperatorDocumentEdits(
-        Solution solution, Dictionary<DocumentId, List<TextEditResult>> edits)
+        Solution solution,
+        Dictionary<DocumentId, List<TextEditResult>> edits
+    )
     {
         var documents = new List<DocumentEditResult>();
         foreach (var (id, items) in edits)
@@ -134,7 +165,9 @@ internal sealed partial class WorkspaceManager
             {
                 return null;
             }
-            documents.Add(new DocumentEditResult(path, [.. items.DistinctBy(EditLocation)], false, null));
+            documents.Add(
+                new DocumentEditResult(path, [.. items.DistinctBy(EditLocation)], false, null)
+            );
         }
         return documents;
     }

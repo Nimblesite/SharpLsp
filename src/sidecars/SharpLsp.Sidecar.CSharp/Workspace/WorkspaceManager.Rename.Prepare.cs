@@ -19,10 +19,18 @@ internal sealed partial class WorkspaceManager
         return CreatePrepareResult(target.Value.Token.Text, span);
     }
 
-    private static PrepareRenameResult CreatePrepareResult(string placeholder, LinePositionSpan span)
+    private static PrepareRenameResult CreatePrepareResult(
+        string placeholder,
+        LinePositionSpan span
+    )
     {
         return new PrepareRenameResult(
-            true, span.Start.Line, span.Start.Character, span.End.Line, span.End.Character, placeholder
+            true,
+            span.Start.Line,
+            span.Start.Character,
+            span.End.Line,
+            span.End.Character,
+            placeholder
         );
     }
 
