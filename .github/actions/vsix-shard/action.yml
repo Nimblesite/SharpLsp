@@ -44,17 +44,21 @@ runs:
         dotnet-version: |
           9.0.x
           10.0.403
-    # The ubuntu-26.04 image added SDK 11.0.100 on 2026-11-11. Suites that build
-    # fixtures under /tmp sit outside global.json and silently switch to it, so
-    # the shard would no longer test the SDK the repo pins. Keep the pin exact.
-    - name: Remove SDKs newer than the pinned major
+    # The ubuntu-26.04 image added .NET 11 (SDK 11.0.100 and its runtimes) on
+    # 2026-11-11. Suites that build fixtures under /tmp sit outside global.json,
+    # and suites that target the newest installed runtime then pick net11.0, so
+    # the shard silently stops testing the SDK the repo pins. Remove every .NET
+    # component newer than the pinned major: SDKs, runtimes, packs, manifests.
+    - name: Remove .NET components newer than the pinned major
       if: runner.os == 'Linux'
       shell: bash
       run: |-
         set -euo pipefail
-        sdk_root="${DOTNET_ROOT:-/usr/share/dotnet}/sdk"
-        sudo find "$sdk_root" -mindepth 1 -maxdepth 1 -type d -regex '.*/sdk/\(1[1-9]\|[2-9][0-9]\)\..*' -exec rm -rf {} +
+        root="${DOTNET_ROOT:-/usr/share/dotnet}"
+        sudo find "$root" -mindepth 1 -maxdepth 3 -type d \
+          -regex '.*/\(1[1-9]\|[2-9][0-9]\)\.[0-9][^/]*' -prune -exec rm -rf {} +
         dotnet --list-sdks
+        dotnet --list-runtimes
     - name: Install VS Code extension deps
       uses: ./.github/actions/vsix-node-deps
     - name: Download the compiled suite
