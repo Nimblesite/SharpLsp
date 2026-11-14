@@ -753,7 +753,7 @@ _verify-staged-vsix-payload:
 _test-rider:
 	@# A report from an earlier run must never be gated as this one's.
 	@rm -f "$(RIDER_DIR)/build/reports/kover/report.xml"
-	@$(RIDER_GRADLE) koverXmlReport $(if $(RIDER_TESTS_PREBUILT),-PprebuiltTests=true -x compileKotlin -x compileJava -x compileTestKotlin -x compileTestJava -x instrumentCode -x instrumentTestCode,)
+	@$(RIDER_GRADLE) koverXmlReport $(if $(RIDER_TESTS_PREBUILT),-PprebuiltTests=true -x compileKotlin -x compileJava -x compileTestKotlin -x compileTestJava -x compileTestUiKotlin -x compileTestUiJava -x instrumentCode -x instrumentTestCode,)
 	@report="$(RIDER_DIR)/build/reports/kover/report.xml"; \
 	 if [ -f "$$report" ]; then \
 	   pct=$$($(KOVER_PERCENT) "$$report") && $(CHECK_COV) sharplsp-rider "$$pct"; \
