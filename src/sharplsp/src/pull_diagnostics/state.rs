@@ -350,6 +350,7 @@ fn analyzer(
 #[cfg(test)]
 mod load_completion_tests {
     use super::*;
+    use anyhow::{anyhow, ensure};
     use std::time::{Duration, Instant};
 
     /// [DIAG-ARCHITECTURE-SALSA] A stopped connection can establish a fresh session.
@@ -369,7 +370,7 @@ mod load_completion_tests {
         )?;
         shutdown()?;
         initialize(&capabilities, &config, &runtime, [None, None], sender)?;
-        assert!(
+        ensure!(
             store().is_ok(),
             "replacement connection owns a usable store"
         );
@@ -387,48 +388,52 @@ mod load_completion_tests {
         let config = DiagnosticsConfig::default();
         initialize(&capabilities, &config, &runtime, [None, None], sender)?;
         load_started();
-        assert!(
+        ensure!(
             is_pull(),
             "the first connection negotiated pull diagnostics"
         );
         shutdown()?;
-        assert!(
+        ensure!(
             !loading(),
             "stopped compiler loads cannot outlive the connection"
         );
-        assert!(!is_pull(), "the old connection's pull mode is discarded");
-        assert!(configuration().is_ok(), "stopped state uses default policy");
+        ensure!(!is_pull(), "the old connection's pull mode is discarded");
+        ensure!(configuration().is_ok(), "stopped state uses default policy");
         Ok(())
     }
 
     /// [DIAG-TRUTH-GUARANTEES] #561: a held session cannot stall Tokio's timer worker.
     #[test]
-    fn load_completion_does_not_block_a_tokio_worker() {
+    fn load_completion_does_not_block_a_tokio_worker() -> Result<()> {
         let session = SESSION.get_or_init(|| Mutex::new(None));
         let (locked, ready) = std::sync::mpsc::channel();
-        let holder = std::thread::spawn(move || {
-            let _guard = session.lock().expect("test session mutex");
-            locked.send(()).expect("signal held lock");
+        let holder = std::thread::spawn(move || -> Result<()> {
+            let _guard = session
+                .lock()
+                .map_err(|poisoned| anyhow!("test session mutex poisoned: {poisoned}"))?;
+            locked.send(())?;
             std::thread::sleep(Duration::from_millis(200));
+            Ok(())
         });
-        ready.recv().expect("wait for held lock");
+        ready.recv()?;
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
-            .build()
-            .expect("test runtime");
+            .build()?;
         let elapsed = runtime.block_on(async {
             load_started();
             let started = Instant::now();
             let completion = tokio::spawn(async { load_finished().await });
             tokio::time::sleep(Duration::from_millis(20)).await;
             let elapsed = started.elapsed();
-            completion.await.expect("load completion task");
-            elapsed
-        });
-        holder.join().expect("test holder");
-        assert!(
+            completion.await.map(|()| elapsed)
+        })?;
+        holder
+            .join()
+            .map_err(|panic| anyhow!("test holder panicked: {panic:?}"))??;
+        ensure!(
             elapsed < Duration::from_millis(100),
             "Tokio timer stalled for {elapsed:?}"
         );
+        Ok(())
     }
 }
