@@ -38,8 +38,10 @@ struct Context {
 pub(super) struct Snapshot {
     /// Shared Salsa owner; computed values are retained only there.
     pub store: PullStore,
-    /// Input revision captured before work was scheduled.
-    pub(super) revision: u64,
+    /// Diagnostic store revision captured before work was scheduled. `None` for
+    /// document requests (rename, codeLens): their own document's changes
+    /// supersede them through [`interest`], never unrelated store churn.
+    pub(super) revision: Option<u64>,
     /// Canonical dispatcher cancellation token.
     cancel: CancellationToken,
     /// Serializes partial sends against the terminal reply.
@@ -60,7 +62,7 @@ impl Snapshot {
             return Err(Interrupted::Cancelled.into());
         }
         let current = self.store.revision();
-        if current != self.revision {
+        if self.revision.is_some_and(|revision| revision != current) {
             tracing::debug!(
                 revision = self.revision,
                 current,
@@ -145,7 +147,7 @@ impl Requests {
         }
         let reply = ReplyGate::default();
         let store = super::state::store()?;
-        let revision = store.revision();
+        let revision = diagnostic(request).then(|| store.revision());
         let future = self.prepare(request.clone(), reply.clone(), store.clone(), revision)?;
         let (id, sender) = (request.id.clone(), self.context.sender.clone());
         drop(runtime.spawn(async move {
@@ -171,7 +173,7 @@ impl Requests {
         request: Request,
         reply: ReplyGate,
         store: PullStore,
-        revision: u64,
+        revision: Option<u64>,
     ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
         let context = self.context.clone();
         let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
@@ -211,7 +213,18 @@ impl Requests {
 fn handles(request: &Request) -> bool {
     matches!(
         request.method.as_str(),
-        "textDocument/diagnostic" | "workspace/diagnostic" | "textDocument/codeLens"
+        "textDocument/diagnostic"
+            | "workspace/diagnostic"
+            | "textDocument/codeLens"
+            | "textDocument/rename"
+    )
+}
+
+/// Only diagnostic pulls are reports of the whole store's current truth.
+fn diagnostic(request: &Request) -> bool {
+    matches!(
+        request.method.as_str(),
+        "textDocument/diagnostic" | "workspace/diagnostic"
     )
 }
 
@@ -223,6 +236,7 @@ impl Drop for Requests {
 
 /// Cancellation answers immediately; the worker stops between documents.
 async fn compute(request: Request, context: Context, snapshot: Snapshot) -> HandlerResult {
+    let rename = request.method == "textDocument/rename";
     let cancel = snapshot.cancel.clone();
     let worker = tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot));
     let result = tokio::select! {
@@ -232,6 +246,9 @@ async fn compute(request: Request, context: Context, snapshot: Snapshot) -> Hand
     };
     match result {
         Ok(value) => HandlerResult::Ok(value),
+        Err(error) if rename && !error.is::<Interrupted>() => {
+            HandlerResult::Err(JsonRpcError::new(-32603, format!("{error:#}")))
+        }
         Err(error) => HandlerResult::Err(rpc_error(&error)),
     }
 }
@@ -257,7 +274,30 @@ fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<V
 
 /// Compiler-backed editor work shares the same lifetime and stays off the input loop.
 fn document_request(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
-    if request.method == "textDocument/codeLens" {
+    if request.method == "textDocument/rename" {
+        let uri = serde_json::from_value::<lsp_types::RenameParams>(request.params.clone())?
+            .text_document_position
+            .text_document
+            .uri;
+        let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
+        let (primary, fallback) =
+            crate::dispatch::pick_sidecar_with_fallback(&request, csharp, fsharp);
+        let value = crate::semantic::rename::handle_rename(
+            request,
+            &context.runtime,
+            primary,
+            fallback,
+            snapshot.cancellation(),
+        )?;
+        crate::diagnostic_publish::converge_provisional_publication(
+            Some(&uri),
+            &context.runtime,
+            csharp,
+            fsharp,
+            &context.sender,
+        );
+        Ok(value)
+    } else if request.method == "textDocument/codeLens" {
         let [fsharp, csharp] = context.engines.each_ref().map(Option::as_ref);
         let sidecar = crate::dispatch::pick_sidecar(&request, csharp, fsharp);
         crate::code_lens::handle_code_lens(
@@ -356,9 +396,9 @@ fn response(id: lsp_server::RequestId, result: HandlerResult) -> Response {
 /// Validate the input epoch at the serialized output boundary as well. A report
 /// or refusal computed for replaced inputs is superseded, never settled; only a
 /// client cancellation keeps its own answer. [DIAG-TRUTH-GUARANTEES]
-fn current(result: HandlerResult, store: &PullStore, revision: u64) -> HandlerResult {
+fn current(result: HandlerResult, store: &PullStore, revision: Option<u64>) -> HandlerResult {
     let cancelled = matches!(&result, HandlerResult::Err(error) if error.code == -32800);
-    if !cancelled && store.revision() != revision {
+    if !cancelled && revision.is_some_and(|revision| store.revision() != revision) {
         HandlerResult::Err(rpc_error(&Interrupted::Superseded.into()))
     } else {
         result

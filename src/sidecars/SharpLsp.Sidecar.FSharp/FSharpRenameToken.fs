@@ -66,7 +66,10 @@ let sourceNameForSymbol (symbol: FSharpSymbol) =
 let private logicalName (text: string) = text.Trim('`')
 
 let private tokenMatchesName sourceName (token: SourceToken) =
-    (logicalName token.Text).TrimStart('\'') = logicalName sourceName
+    let text = logicalName token.Text
+    let name = logicalName sourceName
+    text.TrimStart('\'') = name
+    || (text.StartsWith("^", StringComparison.Ordinal) && text.Substring(1) = name)
 
 let tokenForRangeName
     (checker: FSharpChecker)

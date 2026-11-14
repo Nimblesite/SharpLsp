@@ -31,6 +31,19 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
         + "        var total = seed + 1;\n"
         + "        return total;\n"
         + "    }\n"
+        + "\n"
+        + "    public int Other(string value) => value.Length;\n"
+        + "    public int SameSignature(int value) => value;\n"
+        + "}\n"
+        + "\n"
+        + "public class Original { }\n"
+        + "public class Target<T> { }\n"
+        + "public class Refs\n"
+        + "{\n"
+        + "    public void ByRef(ref int value) { }\n"
+        + "    public void ByOut(out int value) => value = 0;\n"
+        + "    public void ByObject(object value) { }\n"
+        + "    public void ByDynamic(dynamic value) { }\n"
         + "}\n";
 
     private readonly string _root = NativePaths.Temp($"sharplsp-rename-shadow-{Guid.NewGuid():N}");
@@ -113,5 +126,60 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
 
         var edit = Unwrap(result);
         Assert.Empty(edit.DocumentChanges);
+    }
+
+    [Fact]
+    public async Task Rename_method_onto_existing_different_signature_preserves_valid_overload()
+    {
+        // [RENAME-CSHARP] Roslyn allows Compute(int) and Other(string) to share a name.
+        using var manager = await OpenAsync();
+
+        var result = await manager.RenameAsync(_sourcePath, 6, 16, "Other");
+
+        var edit = Unwrap(result);
+        var document = Assert.Single(edit.DocumentChanges);
+        Assert.Contains(document.Edits, item => item.NewText == "Other");
+        Assert.All(document.Edits, item => Assert.Equal("Other", item.NewText));
+    }
+
+    [Fact]
+    public async Task Rename_method_onto_existing_same_signature_is_rejected()
+    {
+        // [RENAME-CSHARP] A method rename cannot create a second (int) overload.
+        using var manager = await OpenAsync();
+
+        var result = await manager.RenameAsync(_sourcePath, 6, 16, "SameSignature");
+
+        Assert.Empty(Unwrap(result).DocumentChanges);
+    }
+
+    [Fact]
+    public async Task Rename_type_onto_existing_different_arity_is_allowed()
+    {
+        // [RENAME-CSHARP] Target and Target<T> are distinct C# type declarations.
+        using var manager = await OpenAsync();
+
+        var result = await manager.RenameAsync(_sourcePath, 16, 13, "Target");
+
+        var document = Assert.Single(Unwrap(result).DocumentChanges);
+        Assert.Contains(document.Edits, item => item.NewText == "Target");
+    }
+
+    // [RENAME-CSHARP] C# overloads cannot differ only by ref/out or by dynamic/object
+    // (CS0663, CS0111), so these renames would create duplicate signatures.
+    [Theory]
+    [InlineData(21, 16, "ByRef")]
+    [InlineData(23, 16, "ByObject")]
+    public async Task Rename_method_onto_signature_differing_only_by_ref_kind_or_dynamic_is_rejected(
+        int line,
+        int character,
+        string target
+    )
+    {
+        using var manager = await OpenAsync();
+
+        var result = await manager.RenameAsync(_sourcePath, line, character, target);
+
+        Assert.Empty(Unwrap(result).DocumentChanges);
     }
 }

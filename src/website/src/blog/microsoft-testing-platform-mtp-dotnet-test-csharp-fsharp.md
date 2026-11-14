@@ -20,7 +20,7 @@ excerpt: "xUnit v3 4.0 runs on Microsoft.Testing.Platform only, and a VSTest-onl
 
 So an editor whose Test Explorer only speaks VSTest shows an **empty tree** for a modern xUnit v3 project. The tests are there, `dotnet test` runs them, and the editor sees nothing.
 
-SharpLsp's Test Explorer now speaks both. The support is on `main` today and ships in the next release. It discovers, runs, debugs and collects code coverage for MTP test modules: **xUnit v3, MSTest and NUnit, in C# and in F#**. It does this side by side with VSTest projects, down to one multi-root workspace holding both. This post covers:
+SharpLsp's Test Explorer now speaks both. The support is available in the current release. It discovers, runs, debugs and collects code coverage for MTP test modules: **xUnit v3, MSTest and NUnit, in C# and in F#**. It does this side by side with VSTest projects, down to one multi-root workspace holding both. This post covers:
 
 - how `dotnet test` on Microsoft.Testing.Platform works;
 - how to opt a C# or F# project in;
@@ -199,4 +199,4 @@ They run on Windows and Linux in CI, in their own jobs, next to the VSTest suite
 
 ## Try it
 
-MTP support ships in the next SharpLsp release after 0.21.0. Watch the [releases page](https://github.com/Nimblesite/SharpLsp/releases) or build the VS Code extension from `main` today. Then open a solution with an xUnit v3, MSTest or NUnit project on Microsoft.Testing.Platform, and open the Testing view. If your MTP project shows an empty tree, a wrong outcome or a debugger that never attaches, [open an issue](https://github.com/Nimblesite/SharpLsp/issues). That's how this feature started.
+Install the current VS Code extension from the [releases page](https://github.com/Nimblesite/SharpLsp/releases). Open a solution with an xUnit v3, MSTest or NUnit project on Microsoft.Testing.Platform, then open the Testing view. If your MTP project shows an empty tree, a wrong outcome or a debugger that never attaches, [open an issue](https://github.com/Nimblesite/SharpLsp/issues).

@@ -25,6 +25,8 @@ Instead:
 
 Rust-host salsa is the only diagnostic memoization mechanism. Its inputs include document text and version, project version, `global_state_version`, and effective diagnostic configuration; its tracked query returns the per-document diagnostic report and result identity.
 
+Shutdown releases the connection's session and clears its mode and in-flight load count. Until a later connection initializes a fresh session in the same host process, configuration lookup returns defaults; an active session cannot be silently replaced.
+
 The extension and sidecars may retain protocol, UI, compiler-workspace, and process state, but MUST NOT retain diagnostic arrays, result lookups, compilation-result memoization, or other client-side/sidecar-local caches. A sidecar computes a document on a salsa miss and returns the value without storing a SharpLsp cache. Workspace and configuration changes update salsa inputs, and salsa dependency tracking performs invalidation; no LRU, map-backed memo table, or parallel ad-hoc cache is permitted.
 
 ### [DIAG-ARCHITECTURE-EAGER-SCAN] No Eager Solution Scan
@@ -421,6 +423,7 @@ There is no background scan thread. Roslyn analysis happens only when the editor
 
 ### [DIAG-ANALYSIS-CANCELLATION] Cancellation
 
+- F# references, implementations, incoming calls and subtypes carry the request token through file and project checks. Cancellation releases the request queue before obsolete source I/O finishes; the wire boundary rejects a cancelled result rather than returning empty success (#562).
 - The Rust host cancels in-flight per-document IPC requests when the editor sends a fresh pull for the same document with a higher `previousResultId`-implied version (or a different `previousResultId`).
 - An editor open, change or close supersedes older diagnostics and CodeLens work for that document, plus older workspace scans, before foreground compiler IPC. This also applies when the next pull repeats the same `previousResultId`; a cached result identity does not identify the newest editor input. Unrelated document requests remain active.
 - An explicit solution selection supersedes all older diagnostics and CodeLens work before foreground workspace loading. Acknowledging the selection cannot leave old compiler I/O blocking the new solution. New workspace pulls retire excluded reports explicitly, and switching back restores current compiler truth without restarting the host or compiler.
@@ -440,6 +443,7 @@ When a file changes:
 
 ### [DIAG-TRUTH-GUARANTEES] Guarantees
 
+- Solution-load completion invalidates diagnostics before clearing the loading state. Salsa invalidation runs off Tokio workers, and store mutations do not hold the diagnostics session lock across Salsa writes (#561).
 - If `dotnet build` succeeds with zero errors against the same source, the next pull (after refresh debounce + restore completion) returns zero Error-severity diagnostics.
 - A diagnostic in the Problems panel corresponds to a real Roslyn compiler or analyzer diagnostic from the current `Solution` snapshot.
 - A workspace mutation that changes a file's diagnostics produces an LSP `workspace/diagnostic/refresh` within 2000ms (the debounce window). Editors converge to truth one pull cycle after that.

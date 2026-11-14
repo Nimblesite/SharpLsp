@@ -1,173 +1,85 @@
 ---
 layout: layouts/docs.njk
 title: Refactoring & Code Actions
-description: "A lesson on C# and F# code actions in SharpLsp: the Cmd+. shortcut, F# quick fixes by diagnostic, generated match cases, rename across files, Roslyn fixes, and how resolve works."
+description: "Use C# and F# quick fixes in SharpLsp. Add imports, generate missing code, convert F# pipelines and move C# types into separate files."
 eleventyNavigation:
   key: Refactoring & Code Actions
   order: 7
 ---
 
-<img src="/assets/screenshots/docs/refactoring.webp" alt="Quick fixes on an incomplete F# match: Generate 1 missing union case(s) and Add wildcard case" width="2400" height="1500">
+<img src="/assets/screenshots/docs/refactoring.webp" alt="Quick fixes on an incomplete F# match" width="2400" height="1500">
 
 # Refactoring and Code Actions
 
-Code actions turn a problem into code. This lesson covers the shortcut, where actions come from, the F# fixes, rename, and the C# fixes. It ends with what happens underneath, and what is not a code action. Everything here works the same on macOS, Linux and Windows.
+Open a solution or project, wait for it to load, then put the cursor on an error or declaration. Press **Cmd+.** on macOS or **Ctrl+.** on Windows and Linux to open Quick Fix. Other LSP editors expose these actions through their code action menu.
 
 {% video "refactoring-lesson" %}
 
-**You will learn to:**
+{% video "move-type" %}
 
-1. open the code action menu from the keyboard;
-2. predict which actions the menu offers, and why;
-3. complete an F# match, and use the F# quick fixes by diagnostic;
-4. rename a symbol across files;
-5. generate a C# method from a call, and add a missing `using`;
-6. tell what SharpLsp does when you pick an action.
+## F# quick fixes
 
-**Before you start:** install SharpLsp ([Editor Setup](/docs/editors/)) and open a folder with a solution or project. Code actions need the project loaded, because the C# and F# compilers produce them.
-
-## Step 1: Open the Menu
-
-Every action starts from one command, **Quick Fix**:
-
-| Where | How |
+| Context | Action |
 |---|---|
-| VS Code on macOS | `Cmd+.` |
-| VS Code on Windows and Linux | `Ctrl+.` |
-| Any editor | Click the lightbulb in the gutter |
+| Undefined name (`FS0039`) | Add a resolving `open`, qualify the use, or add an applicable `open type` |
+| Unused binding (`FS1182`) | Prefix the name with `_` |
+| Discarded result (`FS0020`) | Add `\|> ignore` |
+| Incomplete match (`FS0025`) | Generate missing union cases or add a wildcard arm |
+| Redundant pattern (`FS0026`) | Remove the pattern |
+| Supported type mismatch (`FS0001`) | Insert a known conversion |
+| Record expression | Generate missing fields |
+| Interface implementation | Generate member stubs |
+| Unused `open` or qualified name | Remove the import or simplify the name |
 
-Other editors expose the same LSP request under their own code action command. SharpLsp serves `textDocument/codeAction` to all of them.
-
-## Step 2: Know Where Actions Come From
-
-Actions are context-dependent. The sidecar returns only the fixes and refactorings whose compiler or provider can act on what is under the cursor:
-
-| Context | What you get |
-|---|---|
-| A diagnostic (a warning or error) | The fix for that diagnostic |
-| The cursor on a type, member or expression | Refactorings that reshape it |
-| A selection | Refactorings that work on that span |
-| A blank line, or an unsupported spot | No actions. SharpLsp never guesses |
-
-So when the menu you expect is missing, move the cursor onto the squiggle or the symbol, or select the code, and ask again.
-
-## Step 3: Complete an F# Match
-
-Try this in any F# project. Declare a union and a match that misses a case:
+For example, put the cursor on the incomplete match below and choose **Generate 1 missing union case(s)**.
 
 ```fsharp
-type Stage =
-    | Browsing
-    | CheckedOut of decimal
+type Stage = Browsing | CheckedOut of decimal
 
 let describe stage =
     match stage with
     | Browsing -> "still browsing"
 ```
 
-The compiler underlines `stage` with `FS0025`: an incomplete pattern match. Put the cursor on it and press `Cmd+.`. The menu offers two fixes:
+SharpLsp adds `| CheckedOut _ -> failwith "todo"`. Replace the generated body with your implementation.
 
-- **Generate 1 missing union case(s)** writes an arm for each missing case;
-- **Add wildcard case** adds a catch-all `| _ ->` arm instead.
+For supported single-line expressions, the menu also converts `g a (f x)` to `x |> f |> g a`, and back. Available actions depend on the compiler diagnostic and the code under the cursor. See [F# language support](/docs/fsharp/) for the current coverage.
 
-Pick **Generate**:
+## Choose an import
 
-```fsharp
-let describe stage =
-    match stage with
-    | Browsing -> "still browsing"
-    | CheckedOut _ -> failwith "todo"
-```
+Import fixes state what they change before you apply them.
 
-The F# compiler knows every case of the union, so the arm is exact. You replace `failwith "todo"` with the body.
+| Intent | F# | C# |
+|---|---|---|
+| Import a namespace | `open System.Text` | `using System.Text;` |
+| Qualify one use | `System.Text.StringBuilder` | `System.Text.StringBuilder` |
+| Import only a type | Use its qualified name | `using StringBuilder = System.Text.StringBuilder;` |
+| Import static members and nested types | `open type System.Math` | `using static System.Math;` |
 
-## Step 4: The F# Fixes by Diagnostic
+Try `let builder = StringBuilder()` in F# or `var builder = new StringBuilder();` in C#, with no `System.Text` import. Open Quick Fix on `StringBuilder` to see the applicable choices. F# `open type` requires F# 5 or later.
 
-Each F# fix is tied to a compiler diagnostic, or to the code under the cursor:
+For supported unresolved types, the menu can also add a reference to another same-language project in the solution or a NuGet package. The title names the reference and import. Package candidates come from packages already used in the solution or SharpLsp's supported package list.
 
-| Trigger or context | Action |
+## Generate C# code
+
+Write a call to a method that does not exist yet, then open Quick Fix on its name. **Generate method** creates a stub with parameters inferred from the call. Roslyn supplies C# fixes and refactorings for the current syntax and selection.
+
+## Move a C# type
+
+Open Quick Fix on the declaration's name.
+
+| Action | Result |
 |---|---|
-| `FS0039` | Add a resolving `open` when a namespace can be identified |
-| `FS1182` | Prefix an unused binding with `_` |
-| `FS0020` | Add `|> ignore` |
-| `FS0025` | Add a wildcard match arm |
-| `FS0026` | Remove a redundant pattern |
-| supported `FS0001` mismatches | Insert a known conversion |
-| discriminated-union match | Generate missing cases |
-| record expression | Generate missing fields |
-| interface implementation | Generate member stubs |
-| `SLSPF0102` / `SLSPF0103` | Remove an unused `open` / simplify a name |
+| **Move type to Receipt.cs** | Creates a file beside the source, keeping the namespace, imports, documentation and attributes |
+| **Move 'Inner' out of 'Outer' to Inner.cs** | Makes the nested type top-level and updates references across the solution |
+| **Rename file to Receipt.cs** | Renames the file to match its type |
 
-The F# compiler reports `FS1182` only when the project turns the warning on, for example with `<OtherFlags>--warnon:1182</OtherFlags>` in the project file.
+The ordinary move keeps a nested type nested through partial container declarations. The move-out action checks for name conflicts, existing destination files and dependencies on inaccessible container members or enclosing type parameters. Moving a private nested type out makes it `internal`.
 
-**Try it:** write `List.map (fun x -> x + 1) [1; 2]` on a line of its own. The compiler warns `FS0020`, because the result is thrown away. `Cmd+.` offers `|> ignore`.
+## Apply an action
 
-Compiler typo fixes and some FSAC actions are not implemented yet; see [F# Language Support](/docs/fsharp/).
+Picking an action computes its edits, which can affect several files. If the action expired or cannot apply, SharpLsp reports the reason. Reference actions apply the import first, then add the reference. If adding the reference fails, the error explains that Undo removes the import.
 
-## Step 5: Rename Across Files
-
-Rename is not a code action. Put the cursor on a symbol and press `F2` (**Rename Symbol**), type the new name, and press `Enter`. SharpLsp advertises `textDocument/prepareRename`, so the editor knows up front whether the symbol can be renamed, then `textDocument/rename` edits every reference:
-
-- C# rename uses the loaded Roslyn solution;
-- F# rename uses the loaded F# project, and edits every file that uses the symbol.
-
-In the lesson, renaming the F# function `remember` to `rememberOrder` in `Sessions.fs` also rewrites its call in `Program.fs`.
-
-## Step 6: Generate a C# Method From a Call
-
-The C# sidecar discovers Roslyn's code-fix and refactoring providers from the bundled Roslyn feature assemblies, so the C# fixes are Roslyn's own. A useful habit is to write the call first:
-
-```csharp
-var receipt = Receipt(invoice);
-```
-
-`Receipt` does not exist yet, so the compiler reports an error. `Cmd+.` on it offers **Generate method 'Receipt'**, and Roslyn writes the stub, with the parameter type taken from the call:
-
-```csharp
-private object Receipt(string invoice)
-{
-    throw new NotImplementedException();
-}
-```
-
-## Step 7: Add a Missing `using`
-
-Use a type without its namespace:
-
-```csharp
-var builder = new StringBuilder();
-```
-
-`Cmd+.` on `StringBuilder` offers `using System.Text;` first. Further down, it offers the fully qualified name, generating a new `StringBuilder` class, and other Roslyn refactorings for the spot, such as converting to a block-scoped namespace.
-
-Other verified C# actions include removing an unused local, and Roslyn refactorings for a valid type or selection. The exact list varies with syntax, diagnostics, the Roslyn version and the available providers. The presence of a category does not mean every Visual Studio refactoring is available.
-
-## Under the Hood: List, Then Resolve
-
-A code action takes two requests:
-
-1. **Ask.** The editor sends `textDocument/codeAction` for the cursor or selection.
-2. **List.** The sidecar (Roslyn for C#, the F# compiler for F#) returns lightweight items: titles and kinds, without edits. That keeps the menu fast.
-3. **Resolve.** When you pick one, `codeAction/resolve` computes the edits for that action alone.
-4. **Apply.** The result is one workspace edit, which can change several existing documents at once.
-
-If an action has expired, the sidecar has restarted, or the provider cannot produce an edit, resolve returns no edit instead of guessing.
-
-## What Is Not a Code Action
-
-- **Formatting.** SharpLsp intentionally does not advertise LSP formatting. Use [CSharpier](https://csharpier.com/) for C# and [Fantomas](https://fsprojects.github.io/fantomas/) for F#.
-- **Sort Members.** A separate C# command, built on tree-sitter. Right-click a C# type in the Solution Explorer and pick **Sort Members**; it orders members by accessibility, category and name, as configured.
-- **Rename.** `F2`, as in step 5.
-
-## Recap
-
-- `Cmd+.` (or `Ctrl+.`) opens every action that applies to the cursor, selection or diagnostic.
-- F# fixes follow compiler diagnostics, and can write whole match cases, record fields and interface stubs.
-- `F2` renames across files, in F# and C#.
-- In C#, call first and generate second.
-
-## The Walkthrough in One Take
-
-The same features, recorded in one continuous take in VS Code:
+For symbol rename, press **F2**. For formatting, install [CSharpier](https://csharpier.com/) for C# or [Fantomas](https://fsprojects.github.io/fantomas/) for F#.
 
 {% video "refactoring" %}

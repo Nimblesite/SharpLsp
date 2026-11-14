@@ -169,27 +169,27 @@ let private resolveCaller
                 |> Option.bind (fun caller -> itemOfSymbol caller.Symbol)
 
 /// Resolve the caller (enclosing declaration) of a single call-site use.
-let private callerItem (state: FSharpWorkspace.FSharpWorkspaceState) (su: FSharpSymbolUse) =
+let private callerItem (state: FSharpWorkspace.FSharpWorkspaceState) (su: FSharpSymbolUse) ct =
     task {
         // Bind the range struct to a local before reading FileName to avoid the
         // FS0052 defensive-copy warning on the by-value struct property.
         let r = su.Range
-        let! checkData = FSharpWorkspace.checkFileWithParse state r.FileName
+        let! checkData = FSharpWorkspace.checkFileWithParseWithCancellation state r.FileName ct
         return resolveCaller checkData su
     }
 
 /// Get incoming calls WITH the range of every call, which is what the wire
 /// publishes as LSP 3.17's `fromRanges`.
-let incomingCallsWithSites (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+let incomingCallsWithSites (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character ct =
     task {
         try
-            let! uses = FSharpReferences.getProjectUsages state filePath line character
+            let! uses = FSharpReferences.getProjectUsages state filePath line character ct
             let callSites = uses |> Array.filter (fun u -> not u.IsFromDefinition)
             let calls = Dictionary<string, HierCall>()
             let order = List<string>()
 
             for su in callSites do
-                let! caller = callerItem state su
+                let! caller = callerItem state su ct
 
                 match caller with
                 | Some item ->
@@ -205,9 +205,9 @@ let incomingCallsWithSites (state: FSharpWorkspace.FSharpWorkspaceState) filePat
     }
 
 /// Get incoming calls as bare callers, for consumers that need only who calls.
-let incomingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+let incomingCalls (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character ct =
     task {
-        let! calls = incomingCallsWithSites state filePath line character
+        let! calls = incomingCallsWithSites state filePath line character ct
         return calls |> List.map (fun call -> call.Item)
     }
 
@@ -331,10 +331,10 @@ let supertypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line chara
     }
 
 /// Get subtypes: project entities whose base type or interfaces include the target.
-let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character =
+let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line character ct =
     task {
         try
-            let! fileCheck = FSharpWorkspace.checkFile state filePath
+            let! fileCheck = FSharpWorkspace.checkFileWithCancellation state filePath ct
             match fileCheck with
             | None -> return []
             | Some(checkResults, source) ->
@@ -344,7 +344,7 @@ let subtypes (state: FSharpWorkspace.FSharpWorkspaceState) filePath line charact
                     // The target's project and those that read it in memory: a type in one
                     // project may implement another's.
                     let anchor = FSharpWorkspace.anchorOf state target filePath
-                    let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state anchor)
+                    let! projects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state anchor) ct
 
                     let entities =
                         projects

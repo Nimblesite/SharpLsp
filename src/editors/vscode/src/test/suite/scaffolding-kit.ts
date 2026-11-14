@@ -123,9 +123,10 @@ export async function createSolutionProjectPair(
   folder: string,
   slnName: string,
   projName: string,
+  language?: string,
 ): Promise<{ slnPath: string; projDir: string; projFile: string | undefined }> {
   const slnPath = await createSolution(folder, slnName);
-  const projDir = await createProject(folder, projName, 'classlib');
+  const projDir = await createProject(folder, projName, 'classlib', language);
   const projFile = findProjectFile(projDir, projName);
   return { slnPath, projDir, projFile };
 }
@@ -141,10 +142,13 @@ export function assertSolutionReferences(
 }
 
 /** QuickPick selector picking the workspace project file named `projectName`. */
-export function pickProjectNamed(projectName: string): (items: readonly unknown[]) => unknown {
+export function pickProjectNamed(
+  projectName: string,
+  extension = 'csproj',
+): (items: readonly unknown[]) => unknown {
   return (items) =>
     (items as { label: string; uri: vscode.Uri }[]).find((i) =>
-      i.uri.fsPath.endsWith(`${projectName}.csproj`),
+      i.uri.fsPath.endsWith(`${projectName}.${extension}`),
     );
 }
 

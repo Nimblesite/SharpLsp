@@ -22,6 +22,9 @@
     <Compile Include="FSharpOverlayTests.fs" />
     <Compile Include="FSharpScriptTests.fs" />
     <Compile Include="FSharpRenameSemanticTests.fs" />
+    <Compile Include="FSharpRenameNameValidationTests.fs" />
+    <Compile Include="FSharpRenameIdentityTests.fs" />
+    <Compile Include="FSharpRenameFileOrderTests.fs" />
     <Compile Include="FSharpSemanticHighlightingTests.fs" />
     <Compile Include="FSharpCodeActionKit.fs" />
     <Compile Include="FSharpSignatureParameterTests.fs" />

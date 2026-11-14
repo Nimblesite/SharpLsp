@@ -58,6 +58,7 @@ import {
   generateFileContent,
 } from '../../scaffolding.js';
 import { ACTIVATION_MS, COMMAND_MS, DOTNET_CLI_MS, SIDECAR_COLD_MS } from './test-timeouts';
+import { ExplorerNode, NodeType } from '../../tree-nodes';
 
 const CMD_NEW_FILE = 'sharplsp.newFile';
 const CMD_NEW_PROJECT = 'sharplsp.newProject';
@@ -210,6 +211,21 @@ suite('Scaffolding E2E (drive real commands)', () => {
       ]);
       // The name prompt was shown exactly once.
       assert.strictEqual(stubs.log.inputBoxOptions.length, 1, 'one name prompt was shown');
+
+      // [SE-ADD-FILE-CSHARP] A repeated name must preserve saved and unsaved work.
+      await active.edit((edit) => {
+        edit.insert(new vscode.Position(0, 0), '// unsaved work\n');
+      });
+      const unsaved = active.document.getText();
+      stubs.queuePick(template).queueInput(name);
+      await vscode.commands.executeCommand(CMD_NEW_FILE);
+      assert.strictEqual(
+        active.document.getText(),
+        unsaved,
+        'existing buffer must not be modified',
+      );
+      assert.strictEqual(comparableText(fs.readFileSync(filePath, 'utf-8')), expected);
+      assert.ok(active.document.isDirty, 'existing unsaved work must remain unsaved');
     });
   }
 
@@ -511,51 +527,72 @@ suite('Scaffolding E2E (drive real commands)', () => {
   // files across the workspace, we pick ours, and pick the target solution. The
   // workspace has multiple solutions, so a solution QuickPick is shown too.
 
-  test('addProjectToSolution wires the picked project into the picked solution', async function () {
-    this.timeout(DOTNET_CLI_MS);
-    const folder = workspaceFolder();
-    const projName = scaffoldName('AddProj');
-    const slnName = scaffoldName('AddSln');
+  // Implements [SE-SOLUTION-ADD]; #576 must honor the context-menu selection.
+  for (const [language, extension] of [
+    ['F#', 'fsproj'],
+    [undefined, 'csproj'],
+  ] as const) {
+    for (const selection of [undefined, NodeType.Solution, NodeType.Project]) {
+      test(`addProjectToSolution wires the picked project into the picked solution (${extension}, ${selection ?? 'palette'})`, async function () {
+        this.timeout(DOTNET_CLI_MS);
+        const folder = workspaceFolder();
+        const projName = scaffoldName('AddProj');
+        const slnName = scaffoldName('AddSln');
 
-    // Create a real solution + project inside the workspace via the pure helpers.
-    const { slnPath, projDir, projFile } = await createSolutionProjectPair(
-      folder,
-      slnName,
-      projName,
-    );
-    track(slnPath);
-    track(projDir);
-    assert.ok(projFile, 'the project file must be locatable before adding it');
+        // Create a real solution + project inside the workspace via the pure helpers.
+        const { slnPath, projDir, projFile } = await createSolutionProjectPair(
+          folder,
+          slnName,
+          projName,
+          language,
+        );
+        track(slnPath);
+        track(projDir);
+        assert.ok(projFile, 'the project file must be locatable before adding it');
 
-    // Ensure NO active solution is pinned so the dist pickSolutionFile shows the
-    // solution QuickPick (the workspace has multiple solutions). Driving the LIVE
-    // provider's clear() resets the bundled state.solutionPath — a test-side
-    // `state` import cannot. Reset again in teardown.
-    getProvider().clear();
+        // Ensure NO active solution is pinned so the dist pickSolutionFile shows the
+        // solution QuickPick (the workspace has multiple solutions). Driving the LIVE
+        // provider's clear() resets the bundled state.solutionPath — a test-side
+        // `state` import cannot. Reset again in teardown.
+        getProvider().clear();
 
-    // The workspace index must see the freshly-written project before the command runs.
-    await waitForWorkspaceProject(`${projName}.csproj`);
+        // The workspace index must see the freshly-written project before the command runs.
+        await waitForWorkspaceProject(`${projName}.${extension}`);
 
-    // The command finds *.csproj/*.fsproj across the workspace → pick ours by name;
-    // then pickSolutionFile shows a QuickPick (multiple solutions) → pick ours.
-    stubs
-      .queuePick(pickProjectNamed(projName), (items) =>
-        (items as { label: string; path: string }[]).find((i) => i.path === slnPath),
-      )
-      .queueInfo(undefined);
-    await vscode.commands.executeCommand(CMD_ADD_PROJECT_TO_SOLUTION);
+        // The command finds *.csproj/*.fsproj across the workspace → pick ours by name;
+        // then pickSolutionFile shows a QuickPick (multiple solutions) → pick ours.
+        const solutionPick = (items: readonly unknown[]) =>
+            (items as { label: string; path: string }[]).find((i) => i.path === slnPath),
+          node =
+            selection === undefined
+              ? undefined
+              : new ExplorerNode('Selected', selection, vscode.TreeItemCollapsibleState.None);
+        if (node !== undefined)
+          node.projectFilePath = selection === NodeType.Solution ? slnPath : projFile;
+        if (selection === NodeType.Solution) stubs.queueOpenDialog([vscode.Uri.file(projFile)]);
+        else if (selection === NodeType.Project) stubs.queuePick(solutionPick);
+        else stubs.queuePick(pickProjectNamed(projName, extension), solutionPick);
+        stubs.queueInfo(undefined);
+        await vscode.commands.executeCommand(CMD_ADD_PROJECT_TO_SOLUTION, node);
 
-    // addProjectToSolutionFile ran: the solution now references the project (no throw).
-    assertSolutionReferences(
-      slnPath,
-      `${projName}.csproj`,
-      'the solution must reference the added project',
-    );
-    assert.ok(
-      stubs.log.infoMessages.some((m) => m.includes('to solution')),
-      'a success toast confirms the add ran',
-    );
-  });
+        // addProjectToSolutionFile ran: the solution now references the project (no throw).
+        assertSolutionReferences(
+          slnPath,
+          `${projName}.${extension}`,
+          'the solution must reference the added project',
+        );
+        assert.ok(
+          stubs.log.infoMessages.some((m) => m.includes('to solution')),
+          'a success toast confirms the add ran',
+        );
+        assert.equal(stubs.log.openDialogOptions.length, selection === NodeType.Solution ? 1 : 0);
+        assert.equal(
+          stubs.log.quickPickItems.length,
+          selection === undefined ? 2 : selection === NodeType.Project ? 1 : 0,
+        );
+      });
+    }
+  }
 
   test('addProjectToSolution uses the active solution selection without a second pick', async function () {
     this.timeout(DOTNET_CLI_MS);

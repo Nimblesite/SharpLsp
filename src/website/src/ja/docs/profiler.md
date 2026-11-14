@@ -152,3 +152,7 @@ F# のプログラムにも同じプロファイラーが使え、F# コンパ�
 | `sharplsp.profiler.autoSnapshotInterval` | `30` | 定期スナップショットの間隔（秒） |
 
 `sharplsp.toml` の `[profiler]` テーブルで、出力ディレクトリ（既定は `.sharplsp/profiles`）とホットスポットのしきい値を設定します。[構成](/ja/docs/configuration/)を参照してください。
+
+## プロファイラーの概要
+
+{% video "profiler-film" %}

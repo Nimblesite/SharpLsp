@@ -135,7 +135,7 @@ fn unplaced(
     location: SidecarLocationResult,
     answered: bool,
 ) -> (Vec<SidecarLocationResult>, bool) {
-    match sidecar_workspace_loaded(runtime, fsharp) {
+    match sidecar_workspace_loaded(runtime.handle(), fsharp, None) {
         Ok(false) if !fsharp.workspace_open_finished() => (Vec::new(), false),
         Ok(loaded) => (vec![location], loaded && answered),
         Err(_) => (vec![location], false),
@@ -170,10 +170,10 @@ fn references_by_identity(
     at: &SidecarPositionReq,
     include_declaration: bool,
 ) -> Result<Vec<Location>> {
-    if !sidecar_workspace_loaded(runtime, other)? {
+    if !sidecar_workspace_loaded(runtime.handle(), other, None)? {
         return Ok(Vec::new());
     }
-    let identity = request_symbol_identity(runtime, primary, at)?;
+    let identity = request_symbol_identity(runtime.handle(), primary, at, None)?;
     if !identity.found {
         return Ok(Vec::new());
     }

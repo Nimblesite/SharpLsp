@@ -61,7 +61,7 @@ async fn open_solution(
     vfs: Arc<Vfs>,
 ) {
     let opened = workspace_open::open_workspace(&sidecar, target).await;
-    pull_diagnostics::state::load_finished();
+    pull_diagnostics::state::load_finished().await;
     if let Err(err) = opened {
         error!("{} sidecar workspace/open failed: {err:#}", sidecar.name());
         return;

@@ -39,7 +39,7 @@ let private applySole state path original title line column =
         Assert.Equal(path, document.FilePath)
         let change = Assert.Single(document.Edits)
         let edited = applyEdit original change
-        match! FSharpWorkspace.checkFileWithSource state path edited with
+        match! FSharpWorkspace.checkFileWithSource state path edited Threading.CancellationToken.None with
         | None -> return failwith "FCS did not check the fixed source"
         | Some(_, checkedFile, _) -> return edited, change, checkedFile
     }

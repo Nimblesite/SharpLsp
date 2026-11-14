@@ -21,10 +21,10 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Multi-solution prompt | Yes | Yes (selectSolution) | **DONE** |
 | Close/Open Solution commands | Yes | Partial (select only) | **PARTIAL** |
 | Solution Folders display | Yes | No | **MISSING** |
-| Add New Project to solution | Yes | No | **MISSING** |
-| Add New File to project | Yes | No | **MISSING** |
-| Project templates (console, web, class lib) | Yes | No | **MISSING** |
-| View/edit .csproj from tree | Yes | No | **MISSING** |
+| Add New Project to solution | Yes | Yes | **DONE** |
+| Add New File to project | Yes | Yes | **DONE** |
+| Project templates (console, web, class lib) | Yes | Yes | **DONE** |
+| View/edit .csproj from tree | Yes | Yes | **DONE** |
 | Build/Rebuild/Clean from context menu | Yes | No | **MISSING** |
 | Dependencies folder | Yes | Yes | **DONE** |
 | NuGet package display with versions | Yes | Yes | **DONE** |
@@ -177,15 +177,15 @@ All NuGet operations route through LSP custom requests (`sharplsp/nuget/*`). The
 | Update packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
 | Remove packages | Yes | Partial (UI exists, needs LSP backend) | **IN PROGRESS** |
 | NuGet browser webview | No | Yes (needs design fixes) | **IN PROGRESS** |
-| Auto-restore on load/build | Yes | No | **MISSING** |
-| Prerelease toggle | Yes | No | **MISSING** |
+| Auto-restore on load/build | Yes | Yes (on load) | **PARTIAL** |
+| Prerelease toggle | Yes | Yes | **DONE** |
 
 ### Project Scaffolding
 
 | Feature | C# Dev Kit | SharpLsp | Status |
 |---------|-----------|-------|--------|
-| New Project from template | Yes | No | **MISSING** |
-| New File from template (class, interface, etc.) | Yes | No | **MISSING** |
+| New Project from template | Yes | Yes | **DONE** |
+| New File from template (class, interface, etc.) | Yes | Yes | **DONE** — all five templates; existing saved/unsaved contents preserved |
 
 ### Features Where SharpLsp is Already Ahead
 
@@ -293,6 +293,7 @@ Features users expect within the first day of use.
   - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
   - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
   - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
+  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`).
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
   - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
@@ -326,7 +327,7 @@ Features that make the daily experience smooth.
 - [x] **P3.1: Project Scaffolding**
   - [x] "SharpLsp: New Project" command using `dotnet new` templates — `sharplsp.newProject` (`scaffolding-e2e.test.ts`)
   - [x] Template selection quick pick (console, web, classlib, test, etc.) — `scaffolding.ts` templates: console, classlib, webapi, xunit, mstest, F# console
-  - [x] "SharpLsp: New File" command (class, interface, enum, struct, record) — `sharplsp.newFile` (`scaffolding-e2e.test.ts`)
+  - [x] "SharpLsp: New File" command (class, interface, enum, struct, record) — `sharplsp.newFile` (`scaffolding-e2e.test.ts`); five collision regressions fail before the fix, all eight new-file flows pass afterward, preserving saved and unsaved work
   - [x] Auto-add file to project — `add-source-file.ts` through `project/addCompileItem` (`scaffolding-e2e.test.ts` comment trap, #493)
   - [x] "SharpLsp: Add Project to Solution" command — `sharplsp.addProjectToSolution` (`scaffolding-e2e.test.ts`)
 
@@ -337,9 +338,10 @@ Features that make the daily experience smooth.
   - [x] Status bar indicator for hot reload state — `hot-reload.ts` status bar item (`coverage-extension-workflows.test.ts`)
 
 - [ ] **P3.3: Solution Explorer Enhancements**
+  - [x] Load every standalone C# project in a solutionless monorepo (#575): three real-SDK layouts prove nested loading, sibling inclusion and working diagnostics; 21 discovery/regression checks pass.
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
-  - [x] Add existing project to solution — `sharplsp.addProjectToSolution`
+  - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.
   - [x] Add project reference via UI — `sharplsp.addProjectReference` (`context-menus.test.ts`, `nuget-deps-e2e.test.ts`)
   - [x] Add NuGet package from explorer context menu — `sharplsp.nuget.addFromExplorer` / `browseNuGetPackages` on explorer items
 

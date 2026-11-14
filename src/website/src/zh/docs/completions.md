@@ -1,7 +1,7 @@
 ---
 layout: layouts/docs.njk
 title: 代码补全
-description: "SharpLsp 的 C# 与 F# 代码补全：C# 由 Roslyn 提供，F# 由 F# Compiler Service 提供，支持替换标识符的编辑，以及自动添加 using 的导入补全。"
+description: "SharpLsp 的 C# 与 F# 代码补全：C# 由 Roslyn 提供，F# 由 F# Compiler Service 提供，支持替换标识符的编辑，以及自动添加 using 或 open 的导入补全。"
 lang: zh
 eleventyNavigation:
   key: 代码补全（中文）
@@ -24,12 +24,7 @@ C# 补全使用 Roslyn 的 `CompletionService`。它涵盖 Roslyn 在光标位�
 
 ## F# 补全
 
-F# 补全使用 FCS `GetDeclarationListInfo`。目前支持成员和作用域内符号的补全，接受补全项时也能正确替换当前词元。
-
-与 FSAC 相比仍有两项差距：
-
-- 来自尚未打开的命名空间的符号还不会加入列表。
-- `completionItem/resolve` 已实现，但尚不能插入 `open` 声明。
+F# 补全使用 FCS 的 `GetDeclarationListInfo`，包括来自未打开命名空间的候选项。接受导入补全会添加所需的 `open`，并替换当前词元。补全项会标明其命名空间，便于区分同名类型。
 
 ## 触发补全
 
@@ -48,4 +43,4 @@ SharpLsp 为两种语言声明 `.` 作为成员访问的自动触发字符。编
 }
 ```
 
-补全结果基于当前尚未保存的缓冲区计算。如果相应语言的 sidecar 已禁用或不可用，SharpLsp 不会编造结果，而是返回空的语义补全项列表。
+补全结果基于当前尚未保存的缓冲区计算。如果相应语言的边车进程已禁用或不可用，SharpLsp 不会编造结果，而是不返回语义补全项。

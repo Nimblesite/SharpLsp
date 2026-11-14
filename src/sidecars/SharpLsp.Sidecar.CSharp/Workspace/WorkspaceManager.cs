@@ -325,6 +325,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         var (target, candidates) = +discovered;
+        var projects = (+discovered).Projects;
 
         if (target is null)
         {
@@ -356,9 +357,10 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (AutoRestoreOnOpen)
         {
-            var restored = await WorkspaceRestore
-                .EnsureTargetAsync(target, ct)
-                .ConfigureAwait(false);
+            var restored =
+                projects.Length > 0
+                    ? await WorkspaceRestore.EnsureProjectsAsync(projects, ct).ConfigureAwait(false)
+                    : await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false);
             if (restored.IsError)
             {
                 return restored;
@@ -375,7 +377,9 @@ internal sealed partial class WorkspaceManager : IDisposable
         _workspace = MSBuildWorkspace.Create(properties);
         _ = _workspace.RegisterWorkspaceFailedHandler(LogWorkspaceFailure);
 
-        var loaded = await LoadSolutionOrProjectAsync(target, ct).ConfigureAwait(false);
+        var loaded = await RoslynProjectLoading
+            .LoadAsync(_workspace, target, ct, projects.Length > 0 ? projects : null)
+            .ConfigureAwait(false);
 
         await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -442,15 +446,6 @@ internal sealed partial class WorkspaceManager : IDisposable
             }
         }
         _pendingTextEdits.Clear();
-    }
-
-    /// <summary>
-    /// A .sln, .slnx or one project, loaded with no F# project design-time-built: the F#
-    /// sidecar owns those builds. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-OWNERSHIP].
-    /// </summary>
-    private Task<Solution> LoadSolutionOrProjectAsync(string target, CancellationToken ct)
-    {
-        return RoslynProjectLoading.LoadAsync(_workspace!, target, ct);
     }
 
     /// <summary>

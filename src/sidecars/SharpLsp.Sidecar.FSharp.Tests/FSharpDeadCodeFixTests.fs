@@ -78,7 +78,7 @@ let ``a dead private function goes whole, with its documentation and attributes,
             Assert.Equal<string array>([| "let shared = 1"; ""; "type Counter() =" |], lines[2..4])
 
             // 3. FCS finds the edited file clean.
-            match! FSharpWorkspace.checkFileWithSource state paths[0] edited with
+            match! FSharpWorkspace.checkFileWithSource state paths[0] edited System.Threading.CancellationToken.None with
             | Some(_, check, _) -> Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error check)
             | None -> failwith "FCS could not re-check the edited file"
         finally

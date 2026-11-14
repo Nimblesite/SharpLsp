@@ -421,6 +421,28 @@ public sealed class WorkspaceManagerQueryFixture : IAsyncLifetime, IDisposable
                 Console.WriteLine(sum);
             }
         }
+
+        public interface IContract { void Execute(); }
+
+        /// <see cref="PartialThing"/>
+        public partial class PartialThing : IContract
+        {
+            public string TypeName => nameof(PartialThing);
+            public string ActionName => nameof(IContract.Execute);
+            /// <see cref="IContract.Execute"/>
+            void IContract.Execute() { }
+        }
+
+        public partial class PartialThing { }
+
+        public readonly struct Number
+        {
+            public static Number operator +(Number a, Number b) => a;
+            public static Number operator +(Number a) => a;
+            public static Number Sum(Number a, Number b) => a + b;
+            public static Number Accumulate(Number a, Number b) { a += b; return a; }
+        }
+        public readonly struct ConflictingNumber { public static ConflictingNumber operator +(ConflictingNumber a, ConflictingNumber b) => a; public static ConflictingNumber operator -(ConflictingNumber a, ConflictingNumber b) => a; }
         """;
 
     private readonly string _root = NativePaths.Temp($"sharplsp-wmq-tests-{Guid.NewGuid():N}");

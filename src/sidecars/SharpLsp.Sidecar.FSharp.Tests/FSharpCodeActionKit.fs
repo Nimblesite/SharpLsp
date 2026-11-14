@@ -92,7 +92,7 @@ let applyActionWith
             let edited = applyEdit fixture edit.DocumentChanges[0].Edits[0]
             Assert.Equal(expected, edited.Split('\n')[expectedLine])
 
-            match! FSharpWorkspace.checkFileWithSource state path edited with
+            match! FSharpWorkspace.checkFileWithSource state path edited System.Threading.CancellationToken.None with
             | None -> return failwith $"FCS could not re-check the edited file at {line}:{col}"
             | Some(_, check, _) -> return check
     }

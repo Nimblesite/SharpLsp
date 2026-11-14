@@ -795,9 +795,18 @@ fn test_full_stack_fsharp_rename() {
         "prepareRename must carry a range with a start position: {prep_json}"
     );
 
+    let (a_line, a_char) = fs_pos::ADD_FN;
+    // [RENAME-ERRORS] FCS lexes the trailing bang as an identifier, but FS1141
+    // reserves it; the host must return an error before offering any edits.
+    let rejected = rename_request(&mut client, &file_uri, a_line, a_char, "plus!");
+    assert_eq!(rejected["error"]["code"], -32603, "{rejected}");
+    assert!(
+        rejected["result"].is_null(),
+        "invalid rename returned edits: {rejected}"
+    );
+
     // rename `add` -> `plus`: a WorkspaceEdit whose every edit rewrites to `plus`
     // and targets Library.fs.
-    let (a_line, a_char) = fs_pos::ADD_FN;
     let rename = client.request(
         "textDocument/rename",
         json!({

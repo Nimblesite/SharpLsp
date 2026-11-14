@@ -76,6 +76,81 @@ Because hoisted packages apply solution-wide, the result MUST name each moved pa
 - Command `sharplsp.consolidatePackages`, shown on `viewItem == solution`.
 - Scan first; if nothing is shared, inform and stop. Otherwise show a modal summarising what will move, then apply on confirmation and refresh.
 
+## [PKG-VULN] Vulnerable Package Diagnostics And Fixes
+
+Plan: [PACKAGE-VULNERABILITY-PLAN](../plans/PACKAGE-VULNERABILITY-PLAN.md). Bug: GitHub #578.
+
+Today a vulnerable package only surfaces through the build task's `$msCompile` problem matcher. NuGet reports
+every advisory level as a **warning** (`NU1901` low, `NU1902` moderate, `NU1903` high, `NU1904` critical), so a
+high or critical advisory is shown in yellow, pinned to line 1 of the project file, and no fix is offered.
+
+### [PKG-VULN-DIAG] SharpLsp-owned diagnostics
+
+- The host publishes its own diagnostic for each vulnerable package on the `<PackageReference>` /
+  `<PackageVersion>` element that declares it, including in `Directory.Packages.props` and shared props (the
+  version-owning file per [NUGET-REQUESTS-UPDATE-CONFIRM]). Never on line 1.
+- F# `.fsproj` first, then C# `.csproj`; both through the same Rust module.
+- Code is NuGet's own (`NU1901`–`NU1904`), `source = "sharplsp-nuget"`, message names the package, resolved
+  version, advisory severity and GHSA id, `codeDescription.href` = the advisory URL.
+- Transitive advisories (`NuGetAuditMode = all`) are reported on the direct reference that brings the package in,
+  naming the path (`A → B → MessagePack 3.1.7`).
+- Data comes from the existing [cli.rs](../../src/sharplsp/src/nuget/cli.rs) path
+  (`dotnet list package --vulnerable --include-transitive --format json`) plus NuGet's public
+  `VulnerabilityInfo` service resource for affected ranges; no second HTTP/CLI path. The project's own
+  `NuGetAudit`, `NuGetAuditLevel` and `NuGetAuditSuppress` are honoured: a suppressed advisory is not reported.
+- Refreshed after restore, after any package edit, and when the advisory feed's cache expires; a feed failure is
+  logged and leaves the last known diagnostics marked stale, never cleared silently.
+
+### [PKG-VULN-SEVERITY] Severity mapping (configurable)
+
+Advisory severity maps to LSP severity through `sharplsp.toml` ([CONFIG-RESOLUTION]). Defaults — high and
+critical are **red**:
+
+```toml
+[nuget.vulnerabilities]
+critical = "error"        # NU1904
+high = "error"            # NU1903
+moderate = "warning"      # NU1902
+low = "information"       # NU1901
+# Values: "error" | "warning" | "information" | "hint" | "none"
+enforce_in_build = false  # true => error-mapped codes also fail `dotnet build`
+```
+
+- Unknown keys or values are config errors; live-reloaded under `[CONFIG-RESOLUTION-LIVE]` with a diagnostic
+  refresh.
+- `enforce_in_build = true` writes the error-mapped codes into `WarningsAsErrors` in the solution's
+  `Directory.Build.props` (XML DOM, list merge), so the build task's problem matcher is red too. This is the
+  associated rule of the update fix ([FIXALL-RULES-TABLE]).
+- The VS Code `$msCompile` diagnostic for the same code and project is superseded: the build task's matcher
+  output stays in the Problems panel only for codes SharpLsp does not own, so one advisory never shows twice.
+
+### [PKG-VULN-FIX] "Update to known-good version" quick fix
+
+- On a vulnerable-package diagnostic, `textDocument/codeAction` offers
+  `Update <Package> to <version> (fixes <GHSA>)`.
+- **Known-good version**: the lowest published, listed, non-deprecated stable version greater than the resolved
+  one that is outside **every** advisory range for the package (not just the reported one), compared with NuGet
+  version semantics.
+- Within the [NUGET-REQUESTS-UPDATE-BOUNDS] line it is a normal `quickfix`; when the only good version crosses a
+  major (or `0.x` minor) boundary, the title says so (`… — major update 3 → 4`) and resolving it requires the
+  explicit confirmation of [NUGET-REQUESTS-UPDATE-CONFIRM]. No known-good version → no fix, and the diagnostic
+  says "no patched version published".
+- Transitive: the fix pins the package with a direct `PackageReference` (or a `PackageVersion` when CPM has
+  `CentralPackageTransitivePinningEnabled`) at the known-good version, or updates the direct parent when a parent
+  version that pulls the fixed one exists — the lower-impact choice is offered first.
+- Applied via `sharplsp/nuget/install` with an exact version and [NUGET-XML-DOM], then restore; a failed restore is
+  reported as failure with the attempted version ([REFACTOR-NEVER-SILENT]).
+- **Fix all** ([FIXALL-SCOPES]): `Update all vulnerable packages` at project and solution scope, plus
+  *Fix all and enforce* (writes `enforce_in_build`).
+
+### [PKG-VULN-TESTS] Tests
+
+Real F# and C# fixture projects referencing a controlled vulnerable version on a local feed with a local
+advisory resource: assert range on the element, severity per mapping (all four levels, and every remapped
+value), transitive path message, suppression honoured, known-good selection skips a later still-vulnerable
+version, major-boundary confirmation, transitive pin under CPM, restore failure reporting, and that the build
+fails after *fix and enforce* when a vulnerable version is reintroduced.
+
 ## [PKG-NONGOALS] Non-Goals
 
 - Transitive / framework / analyzer package pruning (cannot be proven unused).

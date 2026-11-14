@@ -152,3 +152,7 @@ F# 程序可以使用同一个性能分析器，它能读懂 F# 编译器生成�
 | `sharplsp.profiler.autoSnapshotInterval` | `30` | 定时快照的间隔秒数 |
 
 `sharplsp.toml` 中的 `[profiler]` 表用于设置输出目录（默认 `.sharplsp/profiles`）和热点阈值。参见[配置](/zh/docs/configuration/)。
+
+## 分析器概览
+
+{% video "profiler-film" %}

@@ -55,7 +55,6 @@ pub fn initialize(
     sender: crossbeam_channel::Sender<Message>,
 ) -> Result<()> {
     let runtime = runtime.handle().clone();
-    PULL.store(supports_pull(capabilities), Ordering::Release);
     let analyzer = analyzer(runtime.clone(), sidecars);
     let session = Session {
         inputs: super::monitor::InputMonitor::default(),
@@ -69,9 +68,14 @@ pub fn initialize(
         sender,
         runtime,
     };
-    SESSION
-        .set(Mutex::new(Some(session)))
-        .map_err(|_session| anyhow::anyhow!("diagnostics session already initialized"))
+    let slot = SESSION.get_or_init(|| Mutex::new(None));
+    let mut current = slot
+        .lock()
+        .map_err(|error| anyhow::anyhow!("diagnostics session lock poisoned: {error}"))?;
+    anyhow::ensure!(current.is_none(), "diagnostics session already initialized");
+    *current = Some(session);
+    PULL.store(supports_pull(capabilities), Ordering::Release);
+    Ok(())
 }
 
 /// Prefer explicit pull support, even when the client also supports push.
@@ -89,10 +93,15 @@ pub fn is_pull() -> bool {
 
 /// Effective policy; standalone protocol publications use defaults before session creation.
 pub fn configuration() -> Result<DiagnosticsConfig> {
-    if SESSION.get().is_none() {
+    let Some(slot) = SESSION.get() else {
         return Ok(DiagnosticsConfig::default());
-    }
-    with_session(|session| Ok(session.config.clone()))
+    };
+    let current = slot
+        .lock()
+        .map_err(|error| anyhow::anyhow!("diagnostics session poisoned: {error}"))?;
+    Ok(current
+        .as_ref()
+        .map_or_else(DiagnosticsConfig::default, |session| session.config.clone()))
 }
 
 /// Record the workspace request before asynchronous opening, so old completions cannot replace it.
@@ -163,11 +172,13 @@ pub fn load_started() {
 /// A compiler finished loading a selected solution, successfully or not. The
 /// revision moves first, so a refusal computed during the load can never reply
 /// as settled in the gap before the load's own invalidation. [DIAG-TRUTH-GUARANTEES]
-pub fn load_finished() {
-    if let Err(error) = invalidate() {
-        warn!(%error, "Diagnostic inputs not invalidated after a solution load");
+pub async fn load_finished() {
+    match tokio::task::spawn_blocking(invalidate).await {
+        Ok(Err(error)) => warn!(%error, "Diagnostic inputs not invalidated after a solution load"),
+        Err(error) => warn!(%error, "Diagnostic load completion task failed"),
+        Ok(Ok(())) => {}
     }
-    // Saturating: a finish without its start can never underflow the count.
+    // Invalidation completes before the load can appear settled.
     let _ = LOADS.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
 }
 
@@ -231,8 +242,9 @@ pub fn begin_change() {
 
 /// Apply one store change and retain the standard debounced refresh.
 fn change_store(operation: impl FnOnce(&PullStore)) -> Result<()> {
+    let store = store()?;
+    operation(&store);
     with_session(|session| {
-        operation(&session.store);
         schedule_refresh(session);
         Ok(())
     })
@@ -266,6 +278,8 @@ pub fn shutdown() -> Result<()> {
             .map_err(|error| anyhow::anyhow!("diagnostic shutdown lock poisoned: {error}"))?;
         let _session = session.take();
     }
+    PULL.store(false, Ordering::Release);
+    LOADS.store(0, Ordering::Release);
     Ok(())
 }
 
@@ -331,4 +345,95 @@ fn analyzer(
             .map(Arc::new)
             .map_err(|error| AnalysisError(format!("{error:#}")))
     })
+}
+
+#[cfg(test)]
+mod load_completion_tests {
+    use super::*;
+    use anyhow::{anyhow, ensure};
+    use std::time::{Duration, Instant};
+
+    /// [DIAG-ARCHITECTURE-SALSA] A stopped connection can establish a fresh session.
+    #[test]
+    fn diagnostics_session_reinitializes_after_shutdown() -> Result<()> {
+        shutdown()?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let capabilities = ClientCapabilities::default();
+        let config = DiagnosticsConfig::default();
+        initialize(
+            &capabilities,
+            &config,
+            &runtime,
+            [None, None],
+            sender.clone(),
+        )?;
+        shutdown()?;
+        initialize(&capabilities, &config, &runtime, [None, None], sender)?;
+        ensure!(
+            store().is_ok(),
+            "replacement connection owns a usable store"
+        );
+        shutdown()
+    }
+
+    /// [DIAG-ARCHITECTURE-SALSA] Shutdown cannot leak the old connection's mode or loads.
+    #[test]
+    fn diagnostics_shutdown_clears_connection_state() -> Result<()> {
+        shutdown()?;
+        let runtime = tokio::runtime::Runtime::new()?;
+        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let capabilities: ClientCapabilities =
+            serde_json::from_value(serde_json::json!({"textDocument":{"diagnostic":{}}}))?;
+        let config = DiagnosticsConfig::default();
+        initialize(&capabilities, &config, &runtime, [None, None], sender)?;
+        load_started();
+        ensure!(
+            is_pull(),
+            "the first connection negotiated pull diagnostics"
+        );
+        shutdown()?;
+        ensure!(
+            !loading(),
+            "stopped compiler loads cannot outlive the connection"
+        );
+        ensure!(!is_pull(), "the old connection's pull mode is discarded");
+        ensure!(configuration().is_ok(), "stopped state uses default policy");
+        Ok(())
+    }
+
+    /// [DIAG-TRUTH-GUARANTEES] #561: a held session cannot stall Tokio's timer worker.
+    #[test]
+    fn load_completion_does_not_block_a_tokio_worker() -> Result<()> {
+        let session = SESSION.get_or_init(|| Mutex::new(None));
+        let (locked, ready) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || -> Result<()> {
+            let _guard = session
+                .lock()
+                .map_err(|poisoned| anyhow!("test session mutex poisoned: {poisoned}"))?;
+            locked.send(())?;
+            std::thread::sleep(Duration::from_millis(200));
+            Ok(())
+        });
+        ready.recv()?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()?;
+        let elapsed = runtime.block_on(async {
+            load_started();
+            let started = Instant::now();
+            let completion = tokio::spawn(async { load_finished().await });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let elapsed = started.elapsed();
+            completion.await.map(|()| elapsed)
+        })?;
+        holder
+            .join()
+            .map_err(|panic| anyhow!("test holder panicked: {panic:?}"))??;
+        ensure!(
+            elapsed < Duration::from_millis(100),
+            "Tokio timer stalled for {elapsed:?}"
+        );
+        Ok(())
+    }
 }

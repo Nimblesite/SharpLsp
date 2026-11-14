@@ -27,6 +27,15 @@ case "$mode" in
     cargo nextest run --archive-file "$archive" --workspace-remap "$PWD" \
       --extract-to "$CARGO_TARGET_DIR" --extract-overwrite \
       --no-fail-fast --retries 0 "$@"
+    # Cargo 1.100's build-dir layout puts test binaries in build/<pkg>/<hash>/out;
+    # cargo-llvm-cov 0.9.1 only collects objects from deps/. Link each archived
+    # test binary there until cargo-llvm-cov reads layout v2.
+    extracted="$CARGO_TARGET_DIR/target/release"
+    mkdir -p "$extracted/deps"
+    jq -r '."rust-binaries"[]."binary-path"' "$CARGO_TARGET_DIR/target/nextest/binaries-metadata.json" |
+      while IFS= read -r binary; do
+        ln -f "$extracted/${binary#*/release/}" "$extracted/deps/"
+      done
     if [ "$component" = rust ]; then
       cargo llvm-cov report --nextest-archive-file "$archive" --lcov \
         --output-path "$root/target/coverage-rust-shard${SHARD:?SHARD required}.lcov"

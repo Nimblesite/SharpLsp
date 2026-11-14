@@ -116,9 +116,9 @@ let private usesInFile (results: FSharpCheckFileResults) (symbol: FSharpSymbol) 
 /// Every use of `symbol` across the scope anchored on `anchor`, from the whole-project
 /// checks the checker keeps — never by checking each file again, which walked every file
 /// of every reader on each request. [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-REFERENCES]
-let private getScopeUsages (state: FSharpWorkspace.FSharpWorkspaceState) (anchor: string) (symbol: FSharpSymbol) =
+let private getScopeUsages (state: FSharpWorkspace.FSharpWorkspaceState) (anchor: string) (symbol: FSharpSymbol) ct =
     task {
-        let! projects = FSharpWorkspace.checkAll state (FSharpWorkspace.queryScope state anchor)
+        let! projects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state anchor) ct
 
         return
             projects
@@ -135,11 +135,12 @@ let internal getProjectUsagesForSymbol
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (usedIn: string)
     (symbol: FSharpSymbol)
+    ct
     =
     task {
         match state.ProjectOptions with
         | None -> return [||]
-        | Some _ -> return! getScopeUsages state (FSharpWorkspace.anchorOf state symbol usedIn) symbol
+        | Some _ -> return! getScopeUsages state (FSharpWorkspace.anchorOf state symbol usedIn) symbol ct
     }
 
 /// Resolve the symbol at a position and return all of its uses across the
@@ -150,10 +151,11 @@ let getProjectUsages
     (filePath: string)
     (line: int)
     (character: int)
+    ct
     =
     task {
         try
-            let! fileCheck = FSharpWorkspace.checkFile state filePath
+            let! fileCheck = FSharpWorkspace.checkFileWithCancellation state filePath ct
             match fileCheck with
             | None -> return [||]
             | Some(checkResults, source) ->
@@ -161,7 +163,7 @@ let getProjectUsages
                 | None -> return [||]
                 | Some symbolUse when state.ProjectOptions.IsNone ->
                     return usesInFile checkResults symbolUse.Symbol |> deduplicateSemanticRanges
-                | Some symbolUse -> return! getProjectUsagesForSymbol state filePath symbolUse.Symbol
+                | Some symbolUse -> return! getProjectUsagesForSymbol state filePath symbolUse.Symbol ct
         with ex ->
             Log.Debug(ex, "[F# ProjectUsages] failed")
             return [||]
@@ -174,9 +176,10 @@ let getReferences
     (line: int)
     (character: int)
     (includeDeclaration: bool)
+    ct
     =
     task {
-        let! uses = getProjectUsages state filePath line character
+        let! uses = getProjectUsages state filePath line character ct
         return
             uses
             |> Array.filter (fun (su: FSharpSymbolUse) -> includeDeclaration || not su.IsFromDefinition)

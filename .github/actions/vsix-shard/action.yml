@@ -39,11 +39,34 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+    - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         dotnet-version: |
           9.0.x
           10.0.403
+    # The ubuntu-26.04 image added .NET 11 (SDK 11.0.100 and its runtimes) on
+    # 2026-11-11. Suites that build fixtures under /tmp sit outside global.json,
+    # and suites that target the newest installed runtime then pick net11.0, so
+    # the shard silently stops testing the SDK the repo pins. Remove every .NET
+    # component newer than the pinned major: SDKs, runtimes, packs, manifests.
+    - name: Remove .NET components newer than the global.json pin
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |-
+        set -euo pipefail
+        root="${DOTNET_ROOT:-/usr/share/dotnet}"
+        sudo find "$root" -mindepth 1 -maxdepth 3 -type d \
+          -regex '.*/\(1[1-9]\|[2-9][0-9]\)\.[0-9][^/]*' -prune -exec rm -rf {} +
+        # global.json rolls forward to the latest patch, so a newer preinstalled
+        # 10.0.x SDK (10.0.404 changed F# name resolution) would silently win.
+        pinned="$(jq -r .sdk.version global.json)"
+        for sdk in "$root"/sdk/*/; do
+          version="$(basename "$sdk")"
+          newest="$(printf '%s\n%s\n' "$pinned" "$version" | sort -V | tail -1)"
+          if [ "$version" != "$pinned" ] && [ "$newest" = "$version" ]; then sudo rm -rf "$sdk"; fi
+        done
+        dotnet --list-sdks
+        dotnet --list-runtimes
     - name: Install VS Code extension deps
       uses: ./.github/actions/vsix-node-deps
     - name: Download the compiled suite

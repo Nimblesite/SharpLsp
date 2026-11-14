@@ -162,7 +162,7 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
             Assert.Equal((2, 4), (line, column))
 
             // A project-wide query from Lib counts the use App makes through that build.
-            let! uses = FSharpReferences.getProjectUsages state lib 2 4
+            let! uses = FSharpReferences.getProjectUsages state lib 2 4 System.Threading.CancellationToken.None
             let place (used: FSharpSymbolUse) =
                 let range = used.Range
                 range.FileName, range.StartLine - 1
@@ -283,7 +283,7 @@ let ``a query over many readers checks each once, and the next identical query r
 
             let! second = titles ()
             Assert.Equal<(int * string) list>(first, second)
-            let! uses = FSharpReferences.getProjectUsages state lib 2 4
+            let! uses = FSharpReferences.getProjectUsages state lib 2 4 System.Threading.CancellationToken.None
 
             let fileOf (used: FSharpSymbolUse) =
                 let range = used.Range

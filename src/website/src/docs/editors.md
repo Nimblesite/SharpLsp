@@ -45,3 +45,7 @@ Zed runs SharpLsp through a dev extension from this repository, beside Zed's own
 A generic editor can speak LSP 3.17 to the host over stdio. Every [release](https://github.com/Nimblesite/SharpLsp/releases) publishes a standalone server archive per platform with the host and both sidecars side by side, plus a Rider plugin (`sharplsp-rider.zip`) that launches it. Packaged Neovim, Helix, and Emacs integrations are planned, not current release surfaces.
 
 For repository builds, see [Contributing](/docs/contributing/).
+
+## Explore the workspace
+
+{% video "sharplsp-tour" %}

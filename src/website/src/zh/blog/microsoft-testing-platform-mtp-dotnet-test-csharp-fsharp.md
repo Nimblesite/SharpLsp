@@ -21,7 +21,7 @@ excerpt: "xUnit v3 4.0 只支持 Microsoft.Testing.Platform；仅支持 VSTest �
 
 因此，如果编辑器的 Test Explorer 只支持 VSTest，现代 xUnit v3 项目的测试树就会**一片空白**。测试确实存在，`dotnet test` 也能运行，但编辑器什么都看不到。
 
-SharpLsp 的 Test Explorer 现在同时支持两者。该功能已进入 `main`，并将在下一版本发布。它能发现、运行、调试 C# 和 F# 的 **xUnit v3、MSTest、NUnit** MTP 测试模块，并收集代码覆盖率。它也能与 VSTest 项目并行工作，包括在一个多根工作区中同时使用两种平台。本文介绍：
+SharpLsp 的 Test Explorer 现在同时支持两者。该功能已在当前版本中提供。它能发现、运行、调试 C# 和 F# 的 **xUnit v3、MSTest、NUnit** MTP 测试模块，并收集代码覆盖率。它也能与 VSTest 项目并行工作，包括在一个多根工作区中同时使用两种平台。本文介绍：
 
 - Microsoft.Testing.Platform 上的 `dotnet test` 如何工作；
 - 如何在 C# 或 F# 项目中启用它；
@@ -200,4 +200,4 @@ MTP 支持由端到端测试覆盖。这些测试在真实的 VS Code 扩展宿�
 
 ## 立即试用
 
-MTP 支持将在 SharpLsp 0.21.0 之后的下一个版本提供。你可以关注[发布页面](https://github.com/Nimblesite/SharpLsp/releases)，或者现在就从 `main` 构建 VS Code 扩展。打开包含 Microsoft.Testing.Platform 上的 xUnit v3、MSTest 或 NUnit 项目的解决方案，再打开 Testing 视图。如果 MTP 项目显示空树、错误结果，或者调试器始终无法附加，请[提交 issue](https://github.com/Nimblesite/SharpLsp/issues)。这项功能正是从 issue 开始的。
+MTP 支持已在当前版本中提供。从[发布页面](https://github.com/Nimblesite/SharpLsp/releases)安装最新的 VS Code 扩展。打开包含 Microsoft.Testing.Platform 上的 xUnit v3、MSTest 或 NUnit 项目的解决方案，再打开 Testing 视图。如果 MTP 项目显示空树、错误结果，或者调试器始终无法附加，请[提交 issue](https://github.com/Nimblesite/SharpLsp/issues)。这项功能正是从 issue 开始的。

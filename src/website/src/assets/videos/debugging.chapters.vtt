@@ -1,0 +1,37 @@
+WEBVTT
+
+1
+00:00.000 --> 00:15.694
+C# and F# in one debug session
+
+2
+00:15.694 --> 00:34.281
+Start in C#
+
+3
+00:34.281 --> 00:46.982
+Inspect values
+
+4
+00:46.982 --> 00:59.489
+Step into F#
+
+5
+00:59.489 --> 01:14.023
+Follow the values
+
+6
+01:14.023 --> 01:23.156
+Back to C#
+
+7
+01:23.156 --> 01:30.189
+Continue to output
+
+8
+01:30.189 --> 01:38.546
+The complete debugging workflow
+
+9
+01:38.546 --> 01:45.717
+Install SharpLsp and subscribe

@@ -190,6 +190,45 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         Assert.False(manager.IsLoaded);
     }
 
+    // [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] #575: every standalone project loads.
+    [Theory]
+    [InlineData(1, "apps/cms/App")]
+    [InlineData(2, "apps/cms/App")]
+    [InlineData(2, "")]
+    public async Task Solutionless_monorepo_loads_every_project(int count, string firstFolder)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            var folder = index == 0 ? firstFolder : "packages/Library";
+            _ = WriteIn(
+                folder,
+                $"App{index}.csproj",
+                """
+                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+                </PropertyGroup><ItemGroup><Compile Include="Code.cs" /></ItemGroup></Project>
+                """
+            );
+            _ = WriteIn(
+                folder,
+                "Code.cs",
+                $"public class Code{index} {{ public int Value => 42; }}"
+            );
+        }
+        using var manager = new WorkspaceManager();
+        var opened = await OpenAsync(manager, _root);
+        Assert.False(opened.IsError, opened.Match(_ => "", error => error));
+        Assert.True(manager.IsLoaded, "nested SDK projects must not become loose-file workspaces");
+        var projects = await manager.GetProjectsAsync();
+        Assert.False(projects.IsError);
+        Assert.Equal(count, projects.Match(value => value.Count, _ => -1));
+        for (var index = 0; index < count; index++)
+        {
+            var folder = index == 0 ? firstFolder : "packages/Library";
+            Assert.Empty(await ErrorsAsync(manager, NativePaths.Join(_root, folder, "Code.cs")));
+        }
+    }
+
     /// <summary>A missing loose C# file is a load failure. Implements [SCRIPT-DEGRADE].</summary>
     [Fact]
     public async Task Projectless_directory_rejects_update_for_a_missing_file()

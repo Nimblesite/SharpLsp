@@ -2,11 +2,15 @@
 //! Implements [RENAME-PREPARE], [RENAME-APPLY], [RENAME-CROSSLANGUAGE].
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 use lsp_server::Request;
-use lsp_types::{Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams};
-use tracing::warn;
+use lsp_types::{
+    Position, PrepareRenameResponse, Range, RenameParams, TextDocumentPositionParams, Uri,
+};
+use lspkit_server::CancellationToken;
+use tracing::{info, warn};
 
 use crate::code_actions::{SidecarDocumentEdit, SidecarWorkspaceEdit};
 use crate::paths::uri_to_path;
@@ -15,17 +19,45 @@ use crate::utils::SidecarPositionReq;
 
 // Implements [RENAME-PREPARE]
 
+/// Trace the editor position without recording the requested symbol name or source text.
+fn trace_rename_start(method: &'static str, uri: &Uri, position: Position) {
+    info!(
+        method,
+        uri = uri.as_str(),
+        line = position.line,
+        character = position.character,
+        "Rename request started"
+    );
+}
+
+/// An unavailable compiler answers null while retaining a structured reason.
+fn available_sidecar<'a>(
+    sidecar: Option<&'a Arc<SidecarManager>>,
+    method: &'static str,
+) -> Option<&'a Arc<SidecarManager>> {
+    if sidecar.is_none() {
+        warn!(method, "Rename sidecar unavailable");
+    }
+    sidecar
+}
+
 /// Handle `textDocument/prepareRename` via the sidecar.
 pub fn handle_prepare_rename(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
+    let started = Instant::now();
+    let Some(sidecar) = available_sidecar(sidecar, "textDocument/prepareRename") else {
         return Ok(serde_json::Value::Null);
     };
 
     let params: TextDocumentPositionParams = serde_json::from_value(req.params)?;
+    trace_rename_start(
+        "textDocument/prepareRename",
+        &params.text_document.uri,
+        params.position,
+    );
     let file_path = uri_to_path(params.text_document.uri.as_str())?;
     let request = SidecarPositionReq {
         file_path,
@@ -33,10 +65,16 @@ pub fn handle_prepare_rename(
         character: params.position.character,
     };
     let payload = rmp_serde::to_vec(&request)?;
-    let response_bytes =
-        runtime.block_on(sidecar.request("textDocument/prepareRename", payload))?;
+    let response_bytes = runtime
+        .block_on(sidecar.request("textDocument/prepareRename", payload))
+        .inspect_err(|error| warn!(error = %error, "Rename prepare sidecar failed"))?;
     let result: SidecarPrepareRenameResult = rmp_serde::from_slice(&response_bytes)?;
 
+    info!(
+        can_rename = result.can_rename,
+        ms = started.elapsed().as_millis(),
+        "Rename prepare completed"
+    );
     if !result.can_rename {
         return Ok(serde_json::Value::Null);
     }
@@ -63,22 +101,44 @@ pub fn handle_prepare_rename(
 /// Handle `textDocument/rename` via the sidecar.
 pub fn handle_rename(
     req: Request,
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: Option<&Arc<SidecarManager>>,
     fallback: Option<&Arc<SidecarManager>>,
+    cancel: &CancellationToken,
 ) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
+    let started = Instant::now();
+    let Some(sidecar) = available_sidecar(sidecar, "textDocument/rename") else {
         return Ok(serde_json::Value::Null);
     };
     let params: RenameParams = serde_json::from_value(req.params)?;
+    trace_rename_start(
+        "textDocument/rename",
+        &params.text_document_position.text_document.uri,
+        params.text_document_position.position,
+    );
     let request = sidecar_rename_request(params)?;
-    let result = request_workspace_edit(runtime, sidecar, "textDocument/rename", &request)?;
+    let result = request_workspace_edit(runtime, sidecar, "textDocument/rename", &request, cancel)
+        .inspect_err(|error| warn!(error = %error, "Rename sidecar refused request"))?;
     let result = if result.document_changes.is_empty() {
         result
     } else {
-        add_foreign_rename(runtime, sidecar, fallback, &request, result)
+        add_foreign_rename(runtime, sidecar, fallback, &request, result, cancel)
     };
-    workspace_edit_value(result)
+    let documents = result.document_changes.len();
+    let edits: usize = result
+        .document_changes
+        .iter()
+        .map(|change| change.edits.len())
+        .sum();
+    let value = workspace_edit_value(result)
+        .inspect_err(|error| warn!(error = %error, "Rename edit validation failed"))?;
+    info!(
+        requested_documents = documents,
+        requested_edits = edits,
+        ms = started.elapsed().as_millis(),
+        "Rename completed"
+    );
+    Ok(value)
 }
 
 /// Convert LSP rename parameters into the sidecar's compact wire request.
@@ -97,17 +157,18 @@ fn sidecar_rename_request(params: RenameParams) -> Result<SidecarRenameRequest> 
 /// correct rename, so a crashed, restarting or wedged fallback sidecar must never
 /// discard it. Any fault is logged and the primary edits are returned unchanged.
 fn add_foreign_rename(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     primary: &Arc<SidecarManager>,
     fallback: Option<&Arc<SidecarManager>>,
     request: &SidecarRenameRequest,
     result: SidecarWorkspaceEditResult,
+    cancel: &CancellationToken,
 ) -> SidecarWorkspaceEditResult {
-    match foreign_rename_edits(runtime, primary, fallback, request) {
+    match foreign_rename_edits(runtime, primary, fallback, request, cancel) {
         Ok(Some(foreign)) => merge_or_keep(result, foreign),
         Ok(None) => result,
         Err(err) => {
-            warn!("Cross-language rename enrichment failed, keeping primary edits: {err:#}");
+            warn!(error = %err, "Cross-language rename enrichment failed; keeping primary edits");
             result
         }
     }
@@ -127,7 +188,7 @@ fn merge_or_keep(
     match merge_workspace_edits(result, foreign) {
         Ok(merged) => merged,
         Err(err) => {
-            warn!("Cross-language rename merge conflicted, keeping primary edits: {err:#}");
+            warn!(error = %err, "Cross-language rename merge conflicted; keeping primary edits");
             primary
         }
     }
@@ -135,28 +196,31 @@ fn merge_or_keep(
 
 /// Ask the other-language sidecar for its edits, if it has a workspace that could hold any.
 fn foreign_rename_edits(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     primary: &Arc<SidecarManager>,
     fallback: Option<&Arc<SidecarManager>>,
     request: &SidecarRenameRequest,
+    cancel: &CancellationToken,
 ) -> Result<Option<SidecarWorkspaceEditResult>> {
     let Some(fallback) = fallback else {
         return Ok(None);
     };
-    if !sidecar_workspace_loaded(runtime, fallback)? {
+    if !sidecar_workspace_loaded(runtime, fallback, Some(cancel))? {
         return Ok(None);
     }
     Ok(Some(request_foreign_rename(
-        runtime, primary, fallback, request,
+        runtime, primary, fallback, request, cancel,
     )?))
 }
 
 /// Check whether the other-language sidecar has a project that can contain references.
 pub(crate) fn sidecar_workspace_loaded(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: &Arc<SidecarManager>,
+    cancel: Option<&CancellationToken>,
 ) -> Result<bool> {
-    let bytes = runtime.block_on(sidecar.request("workspace/status", Vec::new()))?;
+    let bytes =
+        runtime.block_on(sidecar.request_cancellable("workspace/status", Vec::new(), cancel))?;
     let status: String = rmp_serde::from_slice(&bytes)?;
     match status.as_str() {
         // Tier 2 remains a usable BCL workspace; only package symbols are absent.
@@ -169,55 +233,69 @@ pub(crate) fn sidecar_workspace_loaded(
 
 /// Resolve the primary symbol identity and ask the fallback for its references.
 fn request_foreign_rename(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     primary: &Arc<SidecarManager>,
     fallback: &Arc<SidecarManager>,
     request: &SidecarRenameRequest,
+    cancel: &CancellationToken,
 ) -> Result<SidecarWorkspaceEditResult> {
-    let identity = request_rename_identity(runtime, primary, request)?;
+    let identity = request_rename_identity(runtime, primary, request, cancel)?;
     if !identity.found || identity.assembly_name.is_empty() || identity.xml_doc_sig.is_empty() {
         return Ok(empty_workspace_edit());
     }
     let foreign = SidecarForeignRenameRequest::new(identity, request.new_name.clone());
-    request_workspace_edit(runtime, fallback, "workspace/renameForeign", &foreign)
+    request_workspace_edit(
+        runtime,
+        fallback,
+        "workspace/renameForeign",
+        &foreign,
+        cancel,
+    )
 }
 
 /// Ask the owning sidecar for a portable assembly + XML-doc symbol identity.
 fn request_rename_identity(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: &Arc<SidecarManager>,
     rename: &SidecarRenameRequest,
+    cancel: &CancellationToken,
 ) -> Result<SidecarRenameIdentityResult> {
     let request = SidecarPositionReq {
         file_path: rename.file_path.clone(),
         line: rename.line,
         character: rename.character,
     };
-    request_symbol_identity(runtime, sidecar, &request)
+    request_symbol_identity(runtime, sidecar, &request, Some(cancel))
 }
 
 /// Ask the sidecar that owns `at`'s document for the identity of the symbol
 /// there: a C# source symbol, an F# one, or an F# project's symbol that C# or
 /// Razor reads from its DLL. [DEFINITION-CROSSLANG-IDENTITY]
 pub(crate) fn request_symbol_identity(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: &SidecarManager,
     at: &SidecarPositionReq,
+    cancel: Option<&CancellationToken>,
 ) -> Result<SidecarRenameIdentityResult> {
     let payload = rmp_serde::to_vec(at)?;
-    let bytes = runtime.block_on(sidecar.request("textDocument/renameIdentity", payload))?;
+    let bytes = runtime.block_on(sidecar.request_cancellable(
+        "textDocument/renameIdentity",
+        payload,
+        cancel,
+    ))?;
     Ok(rmp_serde::from_slice(&bytes)?)
 }
 
 /// Send a sidecar request whose response uses the workspace-edit wire shape.
 fn request_workspace_edit<T: serde::Serialize>(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: &Arc<SidecarManager>,
     method: &str,
     request: &T,
+    cancel: &CancellationToken,
 ) -> Result<SidecarWorkspaceEditResult> {
     let payload = rmp_serde::to_vec(request)?;
-    let bytes = runtime.block_on(sidecar.request(method, payload))?;
+    let bytes = runtime.block_on(sidecar.request_cancellable(method, payload, Some(cancel)))?;
     Ok(rmp_serde::from_slice(&bytes)?)
 }
 

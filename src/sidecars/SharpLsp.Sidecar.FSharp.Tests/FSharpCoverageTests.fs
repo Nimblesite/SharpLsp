@@ -77,7 +77,7 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
             |> Array.map (fun (path: string) -> NativePaths.NameOf path |> string)
         Assert.Equal<string array>([| "Defs.fs"; "Uses.fs" |], sourceFileNames)
         // And the project-wide usage search must find the cross-file use.
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5 System.Threading.CancellationToken.None
         Assert.True(
             uses.Length >= 2,
             $"references on `helper` must span both files (decl + use), got {uses.Length}")
@@ -104,7 +104,7 @@ let ``project usages resolve through a request path with different drive casing`
             let defsPath: string = paths[0]
             let flipped = NativePaths.FlipCase defsPath
             Assert.NotEqual<string>(defsPath, flipped)
-            let! uses = FSharpReferences.getProjectUsages state flipped 1 5
+            let! uses = FSharpReferences.getProjectUsages state flipped 1 5 System.Threading.CancellationToken.None
             Assert.True(
                 uses.Length >= 2,
                 $"references through the flipped-casing path must span both files, got {uses.Length}")
@@ -627,7 +627,7 @@ let ``getImplementations on non-existent file returns empty`` () = task {
     let! (state, dir, _, _) =
         loadWorkspace [ "I.fs", "module I\nlet x = 1\n" ]
     try
-        let! i = FSharpImplementations.getImplementations state "/bogus/path.fs" 0 0
+        let! i = FSharpImplementations.getImplementations state "/bogus/path.fs" 0 0 System.Threading.CancellationToken.None
         Assert.Empty(i)
     finally
         cleanup dir
@@ -981,7 +981,7 @@ let ``WS getImplementations on a value returns its location`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
     try
         // "add" call site on line 10 → implementation list with one location.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 10 16
+        let! impls = FSharpImplementations.getImplementations state paths[0] 10 16 System.Threading.CancellationToken.None
         Assert.NotEmpty(impls)
         let loc = List.head impls
         Assert.EndsWith("Sample.fs", loc.FilePath)
@@ -996,7 +996,7 @@ let ``WS getImplementations on a type returns its location`` () = task {
     try
         // "Person" type usage in the record literal on line 12 — resolve via
         // the field; ensure the implementations path runs and returns a list.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 14 16
+        let! impls = FSharpImplementations.getImplementations state paths[0] 14 16 System.Threading.CancellationToken.None
         Assert.NotEmpty(impls)
         Assert.Equal(2, (List.head impls).Line)
     finally
@@ -1007,7 +1007,7 @@ let ``WS getImplementations on a type returns its location`` () = task {
 let ``WS getImplementations at whitespace returns empty`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
     try
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 0
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 0 System.Threading.CancellationToken.None
         Assert.Empty(impls)
     finally
         cleanup dir
@@ -1123,7 +1123,7 @@ let ``WS getImplementations on a function declaration returns its own location``
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // "square" at its declaration on line 1; 's' at column 4.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 6
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 6 System.Threading.CancellationToken.None
         Assert.NotEmpty(impls)
         Assert.Equal(1, (List.head impls).Line)
     finally
@@ -1177,7 +1177,7 @@ let ``WS getImplementations on an external symbol may return empty`` () = task {
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // "Empty" field on line 1 — external symbol.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 24
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 24 System.Threading.CancellationToken.None
         // Either empty (no in-source location) or a list; the path runs.
         Assert.NotNull(impls :> obj)
     finally
@@ -1868,7 +1868,7 @@ let ``FEAT getReferences finds all uses including the declaration`` () = task {
         loadWorkspace [ "M.fs", src ]
     try
         // 'counter' is declared on line 1 (0-based) and used twice on line 2.
-        let! refs = FSharpReferences.getReferences state paths[0] 1 6 true
+        let! refs = FSharpReferences.getReferences state paths[0] 1 6 true System.Threading.CancellationToken.None
         Assert.NotEmpty(refs)
         // With the declaration included there should be >= 3 occurrences.
         Assert.True(refs.Length >= 3)
@@ -1889,8 +1889,8 @@ let ``FEAT getReferences excludes declaration when not requested`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! withDecl = FSharpReferences.getReferences state paths[0] 1 6 true
-        let! noDecl = FSharpReferences.getReferences state paths[0] 1 6 false
+        let! withDecl = FSharpReferences.getReferences state paths[0] 1 6 true System.Threading.CancellationToken.None
+        let! noDecl = FSharpReferences.getReferences state paths[0] 1 6 false System.Threading.CancellationToken.None
         // Excluding the declaration drops at least one occurrence.
         Assert.True(noDecl.Length < withDecl.Length)
         // None of the remaining references sit on the declaration line.
@@ -1908,7 +1908,7 @@ let ``FEAT getReferences returns empty for whitespace position`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace [ "M.fs", src ]
     try
-        let! refs = FSharpReferences.getReferences state paths[0] 2 0 true
+        let! refs = FSharpReferences.getReferences state paths[0] 2 0 true System.Threading.CancellationToken.None
         Assert.Empty(refs)
     finally
         cleanup dir
@@ -2317,7 +2317,7 @@ let ``WS2 getDefinition returns None for a file that cannot be read`` () = task 
 let ``WS2 getReferences returns empty for a file that cannot be read`` () = task {
     let! (state, dir, _, _) = loadWorkspace [ "M.fs", "module M\nlet x = 1\n" ]
     try
-        let! refs = FSharpReferences.getReferences state dir 0 0 true
+        let! refs = FSharpReferences.getReferences state dir 0 0 true System.Threading.CancellationToken.None
         Assert.Empty(refs)
     finally
         cleanup dir
@@ -2374,7 +2374,7 @@ let ``WS2 getImplementations on an interface override returns its location`` () 
     let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
     try
         // 'Area' impl on line 5 (0-based); 'A' at column 17.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 5 18
+        let! impls = FSharpImplementations.getImplementations state paths[0] 5 18 System.Threading.CancellationToken.None
         Assert.NotEmpty(impls)
         for loc in impls do
             Assert.EndsWith("M.fs", loc.FilePath)

@@ -126,6 +126,7 @@ public sealed class RefactorEndToEndTests(CSharpSidecarFixture fixture)
     [InlineData(3, 13, "123bad", true)]
     [InlineData(3, 13, "bad name", true)]
     [InlineData(3, 13, "class", true)]
+    [InlineData(3, 13, "@", true)]
     [InlineData(3, 13, "Program", false)]
     [InlineData(0, 12, "MetaProbe", false)]
     public async Task Rename_rejects_invalid_unchanged_and_conflicting_names(

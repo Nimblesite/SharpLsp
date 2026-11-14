@@ -520,6 +520,14 @@ When a solution is loaded, `.csproj` and `.fsproj` files expose **Add to Solutio
 - Refreshes Solution Explorer after adding
 - Shows error if no solution is loaded
 
+### Add Existing Project from a Tree Row `[SE-SOLUTION-ADD-CONTEXT]`
+
+`sharplsp.addProjectToSolution` appears on solution and project rows in `2_solution@1`.
+A solution row opens a `.fsproj`/`.csproj` file picker and adds the chosen project to that solution.
+A project row keeps that project's path and selects a workspace solution, including when the project has no solution parent.
+The command palette retains its project-then-solution selection. Cancelling any picker makes no edit;
+successful additions refresh the explorer. Tests exercise real F# and C# projects and verify solution membership.
+
 ### Remove Project from Solution `[SE-SOLUTION-REMOVE]`
 
 Project nodes expose **Remove from Solution**.
@@ -649,6 +657,9 @@ the C# sidecar (an `MSBuild` edit is language-agnostic: `.csproj`, `.fsproj`,
 `.cs`, it sends `sharplsp/project/addCompileItem` for the nearest `.csproj`. No
 tier splices project XML as text; the glob-project decision belongs to the
 `MSBuild` DOM, not a string probe.
+
+If the target file already exists, creation fails without changing its saved
+content or unsaved editor buffer, and without adding it to a project.
 
 ## Remove Source File `[SE-REMOVE]`
 

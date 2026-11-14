@@ -87,11 +87,17 @@ internal sealed partial class WorkspaceManager
             .ConfigureAwait(false);
         // [RENAME-ERRORS] Invalid names must reach the client as a failure, not a no-op.
         return target is null || _solution is null ? EmptyRenameResult()
+            : target.Value.Foreign
+                ? !IsValidIdentifier(newName)
+                        ? RenameEditResult.Failure("Invalid C# rename identifier")
+                    : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
+                    : await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
+                        .ConfigureAwait(false)
+            : target.Value.Symbol is IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator }
+                ? await RenameOperatorAsync(_solution, target.Value, newName, ct)
+                    .ConfigureAwait(false)
             : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
             : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
-            : target.Value.Foreign
-                ? await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
-                    .ConfigureAwait(false)
             : await RenameSourceSymbolAsync(_solution, target.Value.Symbol, newName, ct)
                 .ConfigureAwait(false);
     }
@@ -176,7 +182,14 @@ internal sealed partial class WorkspaceManager
         var foreign =
             targetSymbol is not null
             && FSharpProjectSymbols.Declares(document.Project, targetSymbol);
-        return targetSymbol is not null && (foreign || IsSourceSymbol(targetSymbol))
+        return
+            targetSymbol is not null
+            && (foreign || IsSourceSymbol(targetSymbol))
+            && (
+                targetSymbol
+                    is not IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method
+                || method.Parameters.Length == 2
+            )
             ? new RenameTarget(document, text, targetSymbol, token!.Value, foreign)
             : null;
     }
@@ -194,51 +207,16 @@ internal sealed partial class WorkspaceManager
 
     private static bool IsIdentifierAtPosition(SyntaxToken? token, int position)
     {
-        return token is { RawKind: (int)SyntaxKind.IdentifierToken }
-            && token.Value.Span.Contains(position);
+        return token is { } candidate
+            && (
+                (candidate.IsKind(SyntaxKind.IdentifierToken) && candidate.Span.Contains(position))
+                || IsOperatorAtPosition(candidate, position)
+            );
     }
 
     private static bool IsSourceSymbol(ISymbol symbol)
     {
         return symbol.Locations.Any(location => location.IsInSource);
-    }
-
-    private static PrepareRenameResult PrepareResult(RenameTarget? target)
-    {
-        if (target is null)
-        {
-            return new PrepareRenameResult(
-                CanRename: false,
-                StartLine: 0,
-                StartCharacter: 0,
-                EndLine: 0,
-                EndCharacter: 0,
-                Placeholder: ""
-            );
-        }
-
-        var lineSpan = target.Value.Text.Lines.GetLinePositionSpan(target.Value.Token.Span);
-        return CreatePrepareResult(target.Value.Token.Text, lineSpan);
-    }
-
-    private static PrepareRenameResult CreatePrepareResult(
-        string placeholder,
-        LinePositionSpan span
-    )
-    {
-        return new PrepareRenameResult(
-            CanRename: true,
-            StartLine: span.Start.Line,
-            StartCharacter: span.Start.Character,
-            EndLine: span.End.Line,
-            EndCharacter: span.End.Character,
-            Placeholder: placeholder
-        );
-    }
-
-    private static PrepareRenameQueryResult PrepareSuccess(PrepareRenameResult result)
-    {
-        return new PrepareRenameQueryResult.Ok<PrepareRenameResult, string>(result);
     }
 
     private static bool CanUseNewName(RenameTarget target, string newName)
@@ -274,10 +252,26 @@ internal sealed partial class WorkspaceManager
         }
 
         var target = RenameConflictTarget(symbol);
-        return target.ContainingType is { } type
+        return target is IMethodSymbol { MethodKind: MethodKind.Ordinary } method
+                ? HasMethodConflict(method, valueText)
+            : target.ContainingType is { } type
                 ? HasDifferentSymbol(type.GetMembers(valueText), target)
             : target is INamedTypeSymbol named ? HasNamedTypeConflict(named, valueText)
             : target is INamespaceSymbol ns && HasNamespaceConflict(ns, valueText);
+    }
+
+    private static bool HasMethodConflict(IMethodSymbol method, string valueText)
+    {
+        // [RENAME-CSHARP] Distinct signatures can legally share a method name.
+        return method
+            .ContainingType.GetMembers(valueText)
+            .Any(candidate =>
+                !SymbolEqualityComparer.Default.Equals(candidate, method)
+                && (
+                    candidate is not IMethodSymbol other
+                    || SymbolSignatureComparer.SameMethod(method, other)
+                )
+            );
     }
 
     /// <summary>
@@ -316,9 +310,13 @@ internal sealed partial class WorkspaceManager
     private static bool HasNamedTypeConflict(INamedTypeSymbol symbol, string valueText)
     {
         var candidates =
-            symbol.ContainingType?.GetTypeMembers(valueText).Cast<ISymbol>()
+            symbol.ContainingType?.GetTypeMembers(valueText)
             ?? symbol.ContainingNamespace.GetTypeMembers(valueText);
-        return HasDifferentSymbol(candidates, symbol);
+        // [RENAME-CSHARP] A generic type and a non-generic type may share a name.
+        return HasDifferentSymbol(
+            candidates.Where(candidate => candidate.Arity == symbol.Arity),
+            symbol
+        );
     }
 
     private static bool HasNamespaceConflict(INamespaceSymbol symbol, string valueText)

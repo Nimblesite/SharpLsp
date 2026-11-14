@@ -46,3 +46,7 @@ Zed では、Zed 自身の C# 拡張機能と F# 拡張機能と並べて、こ�
 一般的なエディターは、stdio を介してホストと LSP 3.17 で通信できます。各[リリース](https://github.com/Nimblesite/SharpLsp/releases)では、ホストと両方のサイドカーを同梱したプラットフォーム別のスタンドアロンサーバーアーカイブと、それを起動する Rider プラグイン（`sharplsp-rider.zip`）を公開しています。Neovim、Helix、Emacs 向けのパッケージ化された統合は計画中であり、現在のリリース対象ではありません。
 
 リポジトリからビルドする方法は、[コントリビュート](/ja/docs/contributing/)を参照してください。
+
+## ワークスペースを見る
+
+{% video "sharplsp-tour" %}

@@ -2,6 +2,7 @@
 module SharpLsp.Sidecar.FSharp.FSharpRenameAliases
 
 open System
+open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
@@ -182,12 +183,13 @@ let keysForTarget (symbol: FSharpSymbol) (aliases: ResolvedAlias array) =
     |> Array.choose _.SemanticKey
     |> Set.ofArray
 
-let collectProject state (anchor: string) =
+let collectProject state (anchor: string) (ct: CancellationToken) =
     task {
         let collected = ResizeArray<ResolvedAlias>()
         let mutable failure = None
         for filePath in FSharpWorkspace.scopeSourceFiles state anchor do
-            let! checkedFile = FSharpWorkspace.checkFileWithParse state filePath
+            ct.ThrowIfCancellationRequested()
+            let! checkedFile = FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct
             match checkedFile with
             | Some(parseResults, checkResults, source) ->
                 collected.AddRange(resolveFile state parseResults checkResults source)

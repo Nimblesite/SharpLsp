@@ -13,7 +13,7 @@ type RenameInput = readonly [string, string, string, number, boolean];
 
 export const RENAME_SENTINEL =
   'NestedModule IService Choice Status RecordThing Field CaseOne Ready Alias ClassThing ' +
-  'Property Method ModuleAlias StructThing ObjectModelThing Changed Item moduleValue ' +
+  'Property Method ModuleAlias StructThing ObjectModelThing RenameDelegate Changed Item moduleValue ' +
   'functionName parameter localValue localFunction lambdaParameter firstValue T Positive .+.';
 
 export const RENAME_DECLARATIONS_SOURCE = `module FSharpFixtures.RenameDeclarations
@@ -44,6 +44,8 @@ type StructThing = { StructValue: int }
 
 type ObjectModelThing(initial: int) =
     member val Current = initial with get, set
+
+type RenameDelegate = delegate of int -> int
 
 type EventSource() =
     let changed = Event<int>()
@@ -90,6 +92,7 @@ let nestedValue = NestedModule.moduleMember
 let service: IService = Service()
 let structValue: StructThing = { StructValue = 1 }
 let objectModel = ObjectModelThing(1)
+let delegateValue: RenameDelegate = RenameDelegate(fun value -> value + 1)
 let eventSource = EventSource()
 let eventSubscription = eventSource.Changed.Subscribe(fun _ -> ())
 let indexerValue = IndexerThing().[0]
@@ -129,6 +132,7 @@ export const RENAME_SCENARIOS: readonly RenameScenario[] = [
   rename(['class', 'ClassThing', 'RenamedClass', 2, true]),
   rename(['struct type', 'StructThing', 'RenamedStruct', 2, true]),
   rename(['object-model type', 'ObjectModelThing', 'RenamedObject', 2, true]),
+  rename(['delegate type', 'RenameDelegate', 'RenamedDelegate', 3, true]),
   rename(['property', 'Property', 'Result', 2, true]),
   rename(['member', 'Method', 'Calculate', 2, true]),
   rename(['CLI event', 'Changed', 'Updated', 2, true]),

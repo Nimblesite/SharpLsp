@@ -41,6 +41,7 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [ ] Replace the interim map with a Rust-host salsa query and remove `nav_cache.rs`
 - [ ] Make every solution document, project graph, and sidecar generation/readiness value a salsa input so any relevant change invalidates references; current code invalidates only entries requested from the edited URI
 - [ ] Cancel superseded references requests and prevent late results from updating newer inputs
+  - [x] F# IPC cancellation reaches project checks and rejects late success (#562); all 37 focused checks pass, including held-source cancellation for references, implementations, incoming calls and subtypes.
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for references request lifecycle (dispatch, cache hit/miss, result count, latency)
 

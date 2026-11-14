@@ -158,7 +158,7 @@ let private workspaceErrors (scenario: ForeignRenameScenario) =
 let private runForeignForward (scenario: ForeignRenameScenario) =
     task {
         let! edits = FSharpRename.renameForeign scenario.Workspace scenario.AssemblyName
-                         scenario.OriginalXml "RenamedStringBuilder"
+                         scenario.OriginalXml "RenamedStringBuilder" Threading.CancellationToken.None
         let line = scenario.OriginalText.Split('\n')[5]
         let startCharacter = line.LastIndexOf("StringBuilder", StringComparison.Ordinal)
         let edit = assertSingleEdit scenario.SourcePath 5 startCharacter "StringBuilder"
@@ -179,15 +179,15 @@ let private assertReverseNegatives (scenario: ForeignRenameScenario) (renamedXml
     task {
         let! wrongAssembly =
             FSharpRename.renameForeign
-                scenario.Workspace (scenario.AssemblyName + ".Wrong") renamedXml "StringBuilder"
+                scenario.Workspace (scenario.AssemblyName + ".Wrong") renamedXml "StringBuilder" Threading.CancellationToken.None
         Assert.Empty(wrongAssembly)
         let! wrongIdentity =
             FSharpRename.renameForeign
-                scenario.Workspace scenario.AssemblyName "T:System.Text.NotTheBuilder" "StringBuilder"
+                scenario.Workspace scenario.AssemblyName "T:System.Text.NotTheBuilder" "StringBuilder" Threading.CancellationToken.None
         Assert.Empty(wrongIdentity)
         let! noOp =
             FSharpRename.renameForeign
-                scenario.Workspace scenario.AssemblyName renamedXml "RenamedStringBuilder"
+                scenario.Workspace scenario.AssemblyName renamedXml "RenamedStringBuilder" Threading.CancellationToken.None
         Assert.Empty(noOp)
     }
 
@@ -196,7 +196,7 @@ let private runForeignReverse
     task {
         let! edits =
             FSharpRename.renameForeign
-                scenario.Workspace scenario.AssemblyName renamedXml "StringBuilder"
+                scenario.Workspace scenario.AssemblyName renamedXml "StringBuilder" Threading.CancellationToken.None
         let line = forwardText.Split('\n')[5]
         let startCharacter = line.LastIndexOf("RenamedStringBuilder", StringComparison.Ordinal)
         let edit = assertSingleEdit scenario.SourcePath 5 startCharacter
@@ -248,7 +248,7 @@ let ``cross-sidecar rename analysis failures propagate instead of returning part
         let identityCall () =
             FSharpRename.getRenameIdentity workspace "missing.fs" 0 0 :> Threading.Tasks.Task
         let foreignCall () =
-            FSharpRename.renameForeign workspace "Any" "T:Any.Type" "Other" :> Threading.Tasks.Task
+            FSharpRename.renameForeign workspace "Any" "T:Any.Type" "Other" Threading.CancellationToken.None :> Threading.Tasks.Task
         let! identityError = Assert.ThrowsAsync<InvalidOperationException>(Func<Threading.Tasks.Task>(identityCall))
         let! foreignError = Assert.ThrowsAsync<InvalidOperationException>(Func<Threading.Tasks.Task>(foreignCall))
         Assert.Equal("F# workspace is not loaded", identityError.Message)

@@ -167,7 +167,7 @@ let ``definition family on unloaded workspace returns empty`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpImplementations.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0 System.Threading.CancellationToken.None
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)
         Assert.True(Option.isNone decl)
@@ -196,9 +196,9 @@ let ``rename family on unloaded workspace is a no-op`` () =
 let ``references and highlights on unloaded workspace return empty`` () =
     task {
         let ws = FSharpWorkspace.create ()
-        let! refs = FSharpReferences.getReferences ws missing 0 0 true
+        let! refs = FSharpReferences.getReferences ws missing 0 0 true System.Threading.CancellationToken.None
         let! hl = FSharpReferences.getDocumentHighlights ws missing 0 0
-        let! uses = FSharpReferences.getProjectUsages ws missing 0 0
+        let! uses = FSharpReferences.getProjectUsages ws missing 0 0 System.Threading.CancellationToken.None
         Assert.Empty(refs)
         Assert.Empty(hl)
         Assert.Empty(uses)
@@ -209,7 +209,7 @@ let ``call hierarchy on unloaded workspace returns empty`` () =
     task {
         let ws = FSharpWorkspace.create ()
         let! prep = FSharpHierarchy.prepareCall ws missing 0 0
-        let! incoming = FSharpHierarchy.incomingCalls ws missing 0 0
+        let! incoming = FSharpHierarchy.incomingCalls ws missing 0 0 System.Threading.CancellationToken.None
         let! outgoing = FSharpHierarchy.outgoingCalls ws missing 0 0
         Assert.True(Option.isNone prep)
         Assert.Empty(incoming)
@@ -222,7 +222,7 @@ let ``type hierarchy on unloaded workspace returns empty`` () =
         let ws = FSharpWorkspace.create ()
         let! prep = FSharpHierarchy.prepareType ws missing 0 0
         let! sup = FSharpHierarchy.supertypes ws missing 0 0
-        let! sub = FSharpHierarchy.subtypes ws missing 0 0
+        let! sub = FSharpHierarchy.subtypes ws missing 0 0 System.Threading.CancellationToken.None
         Assert.True(Option.isNone prep)
         Assert.Empty(sup)
         Assert.Empty(sub)
@@ -258,7 +258,7 @@ let ``loaded queries on a missing file fail gracefully`` () =
         let! d = FSharpWorkspace.getDefinition ws missing 0 0
         let! td = FSharpWorkspace.getTypeDefinition ws missing 0 0
         let! decl = FSharpWorkspace.getDeclaration ws missing 0 0
-        let! impl = FSharpImplementations.getImplementations ws missing 0 0
+        let! impl = FSharpImplementations.getImplementations ws missing 0 0 System.Threading.CancellationToken.None
         Assert.True(Option.isNone h)
         Assert.True(Option.isNone d)
         Assert.True(Option.isNone td)
@@ -285,11 +285,11 @@ let ``loaded hierarchy on a missing file fails gracefully`` () =
     task {
         let ws, _ = loaded.Value
         let! prepC = FSharpHierarchy.prepareCall ws missing 0 0
-        let! inc = FSharpHierarchy.incomingCalls ws missing 0 0
+        let! inc = FSharpHierarchy.incomingCalls ws missing 0 0 System.Threading.CancellationToken.None
         let! outg = FSharpHierarchy.outgoingCalls ws missing 0 0
         let! prepT = FSharpHierarchy.prepareType ws missing 0 0
         let! sup = FSharpHierarchy.supertypes ws missing 0 0
-        let! sub = FSharpHierarchy.subtypes ws missing 0 0
+        let! sub = FSharpHierarchy.subtypes ws missing 0 0 System.Threading.CancellationToken.None
         Assert.True(Option.isNone prepC)
         Assert.Empty(inc)
         Assert.Empty(outg)

@@ -55,6 +55,7 @@ mod contract {
         runtime: &tokio::runtime::Runtime,
         compilers: [Option<&Arc<SidecarManager>>; 2],
     ) -> Result<()> {
+        state::shutdown()?;
         let capabilities: lsp_types::ClientCapabilities =
             serde_json::from_value(json!({"textDocument":{"diagnostic":{}}}))?;
         let (sender, _receiver) = crossbeam_channel::unbounded();

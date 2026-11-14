@@ -1,0 +1,23 @@
+# Dependency consolidation
+
+Merge `dependabot-upgrades` into `fix/563-progressive-load`, preserving [DIST-CI-LAYOUT] and [DIST-CI-ARTIFACT-TESTS].
+
+- [x] Preserve current editor requirements, security overrides, prepared FSharpLint source and newer package pins.
+- [x] Rebuild npm locks from the resolved manifests; retain both sysinfo versions required by SharpLsp and lsp-profiler.
+- [x] Verify extension lint/type checks, website build, F# sidecar build, SDK pins and 22 workflow tests.
+- [x] Verify Gradle 9.9 and IntelliJ platform plugin 2.20 through the repo JDK launcher: 8 tests pass; Kover 4.0948% passes the unchanged 4.09% gate.
+- [x] Run all F# sidecar tests: 550 pass, none skipped.
+- [x] Run affected MTP output/merge editor checks: 10 pass.
+- [x] Restore missing refactoring videos in three locales: all 9 desktop/phone checks pass.
+- [x] Verify Rust and Zed formatting/clippy with CI targets (November 12).
+- [ ] Verify a clean full website run. First run: 1,020 passed, 11 skipped, four failed. Refactoring fixes passed nine targeted checks; the caption 404 did not reproduce in 27 repeated checks. The second full run was stopped at the user's request. Do not count either as green.
+- [x] Check all 313 .NET files with the existing EditorConfig passed as an absolute `--config-path`; relative paths failed during parent-directory configuration discovery on macOS. No formatter settings or source changed.
+- [x] Verify VS Code formatting and full `_lint-vsix`: regenerate profiler contributions to restore canonical menu ordering after #576; generator checks, 45 tooling checks, ESLint and typecheck pass.
+- [x] Run `make audit`: all ecosystem gates pass; RustSec reports one pre-existing allowed rustix warning (RUSTSEC-2026-0486), so this is not a claim of zero advisories.
+- [x] Review pi's dependency audit; align Java setup and Gradle task pins, reject incompatible npm majors.
+- [x] Complete merge (`fd26b19c`); staging ancestry is included. Retain the staging ref required by the Dependabot workflow and its target-branch configuration.
+- [x] Push the consolidated branch (`83fe4ca3` and later fixes). Full CI was stopped at the user's request; no CI verdict is claimed.
+
+TypeScript 7 is excluded: current typescript-eslint requires `<6.1.0`. Language client 11 is excluded: lsp-profiler-ui 0.4 requires client 9 or 10. Both failed dependency compatibility checks; no forced peer overrides are accepted. Upgrade their consumers first before reconsidering these versions.
+
+Gradle 9.9 distribution SHA-256 comes from the official distribution checksum endpoint: `0b00b0ffe07c4d4789c12d4935a44a7057d55774b7540bd4a3f76f336deb177a`.

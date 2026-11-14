@@ -158,9 +158,9 @@ type FSharpSidecar() as this =
         base.Register("textDocument/implementation", Helpers.locationListHandler workspace FSharpImplementations.getImplementations)
 
         // References
-        base.Register("textDocument/references", Helpers.handle (fun (request: ReferencesRequest) ->
+        base.Register("textDocument/references", Helpers.handleWithCancellation (fun (request: ReferencesRequest) ct ->
             FSharpReferences.getReferences
-                workspace request.FilePath request.Line request.Character request.IncludeDeclaration) (fun results ct ->
+                workspace request.FilePath request.Line request.Character request.IncludeDeclaration ct) (fun results ct ->
             Helpers.serializeOk { Locations = results |> List.map Helpers.toLocationResult |> Array.ofList } ct))
 
         // Document highlights
@@ -324,7 +324,7 @@ type FSharpSidecar() as this =
         base.Register("textDocument/prepareCallHierarchy", Helpers.atPosition (FSharpHierarchy.prepareCall workspace) (Helpers.optionOf Helpers.toHierItem))
 
         // Incoming calls [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("callHierarchy/incomingCalls", Helpers.atPosition (FSharpHierarchy.incomingCallsWithSites workspace) (Helpers.listOf Helpers.toHierCall))
+        base.Register("callHierarchy/incomingCalls", Helpers.atPositionWithCancellation (FSharpHierarchy.incomingCallsWithSites workspace) (Helpers.listOf Helpers.toHierCall))
 
         // Outgoing calls [SHARPLSP-FEATURES-NAVIGATION]
         base.Register("callHierarchy/outgoingCalls", Helpers.atPosition (FSharpHierarchy.outgoingCallsWithSites workspace) (Helpers.listOf Helpers.toHierCall))
@@ -336,7 +336,7 @@ type FSharpSidecar() as this =
         base.Register("typeHierarchy/supertypes", Helpers.atPosition (FSharpHierarchy.supertypes workspace) (Helpers.listOf Helpers.toHierItem))
 
         // Subtypes [SHARPLSP-FEATURES-NAVIGATION]
-        base.Register("typeHierarchy/subtypes", Helpers.atPosition (FSharpHierarchy.subtypes workspace) (Helpers.listOf Helpers.toHierItem))
+        base.Register("typeHierarchy/subtypes", Helpers.atPositionWithCancellation (FSharpHierarchy.subtypes workspace) (Helpers.listOf Helpers.toHierItem))
 
     /// The owning project changes compiler inputs after didChange has returned.
     /// Invalidate the host query even when the IPC request stream is idle. [DIAG-IPC-REFRESH]

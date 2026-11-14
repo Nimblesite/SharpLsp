@@ -51,15 +51,12 @@ pub(super) fn poll_cross_language_definition(
 
 /// Each location of a references answer as `(uri, start)`, ordered by file and position.
 fn reference_starts(resp: &Value) -> Vec<(Value, Value)> {
-    let mut starts: Vec<(Value, Value)> = resp["result"]
-        .as_array()
-        .map(|found| {
-            found
-                .iter()
-                .map(|at| (at["uri"].clone(), at["range"]["start"].clone()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut starts: Vec<(Value, Value)> = resp["result"].as_array().map_or_default(|found| {
+        found
+            .iter()
+            .map(|at| (at["uri"].clone(), at["range"]["start"].clone()))
+            .collect()
+    });
     starts.sort_by_key(|(uri, start)| (uri.to_string(), start.to_string()));
     starts
 }

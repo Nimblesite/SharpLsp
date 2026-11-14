@@ -10,6 +10,7 @@ const mp4Of = (id) => `/assets/videos/${id}.mp4`;
 
 // Each docs page's preview is the film it leads with. [WEB-DESIGN-MEDIA-DISCOVERY] Social previews
 const PREVIEWS = {
+  '/docs/csharp-14/': 'csharp-14', '/docs/debugging/': 'debugging',
   '/docs/': 'getting-started', '/docs/editors/': 'editor-setup', '/docs/configuration/': 'configuration',
   '/docs/fsharp/': 'fsharp-language', '/docs/blazor/': 'blazor', '/docs/completions/': 'code-completions', '/docs/hover/': 'hover',
   '/docs/go-to-definition/': 'navigation', '/docs/diagnostics/': 'diagnostics', '/docs/refactoring/': 'refactoring-lesson',
@@ -34,7 +35,7 @@ async function expectFilmPreview(page, request, id, lang) {
   expect(await meta(page, 'og:image')).toBe(`${SITE}${cardOf(id)}`);
   expect(await meta(page, 'twitter:image')).toBe(`${SITE}${cardOf(id)}`);
   expect(await imageSize(page, cardOf(id)), 'the card is the 1200x630 social size').toEqual([1200, 630]);
-  expect(await meta(page, 'og:image:alt')).toBe(VIDEOS[id].text[lang].label);
+  expect(await meta(page, 'og:image:alt')).toBe((VIDEOS[id].text[lang] ?? VIDEOS[id].text.en).label);
   expect(await meta(page, 'og:video')).toBe(`${SITE}${mp4Of(id)}`);
   expect(await meta(page, 'og:video:type')).toBe('video/mp4');
   expect(await meta(page, 'og:video:width')).toBe(String(VIDEOS[id].width));
@@ -51,7 +52,7 @@ for (const [path, id] of Object.entries(PREVIEWS)) {
       await page.goto(local(lang, path));
       await expectFilmPreview(page, request, id, lang);
       expect(await page.locator('figure video').first().getAttribute('aria-label'), 'the preview is the film the page leads with')
-        .toBe(VIDEOS[id].text[lang].label);
+        .toBe((VIDEOS[id].text[lang] ?? VIDEOS[id].text.en).label);
       await expect(page).toHaveTitle(/ \| SharpLsp$/);
     }
   });

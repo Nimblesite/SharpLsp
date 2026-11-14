@@ -3,13 +3,14 @@
 module SharpLsp.Sidecar.FSharp.FSharpRename
 
 open System
+open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
-open FSharp.Compiler.Syntax
 open FSharp.Compiler.Tokenization
 open Serilog
 open SharpLsp.Sidecar.FSharp.FSharpRenameAliases
 open SharpLsp.Sidecar.FSharp.FSharpRenameIndexers
+open SharpLsp.Sidecar.FSharp.FSharpRenameNames
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken
 
 /// Prepare-rename result: the identifier token range + the symbol's current name.
@@ -127,34 +128,35 @@ let private classifyLocatedUse checker tokenized syntaxes symbolUse =
         if isImplicitUse syntaxes symbolUse || isInferredUse symbolUse then Some ImplicitUse
         else None)
 
-let private locateFileUses state (filePath, uses) =
+let private locateFileUses (state: FSharpWorkspace.FSharpWorkspaceState) (filePath, uses) (ct: CancellationToken) =
     task {
         if String.IsNullOrWhiteSpace(filePath) then return uses |> Array.map (fun _ -> None)
         else
-            let source = FSharpWorkspace.readSource state filePath
+            let! source = FSharpWorkspace.readSourceWithCancellation state filePath ct
             let tokenized = tokenizeSource state.Checker source
-            let! checkedFile = FSharpWorkspace.checkFileWithParse state filePath
+            let! checkedFile = FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct
             let syntaxes = checkedFile |> Option.map (fun (parse, _, _) -> collectSyntaxes parse) |> Option.defaultValue [||]
             return uses |> Array.map (classifyLocatedUse state.Checker tokenized syntaxes)
     }
 
-let private collectLocatedUses state groups =
+let private collectLocatedUses state groups (ct: CancellationToken) =
     task {
         let collected = ResizeArray<LocatedUseResult option>()
         for group in groups do
-            let! located = locateFileUses state group
+            ct.ThrowIfCancellationRequested()
+            let! located = locateFileUses state group ct
             collected.AddRange(located)
         return collected.ToArray()
     }
 
-let private tryLocateUses state (uses: FSharpSymbolUse array) =
+let private tryLocateUses state (uses: FSharpSymbolUse array) ct =
     task {
         let groups =
             uses
             |> Array.groupBy (fun symbolUse ->
                 let range = symbolUse.Range
                 range.FileName)
-        let! located = collectLocatedUses state groups
+        let! located = collectLocatedUses state groups ct
         if Array.isEmpty located || located |> Array.exists Option.isNone then return None
         else
             return
@@ -228,25 +230,15 @@ let private editForLocated newName (located: LocatedUse) : FSharpCodeActions.Raw
       EndCharacter = located.Token.EndCharacter
       NewText = newName }
 
-let private isValidNewName checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
-    if String.IsNullOrWhiteSpace(newName) then false
-    else
-        let genericName = newName.StartsWith("'", StringComparison.Ordinal)
-        let genericSymbol = symbol :? FSharpGenericParameter
-        newName <> "_"
-        && newName <> token.Text
-        && genericName = genericSymbol
-        && classifyName checker newName = Some token.Kind
-
 let private distinctEdits (edits: FSharpCodeActions.RawEdit array) =
     edits
     |> Array.distinctBy (fun edit ->
         edit.FilePath, edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter)
     |> Array.toList
 
-let private tryEditsForUses state newName uses =
+let private tryEditsForUses state newName uses ct =
     task {
-        let! located = tryLocateUses state uses
+        let! located = tryLocateUses state uses ct
         return located |> Option.map (Array.map (editForLocated newName) >> distinctEdits)
     }
 
@@ -259,42 +251,42 @@ let private invalidName newName = Error $"Invalid F# rename name: '{newName}'"
 let private combineEdits first second =
     Array.append (List.toArray first) (List.toArray second) |> distinctEdits
 
-let private standardRename state newName (resolved: ResolvedRename) =
+let private standardRename state newName (resolved: ResolvedRename) ct =
     task {
         let symbol = normalizeSymbol resolved.SymbolUse.Symbol
         let usedIn = resolved.SymbolUse.FileName
-        let! aliases = FSharpRenameAliases.collectProject state (FSharpWorkspace.anchorOf state symbol usedIn)
+        let! aliases = FSharpRenameAliases.collectProject state (FSharpWorkspace.anchorOf state symbol usedIn) ct
         match aliases with
         | Error message -> return Error message
         | Ok aliases ->
-            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol
-            let! located = tryEditsForUses state newName (withoutAliasUses symbol aliases uses)
+            let! uses = FSharpReferences.getProjectUsagesForSymbol state usedIn symbol ct
+            let! located = tryEditsForUses state newName (withoutAliasUses symbol aliases uses) ct
             match located with
             | None -> return Error "F# rename could not classify every semantic use"
             | Some edits ->
-                let! metadata = planMetadata state symbol newName
+                let! metadata = planMetadata state symbol newName ct
                 return metadata |> Result.map (combineEdits edits)
     }
 
-let private renameChecked state parseResults checkResults source line character newName =
+let private renameChecked state parseResults checkResults source line character newName ct =
     task {
         let aliases = FSharpRenameAliases.resolveFile state parseResults checkResults source
         match FSharpRenameAliases.tryResolveAt line character aliases with
-        | Some(symbol, token, _) when not (isValidNewName state.Checker symbol token newName) ->
+        | Some(symbol, token, _) when not (isValidNewName parseResults state.Checker symbol token newName) ->
             return invalidName newName
         | Some(_, _, uses) -> return Ok(FSharpRenameAliases.edits newName uses)
         | None ->
             match resolveRenameUse state checkResults parseResults source line character with
             | None -> return Ok []
-            | Some resolved when not (isValidNewName state.Checker resolved.SymbolUse.Symbol resolved.Token newName) ->
+            | Some resolved when not (isValidNewName parseResults state.Checker resolved.SymbolUse.Symbol resolved.Token newName) ->
                 return invalidName newName
-            | Some resolved -> return! standardRename state newName resolved
+            | Some resolved -> return! standardRename state newName resolved ct
     }
 
 /// Every use of the symbol `assemblyName` and `xmlDocSig` name. A rename by identity, from
 /// the other language with no F# file to anchor on, walks every loaded project.
-let private collectMatchingUses (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig =
-    FSharpForeignSymbols.usesIn state assemblyName xmlDocSig (FSharpWorkspace.allSourceFiles state)
+let private collectMatchingUses (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig ct =
+    FSharpForeignSymbols.usesIn state assemblyName xmlDocSig (FSharpWorkspace.allSourceFiles state) ct
 
 let private signatureHeaderEnd (xmlDocSig: string) =
     [| xmlDocSig.IndexOf('('); xmlDocSig.IndexOf('~') |]
@@ -400,15 +392,15 @@ let private matchingProjectedEdits
 
 let private transientFileEdits
     (state: FSharpWorkspace.FSharpWorkspaceState)
-    assemblyName staleXml currentName newName filePath =
+    assemblyName staleXml currentName newName filePath ct =
     task {
-        let source = FSharpWorkspace.readSource state filePath
+        let! source = FSharpWorkspace.readSourceWithCancellation state filePath ct
         let candidates = tokenCandidates state filePath source currentName
         if Array.isEmpty candidates then return [||]
         else
             let projectedCandidates = projectCandidatePositions newName candidates
             let projectedSource = projectSource source newName candidates
-            let! checkedFile = FSharpWorkspace.checkFileWithSource state filePath projectedSource
+            let! checkedFile = FSharpWorkspace.checkFileWithSource state filePath projectedSource ct
             let _, checkResults, checkedSource = FSharpForeignSymbols.requireCheckedFile filePath checkedFile
             return matchingProjectedEdits
                 assemblyName staleXml newName checkResults checkedSource projectedCandidates
@@ -416,7 +408,7 @@ let private transientFileEdits
 
 let private transientForeignEdits
     (state: FSharpWorkspace.FSharpWorkspaceState)
-    assemblyName xmlDocSig newName =
+    assemblyName xmlDocSig newName (ct: CancellationToken) =
     task {
         match declarationNameFromXmlDocSignature xmlDocSig with
         | None -> return []
@@ -428,13 +420,14 @@ let private transientForeignEdits
             if String.IsNullOrWhiteSpace(staleXml) then return []
             else
                 for filePath in files do
-                    let! fileEdits = transientFileEdits state assemblyName staleXml currentName newName filePath
+                    ct.ThrowIfCancellationRequested()
+                    let! fileEdits = transientFileEdits state assemblyName staleXml currentName newName filePath ct
                     edits.AddRange(fileEdits)
                 return edits.ToArray() |> distinctEdits
     }
 
 /// [SHARPLSP-FEATURES-REFACTORING] Rename references declared by another language sidecar.
-let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig newName =
+let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xmlDocSig newName ct =
     task {
         try
             if not state.IsLoaded then
@@ -442,11 +435,11 @@ let renameForeign (state: FSharpWorkspace.FSharpWorkspaceState) assemblyName xml
             elif [ assemblyName; xmlDocSig; newName ] |> List.exists String.IsNullOrWhiteSpace then
                 return []
             else
-                let! uses = collectMatchingUses state assemblyName xmlDocSig
-                let! located = tryEditsForUses state newName uses
+                let! uses = collectMatchingUses state assemblyName xmlDocSig ct
+                let! located = tryEditsForUses state newName uses ct
                 match located with
                 | Some edits -> return edits
-                | None -> return! transientForeignEdits state assemblyName xmlDocSig newName
+                | None -> return! transientForeignEdits state assemblyName xmlDocSig newName ct
         with ex ->
             Log.Debug(ex, "[F# RenameForeign] failed")
             return raise ex
@@ -459,14 +452,15 @@ let renameResult
     (line: int)
     (character: int)
     (newName: string)
+    (ct: CancellationToken)
     =
     task {
         try
-            let! fileCheck = FSharpWorkspace.checkFileWithParse state filePath
+            let! fileCheck = FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct
             match fileCheck with
             | None -> return Ok []
             | Some(parseResults, checkResults, source) ->
-                return! renameChecked state parseResults checkResults source line character newName
+                return! renameChecked state parseResults checkResults source line character newName ct
         with ex ->
             Log.Debug(ex, "[F# Rename] failed")
             return Error $"F# rename request failed: {ex.Message}"
@@ -475,6 +469,6 @@ let renameResult
 /// Compatibility entry point for in-process callers that treat failures as no edits.
 let rename state filePath line character newName =
     task {
-        let! result = renameResult state filePath line character newName
+        let! result = renameResult state filePath line character newName CancellationToken.None
         return Result.defaultValue [] result
     }

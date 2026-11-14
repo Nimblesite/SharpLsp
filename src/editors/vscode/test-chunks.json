@@ -146,7 +146,8 @@
       "files": [
         "01-test-explorer-build-refresh.test.js",
         "test-build-configuration.test.js",
-        "test-build-graph.test.js"
+        "test-build-graph.test.js",
+        "test-build-output.test.js"
       ]
     },
     "testexplorer": {

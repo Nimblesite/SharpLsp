@@ -45,8 +45,7 @@ fn findings(report: &Value) -> Vec<(String, Vec<u64>)> {
     let tags = |item: &Value| -> Vec<u64> {
         item["tags"]
             .as_array()
-            .map(|tags| tags.iter().filter_map(Value::as_u64).collect())
-            .unwrap_or_default()
+            .map_or_default(|tags| tags.iter().filter_map(Value::as_u64).collect())
     };
     items
         .iter()

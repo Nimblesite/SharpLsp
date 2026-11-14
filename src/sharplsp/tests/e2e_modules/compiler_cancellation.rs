@@ -19,6 +19,44 @@ fn cancelled_fsharp_code_lens_does_not_block_current_diagnostics_or_lose_referen
     assert_fsharp_cancellation("textDocument/codeLens");
 }
 
+/// [RENAME-PERFORMANCE] A cancelled rename cannot hold the editor behind FCS source I/O.
+#[test]
+fn cancelled_fsharp_rename_replies_before_held_source_is_released() {
+    let fixture = fixture::Fixture::fsharp();
+    let _original = first_fsharp_report(&fixture);
+    let barrier = held::Barrier::new(&fixture);
+    let mut session = session::Session::new(&fixture);
+    let compiler = session.compiler();
+    let pending = session.begin_rename();
+    barrier.wait(compiler);
+    session.cancel_pending(pending);
+    assert!(
+        barrier.is_held(),
+        "rename cancellation waited for obsolete source I/O"
+    );
+    session.assert_compiler(compiler);
+    barrier.release();
+    session.finish(pending);
+}
+
+/// [RENAME-PERFORMANCE] An editor edit retires rename edits from its old version.
+#[test]
+fn changed_fsharp_document_supersedes_held_rename_before_source_release() {
+    let fixture = fixture::Fixture::fsharp();
+    let _original = first_fsharp_report(&fixture);
+    let barrier = held::Barrier::new(&fixture);
+    let mut session = session::Session::new(&fixture);
+    let compiler = session.compiler();
+    let pending = session.begin_rename();
+    barrier.wait(compiler);
+    session.notify_change(3, fixture::CLEAN_FS);
+    session.assert_superseded(pending);
+    assert!(barrier.is_held(), "obsolete rename waited for source I/O");
+    session.assert_compiler(compiler);
+    barrier.release();
+    session.finish(pending);
+}
+
 #[test]
 fn fresh_pull_supersedes_held_fsharp_work_without_client_cancellation() {
     run_fsharp("textDocument/diagnostic", fresh_fsharp_while_held);
