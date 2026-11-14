@@ -1,6 +1,6 @@
 {
   "profiler-film": {
-    "page": "/blog/dotnet-profiler-vs-code-csharp-fsharp/",
+    "page": "/docs/profiler/",
     "encodings": ["mp4", "webm"],
     "width": 1920,
     "height": 1080,
@@ -135,7 +135,7 @@
     }
   },
   "sharplsp-tour": {
-    "page": "/blog/editor-agnostic-dotnet-lsp/",
+    "page": "/docs/editors/",
     "encodings": ["mp4", "webm"],
     "width": 1000,
     "height": 562,
@@ -535,13 +535,23 @@
     "duration": "PT1M46S",
     "uploadDate": "2026-11-13T07:00:00+11:00",
     "captions": [
-      "en"
+      "en",
+      "ja",
+      "zh"
     ],
     "chapters": true,
     "text": {
       "en": {
         "label": "Debug C# and F# together in VS Code",
         "caption": "One real debug session starts in C#, steps into F#, inspects values and returns to C#. Narrated with English captions."
+      },
+      "ja": {
+        "label": "VS Code で C# と F# を同じセッションでデバッグ",
+        "caption": "実際の VS Code で C# のブレークポイントから F# に入り、値を調べて C# に戻ります。英語のナレーションと字幕付き。"
+      },
+      "zh": {
+        "label": "在 VS Code 的同一会话中调试 C# 和 F#",
+        "caption": "真实的 VS Code 演示，从 C# 断点进入 F#，查看变量并返回 C#。配有英语旁白和字幕。"
       }
     }
   },
@@ -555,12 +565,22 @@
     "duration": "PT1M28S",
     "uploadDate": "2026-11-14T00:00:00+11:00",
     "captions": [
-      "en"
+      "en",
+      "ja",
+      "zh"
     ],
     "text": {
       "en": {
         "label": "C# 14 in VS Code with SharpLsp",
         "caption": "Extension members, the field keyword and null-conditional assignment on .NET 10. Real VS Code footage with English narration and captions."
+      },
+      "ja": {
+        "label": "SharpLsp と VS Code で C# 14 を使う",
+        "caption": ".NET 10 の拡張メンバー、field キーワード、null 条件付き代入。実際の VS Code の映像に英語のナレーションと字幕を収録。"
+      },
+      "zh": {
+        "label": "使用 SharpLsp 在 VS Code 中体验 C# 14",
+        "caption": ".NET 10 中的扩展成员、field 关键字和 null 条件赋值。真实 VS Code 画面，配有英语旁白和字幕。"
       }
     }
   },
@@ -574,12 +594,22 @@
     "duration": "PT1M31S",
     "uploadDate": "2026-11-14T00:00:00+11:00",
     "captions": [
-      "en"
+      "en",
+      "ja",
+      "zh"
     ],
     "text": {
       "en": {
         "label": "Move C# types into their own files",
         "caption": "Move a type and nested types into separate files, update callers and see unsafe moves refused. Real VS Code footage with English narration and captions."
+      },
+      "ja": {
+        "label": "C# の型を別ファイルに移動する",
+        "caption": "型や入れ子の型を別ファイルに移動し、呼び出し元の更新と安全でない移動の拒否を確認します。英語のナレーションと字幕付き。"
+      },
+      "zh": {
+        "label": "将 C# 类型移入独立文件",
+        "caption": "将类型和嵌套类型移至独立文件，更新调用方，并查看不安全移动被拒绝。配有英语旁白和字幕。"
       }
     }
   }

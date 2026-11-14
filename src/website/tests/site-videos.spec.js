@@ -6,7 +6,7 @@ import { expectPlayable, playback, sourcesOf, videoObjects } from './media.js';
 
 const SITE = 'https://sharplsp.dev';
 const PROFILER_DOC = ['profiler-film', 'profiler-cpu-recording', 'profiler-memory-timelapse'];
-const PROFILER_PAGE = ['profiler-csharp', 'profiler-cpu-recording', 'profiler-memory-timelapse'];
+const PROFILER_PAGE = ['profiler-csharp', 'profiler-cpu-recording', 'profiler-memory-timelapse', 'profiler-film'];
 const FSHARP_PAGE = ['fsharp-language', 'profiler-fsharp'];
 
 /** A docs page and its film in every site language; `says` is a word of each language's label. */
@@ -15,9 +15,11 @@ const everyLanguage = (page, videos, says) =>
 
 // Every docs page's narrated walkthrough. [WEB-DESIGN-MEDIA] Placement
 const WALKTHROUGHS = [
+  ...everyLanguage('debugging/', ['debugging'], { en: 'Debug', ja: 'デバッグ', zh: '调试' }),
+  ...everyLanguage('csharp-14/', ['csharp-14'], { en: 'C# 14', ja: 'C# 14', zh: 'C# 14' }),
   ...everyLanguage('', ['getting-started'], { en: 'started', ja: '始める', zh: '开始' }),
   ...everyLanguage('tutorial/', ['vscode-tutorial'], { en: 'tutorial', ja: 'チュートリアル', zh: '教程' }),
-  ...everyLanguage('editors/', ['editor-setup'], { en: 'setup', ja: 'エディター設定', zh: '编辑器设置' }),
+  ...everyLanguage('editors/', ['editor-setup', 'sharplsp-tour'], { en: 'setup', ja: 'エディター設定', zh: '编辑器设置' }),
   ...everyLanguage('configuration/', ['configuration'], { en: 'Configuring', ja: '設定', zh: '配置' }),
   ...everyLanguage('fsharp/', FSHARP_PAGE, { en: 'completion', ja: '補完', zh: '补全' }),
   ...everyLanguage('blazor/', ['blazor'], { en: 'Blazor and Razor', ja: 'コンポーネント', zh: '组件' }),
@@ -25,7 +27,7 @@ const WALKTHROUGHS = [
   ...everyLanguage('hover/', ['hover'], { en: 'Hover', ja: 'ホバー', zh: '悬停' }),
   ...everyLanguage('go-to-definition/', ['navigation'], { en: 'definition', ja: '定義', zh: '定义' }),
   ...everyLanguage('diagnostics/', ['diagnostics'], { en: 'Diagnostics', ja: '診断', zh: '诊断' }),
-  ...everyLanguage('refactoring/', ['refactoring-lesson', 'refactoring'], { en: 'Lesson', ja: 'レッスン', zh: '课程' }),
+  ...everyLanguage('refactoring/', ['refactoring-lesson', 'move-type', 'refactoring'], { en: 'Lesson', ja: 'レッスン', zh: '课程' }),
   ...everyLanguage('context-menus/', ['context-menus'], { en: 'context', ja: 'コンテキストメニュー', zh: '上下文菜单' }),
   ...everyLanguage('nuget/', ['nuget'], { en: 'NuGet', ja: 'NuGet', zh: 'NuGet' }),
   ...everyLanguage('profiler/', PROFILER_PAGE, { en: 'Profiling', ja: 'プロファイリング', zh: '分析' }),

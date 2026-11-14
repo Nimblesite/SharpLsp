@@ -151,3 +151,7 @@ F# programs get the same profiler, and it reads the code the F# compiler emits. 
 | `sharplsp.profiler.autoSnapshotInterval` | `30` | Seconds between timed snapshots |
 
 The `[profiler]` table in `sharplsp.toml` sets the output directory (default `.sharplsp/profiles`) and the hotspot thresholds. See [Configuration](/docs/configuration/).
+
+## Profiler overview
+
+{% video "profiler-film" %}
