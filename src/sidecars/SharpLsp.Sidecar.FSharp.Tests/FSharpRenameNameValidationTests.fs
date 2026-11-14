@@ -21,6 +21,21 @@ let ``rename refuses embedded escaped identifier delimiters`` () = task {
         cleanup dir
 }
 
+/// [RENAME-ERRORS] A bare escape delimiter is an invalid name, never an exception.
+[<Fact>]
+let ``operator rename refuses a bare escape delimiter`` () = task {
+    let input = source [ "module Ops"; "let (+.) a b = a + b" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ops.fs", input ]
+    try
+        let! renamed =
+            FSharpRename.renameResult state paths[0] 1 5 "``" System.Threading.CancellationToken.None
+        match renamed with
+        | Ok edits -> failwith $"bare escape delimiter rename returned {edits.Length} edits"
+        | Error message -> Assert.Contains("Invalid F# rename name", message)
+    finally
+        cleanup dir
+}
+
 /// [RENAME-FSHARP-APPLY] Inline generic parameters may use caret spelling.
 [<Fact>]
 let ``inline generic parameter accepts a caret rename`` () = task {

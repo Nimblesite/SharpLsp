@@ -37,7 +37,14 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
         + "}\n"
         + "\n"
         + "public class Original { }\n"
-        + "public class Target<T> { }\n";
+        + "public class Target<T> { }\n"
+        + "public class Refs\n"
+        + "{\n"
+        + "    public void ByRef(ref int value) { }\n"
+        + "    public void ByOut(out int value) => value = 0;\n"
+        + "    public void ByObject(object value) { }\n"
+        + "    public void ByDynamic(dynamic value) { }\n"
+        + "}\n";
 
     private readonly string _root = NativePaths.Temp($"sharplsp-rename-shadow-{Guid.NewGuid():N}");
 
@@ -156,5 +163,23 @@ public sealed class WorkspaceManagerRenameShadowingTests : IDisposable
 
         var document = Assert.Single(Unwrap(result).DocumentChanges);
         Assert.Contains(document.Edits, item => item.NewText == "Target");
+    }
+
+    // [RENAME-CSHARP] C# overloads cannot differ only by ref/out or by dynamic/object
+    // (CS0663, CS0111), so these renames would create duplicate signatures.
+    [Theory]
+    [InlineData(21, 16, "ByRef")]
+    [InlineData(23, 16, "ByObject")]
+    public async Task Rename_method_onto_signature_differing_only_by_ref_kind_or_dynamic_is_rejected(
+        int line,
+        int character,
+        string target
+    )
+    {
+        using var manager = await OpenAsync();
+
+        var result = await manager.RenameAsync(_sourcePath, line, character, target);
+
+        Assert.Empty(Unwrap(result).DocumentChanges);
     }
 }

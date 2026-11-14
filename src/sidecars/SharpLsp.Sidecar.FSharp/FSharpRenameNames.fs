@@ -9,7 +9,8 @@ open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken
 
 let private allowsSymbolName (symbol: FSharpSymbol) (newName: string) =
-    let first = if newName.StartsWith("``", StringComparison.Ordinal) then newName[2] else newName[0]
+    let escaped = newName.Length > 2 && newName.StartsWith("``", StringComparison.Ordinal)
+    let first = if escaped then newName[2] else newName[0]
     match symbol with
     | :? FSharpUnionCase as unionCase ->
         Char.IsUpper(first) || unionCase.DeclaringEntity.HasAttribute<RequireQualifiedAccessAttribute>()

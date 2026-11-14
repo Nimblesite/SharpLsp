@@ -29,12 +29,21 @@ internal static class SymbolSignatureComparer
 
     private static bool SameParameter(IParameterSymbol left, IParameterSymbol right)
     {
-        return left.RefKind == right.RefKind && SameType(left.Type, right.Type);
+        // C# overloads cannot differ only by ref/out/in (CS0663).
+        var byReference = left.RefKind != RefKind.None;
+        return byReference == (right.RefKind != RefKind.None) && SameType(left.Type, right.Type);
+    }
+
+    // dynamic and object share one runtime signature (CS0111).
+    private static bool IsObject(ITypeSymbol type)
+    {
+        return type.TypeKind == TypeKind.Dynamic || type.SpecialType == SpecialType.System_Object;
     }
 
     private static bool SameType(ITypeSymbol left, ITypeSymbol right)
     {
         return SymbolEqualityComparer.Default.Equals(left, right)
+            || (IsObject(left) && IsObject(right))
             || (left, right) switch
             {
                 (ITypeParameterSymbol a, ITypeParameterSymbol b) => SameTypeParameter(a, b),
