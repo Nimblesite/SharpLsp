@@ -73,16 +73,21 @@ let private interval = TimeSpan.FromSeconds 30.0
 [<Literal>]
 let OverLimitExitCode = 3
 
-let private onTick state budget =
-    match enforce state budget residentBytes with
+/// One budget check: still over the hard limit after trimming, `stop` ends the process
+/// with `OverLimitExitCode` so the host restarts it.
+let check state budget measure (stop: int -> unit) =
+    match enforce state budget measure with
     | OverHardLimit ->
         Log.Error("F# sidecar exceeds its hard memory limit after trimming; exiting for a restart")
-        Log.CloseAndFlush()
-        Environment.Exit OverLimitExitCode
+        stop OverLimitExitCode
     | Within
     | Trimmed -> ()
+
+let private exitProcess (code: int) =
+    Log.CloseAndFlush()
+    Environment.Exit code
 
 /// Check the budget every interval for the life of the returned timer.
 let start (state: FSharpWorkspace.FSharpWorkspaceState) : IDisposable =
     let budget = configuredBudget ()
-    new Timer((fun _ -> onTick state budget), null, interval, interval)
+    new Timer((fun _ -> check state budget residentBytes exitProcess), null, interval, interval)

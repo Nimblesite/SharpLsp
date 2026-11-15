@@ -115,6 +115,23 @@ let ``still over the hard limit after trimming asks for a restart`` () =
             Assert.Equal(OverHardLimit, enforce state budget (readings [ 3000L; 2001L ]))
             Assert.False(cached state file options, "the sidecar trimmed before giving up")
             Assert.Equal(3, OverLimitExitCode)
+            Assert.True(residentBytes () > 0L, "the live measurement reads this process's resident set")
+        })
+
+[<Fact>]
+let ``a budget check stops the process only when trimming cannot get under the hard limit`` () =
+    withProject (fun state _ file ->
+        task {
+            let stops = Collections.Generic.List<int>()
+            let! options = checkedOptions state file
+            check state budget (readings [ 500L ]) stops.Add
+            Assert.Empty(stops)
+            Assert.True(cached state file options, "a check within the budget trims nothing")
+            check state budget (readings [ 1500L; 1200L ]) stops.Add
+            Assert.Empty(stops)
+            Assert.False(cached state file options, "a check over the soft limit trims")
+            check state budget (readings [ 4000L; 2500L ]) stops.Add
+            Assert.Equal<int list>([ OverLimitExitCode ], List.ofSeq stops)
         })
 
 [<Fact>]

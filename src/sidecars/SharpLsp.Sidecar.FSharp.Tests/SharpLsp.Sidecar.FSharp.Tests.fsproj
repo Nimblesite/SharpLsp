@@ -61,6 +61,7 @@
     <Compile Include="FSharpHoverDocsTests.fs" />
     <Compile Include="FSharpInlayHintTests.fs" />
     <Compile Include="FSharpFixAllTests.fs" />
+    <Compile Include="FSharpFixAllIpcTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
