@@ -169,6 +169,41 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
     }
 
     /// <summary>
+    /// A project loaded beside a solution that does not list it (#575) writes nothing a
+    /// build would either: its output folders stay exactly as the user built them, so a
+    /// running debuggee's locked output is never touched ([DEBUG-FEATURES-LAUNCH-BUILD],
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY]).
+    /// </summary>
+    [Fact]
+    public async Task A_project_beside_a_solution_loads_without_adding_output()
+    {
+        _ = Write(
+            "Lone/Lone.csproj",
+            Project.Replace(
+                "<TargetFramework>net10.0</TargetFramework>",
+                "<TargetFrameworks>net8.0;net10.0</TargetFrameworks><LangVersion>latest</LangVersion>",
+                StringComparison.Ordinal
+            )
+        );
+        _ = Write(
+            "Home.slnx",
+            "<Solution>\n  <Project Path=\"Home/Home.csproj\" />\n</Solution>\n"
+        );
+        Build(_lone, "--framework", "net8.0");
+        var outputs = NativePaths.Join(NativePaths.DirectoryOf(_lone), "bin", "Debug");
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder: the discovery boundary
+        var open = await manager.OpenAsync(_root);
+#pragma warning restore CS0618
+        Assert.False(open.IsError, open.Match(_ => "ok", err => err));
+
+        var length = await HoverWithinAsync(manager, _guard, 8, 47);
+        Assert.True(length is not null, $"hover answers in {_guard} from the unlisted project");
+        Assert.Contains("string.Length", length.Contents, StringComparison.Ordinal);
+        Assert.Equal(["net8.0"], [.. Directory.GetDirectories(outputs).Select(NativePaths.NameOf)]);
+    }
+
+    /// <summary>
     /// Adopting an owner leaves its <c>obj</c> exactly as the user's build wrote it. The file
     /// arrives spelled through a link to the folder the user built in: one file, two
     /// spellings, as a Windows editor spells the drive <c>d:</c> where the build said <c>D:</c>.

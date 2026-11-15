@@ -77,8 +77,7 @@ internal static class RoslynProjectLoading
         var unlisted = walked.Except(listed, NativePaths.Comparer).ToList();
         return unlisted.Count is 0
             ? solution
-            : await LoadUnlistedAsync(workspace, solution, target, unlisted, ct)
-                .ConfigureAwait(false);
+            : await LoadUnlistedAsync(workspace, solution, unlisted, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -89,14 +88,15 @@ internal static class RoslynProjectLoading
     private static async Task<Solution> LoadUnlistedAsync(
         MSBuildWorkspace workspace,
         Solution solution,
-        string target,
         IReadOnlyList<string> unlisted,
         CancellationToken ct
     )
     {
         var fsharp = FSharpReachedFrom(unlisted);
         fsharp.ExceptWith(solution.Projects.Select(project => project.FilePath).OfType<string>());
-        var loader = new MSBuildProjectLoader(workspace, PropertiesFor(workspace, target));
+        // Not the solution's: built outside the project, exactly as an adopted owner is, so a
+        // running debuggee's locked output and the user's own folders are never written.
+        var loader = new MSBuildProjectLoader(workspace, OutsideTheProject(workspace));
         return await LoadEachProjectAsync(WithPlaceholders(solution, fsharp), loader, unlisted, ct)
             .ConfigureAwait(false);
     }
