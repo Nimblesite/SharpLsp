@@ -33,18 +33,34 @@ let private ANALYZER_OFF =
 
 // ── Scope resolution ─────────────────────────────────────────────
 
+/// Whether `file` is build output of the project `options` loads — MSBuild's
+/// generated `obj/…AssemblyInfo.fs` and the like — which a fix never edits.
+/// [FIXALL-SCOPES]
+let private generated (options: FSharpProjectOptions) (file: string) =
+    let projectDir = NativePaths.DirectoryOf options.ProjectFileName
+    [ "obj"; "bin" ] |> List.exists (fun output -> NativePaths.IsWithin(NativePaths.Resolve(projectDir, output), file))
+
+/// The hand-written files `options` compile.
+let private ownFiles (options: FSharpProjectOptions) =
+    options.SourceFiles |> Array.filter (generated options >> not)
+
 /// The files a scope spans, anchored on `filePath`: the anchor alone at
 /// document scope, the owning `FSharpProjectOptions`' own files at project
 /// scope ([FIXALL-SCOPES]), and every loaded F# project's files at solution
-/// scope. Errors carry the plain-words refusal reason.
+/// scope — never build output. Errors carry the plain-words refusal reason.
 let private scopeFiles (state: FSharpWorkspace.FSharpWorkspaceState) filePath (scope: string) : Result<string array, string> =
     match scope with
     | "document" -> Ok [| filePath |]
     | "project" ->
         match FSharpWorkspace.queryScope state filePath |> List.tryHead with
-        | Some own -> Ok own.SourceFiles
+        | Some own -> Ok(ownFiles own)
         | None -> Error "the document is not part of a loaded F# project"
-    | "solution" -> Ok(FSharpWorkspace.allSourceFiles state)
+    | "solution" ->
+        FSharpWorkspace.projectOptions state
+        |> Seq.collect ownFiles
+        |> Seq.distinctBy NativePaths.NormalizeFullPath
+        |> Array.ofSeq
+        |> Ok
     | _ -> Error $"the scope '{scope}' is not one this fix supports"
 
 // ── Edit merging ─────────────────────────────────────────────────
