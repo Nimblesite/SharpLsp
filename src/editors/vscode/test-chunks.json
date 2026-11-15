@@ -237,6 +237,7 @@
         "sort-members-command-e2e.test.js",
         "scaffolding.test.js",
         "scaffolding-e2e.test.js",
+        "scaffolding-solution-add-e2e.test.js",
         "nuget-browser.test.js",
         "nuget-deps-e2e.test.js",
         "nuget-update-e2e.test.js",

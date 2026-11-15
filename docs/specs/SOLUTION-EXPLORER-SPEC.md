@@ -522,10 +522,15 @@ When a solution is loaded, `.csproj` and `.fsproj` files expose **Add to Solutio
 
 ### Add Existing Project from a Tree Row `[SE-SOLUTION-ADD-CONTEXT]`
 
-`sharplsp.addProjectToSolution` appears on solution and project rows in `2_solution@1`.
+`sharplsp.addProjectToSolution` appears on solution and project rows in `2_solution@1`,
+and each `when` clause must match the `contextValue` the live row really carries
+(`solution`, `project`) — the manifest and the tree provider are pinned together by tests.
 A solution row opens a `.fsproj`/`.csproj` file picker and adds the chosen project to that solution.
 A project row keeps that project's path and selects a workspace solution, including when the project has no solution parent.
-The command palette retains its project-then-solution selection. Cancelling any picker makes no edit;
+The command palette retains its project-then-solution selection. The target picker also offers
+**Create New Solution…**: it scaffolds a solution via `dotnet new sln` in the workspace root, adds the
+project to it, and makes the new solution the loaded one. A workspace with no solution offers
+**Create Solution** on a warning instead of dead-ending. Cancelling any picker makes no edit;
 successful additions refresh the explorer. Tests exercise real F# and C# projects and verify solution membership.
 
 ### Remove Project from Solution `[SE-SOLUTION-REMOVE]`

@@ -164,21 +164,39 @@ export function assertCancelledAtPicker(stubs: UiStubs): void {
 }
 
 /**
- * Wait until `vscode.workspace.findFiles` indexes a project file written to disk
- * outside the workspace edit API (e.g. by `dotnet new`). The file watcher may lag
- * a beat behind the disk write, so we poll briefly before driving a command that
- * relies on workspace discovery.
+ * Wait until `vscode.workspace.findFiles` indexes a file written to disk
+ * outside the workspace edit API (e.g. by `dotnet new`). The file watcher may
+ * lag a beat behind the disk write, so we poll briefly before driving a command
+ * that relies on workspace discovery.
  */
-export async function waitForWorkspaceProject(basename: string): Promise<void> {
+async function waitForIndexedFile(pattern: string, basename: string, what: string): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const uris = await vscode.workspace.findFiles('**/*.{csproj,fsproj}', '**/node_modules/**');
+    const uris = await vscode.workspace.findFiles(pattern, '**/node_modules/**');
     if (uris.some((uri) => uri.fsPath.endsWith(basename))) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  assert.fail(
+  assert.fail(what);
+}
+
+export async function waitForWorkspaceProject(basename: string): Promise<void> {
+  await waitForIndexedFile(
+    '**/*.{csproj,fsproj}',
+    basename,
     `the workspace never indexed ${basename}; the command under test would see no project`,
+  );
+}
+
+/**
+ * Picker parity: wait until the solution discovery glob (`findSolutions`)
+ * indexes `basename`, so a QuickPick driven right after lists it.
+ */
+export async function waitForWorkspaceSolution(basename: string): Promise<void> {
+  await waitForIndexedFile(
+    '**/*.{sln,slnx}',
+    basename,
+    `the workspace never indexed ${basename}; the solution picker would not list it`,
   );
 }

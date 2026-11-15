@@ -342,6 +342,7 @@ Features that make the daily experience smooth.
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
   - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.
+  - [x] Add-to-Solution never dead-ends without a solution (#576): the target picker offers “Create New Solution…” which scaffolds via `dotnet new sln`, wires the project in and becomes the loaded solution; a solution-less workspace offers Create Solution instead of a bare warning. `scaffolding-solution-add-e2e.test.ts` ties the manifest `when` clauses to live solution/project rows and drives the command from real rows into an empty `.slnx`.
   - [x] Add project reference via UI — `sharplsp.addProjectReference` (`context-menus.test.ts`, `nuget-deps-e2e.test.ts`)
   - [x] Add NuGet package from explorer context menu — `sharplsp.nuget.addFromExplorer` / `browseNuGetPackages` on explorer items
 
