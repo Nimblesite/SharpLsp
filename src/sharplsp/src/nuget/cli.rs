@@ -48,9 +48,20 @@ pub async fn list_outdated(
 
 /// The vulnerable-package listing: `dotnet list package --vulnerable
 /// --include-transitive --format json`, parsed as raw `JSON` for
-/// [`super::vulnerability`]. [PKG-VULN-DIAG]
-pub(crate) async fn run_list_vulnerable(project_path: &str) -> Result<serde_json::Value> {
-    run_list_json(project_path, &["--vulnerable", "--include-transitive"]).await
+/// [`super::vulnerability`]. `dotnet list` restores a project with no assets
+/// by itself, so while restoring is not `allowed` it runs `--no-restore`: an
+/// audit must never be the restore the user switched off. [PKG-VULN-DIAG] [DIAG-RESTORE]
+pub(crate) async fn run_list_vulnerable(
+    project_path: &str,
+    allowed: bool,
+) -> Result<serde_json::Value> {
+    let audit = ["--vulnerable", "--include-transitive"];
+    let offline = ["--vulnerable", "--include-transitive", "--no-restore"];
+    run_list_json(
+        project_path,
+        if allowed { &audit[..] } else { &offline[..] },
+    )
+    .await
 }
 
 /// Run the machine-readable direct-package listing with optional bounds.

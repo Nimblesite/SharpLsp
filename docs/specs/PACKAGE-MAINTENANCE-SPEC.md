@@ -98,6 +98,8 @@ high or critical advisory is shown in yellow, pinned to line 1 of the project fi
   (`dotnet list package --vulnerable --include-transitive --format json`) plus NuGet's public
   `VulnerabilityInfo` service resource for affected ranges; no second HTTP/CLI path. The project's own
   `NuGetAudit`, `NuGetAuditLevel` and `NuGetAuditSuppress` are honoured: a suppressed advisory is not reported.
+- The audit is never the restore the user switched off: with `auto_restore_on_open = false` it runs
+  `--no-restore`, so a project with no assets reports no advisories rather than restoring ([DIAG-RESTORE]).
 - Refreshed after restore, after any package edit, and when the advisory feed's cache expires; a feed failure is
   logged and leaves the last known diagnostics marked stale, never cleared silently.
 

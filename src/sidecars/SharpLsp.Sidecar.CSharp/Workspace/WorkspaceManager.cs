@@ -357,8 +357,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (AutoRestoreOnOpen)
         {
-            var restored = await RestoreTargetAndStandaloneAsync(target, standalone, ct)
-                .ConfigureAwait(false);
+            var restored = await RestoreOwnedAsync(target, standalone, ct).ConfigureAwait(false);
             if (restored.IsError)
             {
                 return restored;
@@ -402,20 +401,20 @@ internal sealed partial class WorkspaceManager : IDisposable
     }
 
     /// <summary>
-    /// Restore the target's own inputs first — every project a solution lists, or the
-    /// target itself — then the standalone projects beside it; one the target already
-    /// listed is current, so its second check is a no-op. [DIAG-RESTORE]
+    /// Restore what the open owns: a solution's own projects, or — with no solution —
+    /// every project the walk met. Projects beside a solution are loaded as they stand,
+    /// never restored on open: the tree may hold projects mid-build or mid-delete, and
+    /// restoring one of those stalled the whole open for the restore timeout. [DIAG-RESTORE]
     /// </summary>
-    private static async Task<VoidResult> RestoreTargetAndStandaloneAsync(
+    private static async Task<VoidResult> RestoreOwnedAsync(
         string target,
         string[] standalone,
         CancellationToken ct
     )
     {
-        var restored = await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false);
-        return !restored.IsError && standalone.Length > 0
-            ? await WorkspaceRestore.EnsureProjectsAsync(standalone, ct).ConfigureAwait(false)
-            : restored;
+        return SolutionFileReader.IsSolutionFile(target) || standalone.Length is 0
+            ? await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false)
+            : await WorkspaceRestore.EnsureProjectsAsync(standalone, ct).ConfigureAwait(false);
     }
 
     /// <summary>

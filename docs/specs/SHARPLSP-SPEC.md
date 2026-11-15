@@ -186,8 +186,10 @@ project path still selects that project and its references. Multiple projects ne
 fall back to loose-file analysis (#575).
 
 A solution the walk picks does not own the tree: the standalone projects the same walk
-met load beside the solution's own projects, restored and deduplicated, so a monorepo
-solution that lists one project no longer hides its siblings (#575). The solution loads
+met load beside the solution's own projects, deduplicated, so a monorepo solution that
+lists one project no longer hides its siblings (#575). Only the solution's own projects
+are restored on open; the projects beside it load as they stand, because the tree may hold
+projects mid-build or mid-delete, and restoring one of those stalled the whole open. The solution loads
 first, in one batch where the rule below allows; its unlisted siblings load after it,
 so they never cost the batch. An explicit solution — `csharp.solution_path` or
 `sharplsp/loadSolution` — still opens exactly what was named, without a walk. The F#
