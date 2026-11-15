@@ -44,6 +44,7 @@
     <Compile Include="FSharpDesignTimeTests.fs" />
     <Compile Include="FSharpFallbackAssetsTests.fs" />
     <Compile Include="FSharpMultiProjectTests.fs" />
+    <Compile Include="FSharpMemoryRetentionTests.fs" />
     <Compile Include="FSharpResolvedReferenceTests.fs" />
     <Compile Include="FSharpCSharpReferenceTests.fs" />
     <Compile Include="FSharpOwningProjectTests.fs" />

@@ -32,6 +32,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Compact rather than grow the heap between collections. [SIDECAR-PROCESS-MEMORY] -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- FCS script resolution needs the actual SDK's interactive settings assembly. -->
     <Reference Include="FSharp.Compiler.Interactive.Settings">
       <HintPath>$(MSBuildToolsPath)/FSharp/FSharp.Compiler.Interactive.Settings.dll</HintPath>
@@ -74,6 +79,7 @@
     <Compile Include="FSharpWorkspace.fs" />
     <Compile Include="FSharpOwningEpoch.fs" />
     <Compile Include="FSharpWorkspaceLoading.fs" />
+    <Compile Include="FSharpMemoryBudget.fs" />
     <Compile Include="FSharpDiagnosticInputs.fs" />
     <Compile Include="FSharpDocuments.fs" />
     <Compile Include="FSharpOwningProject.fs" />

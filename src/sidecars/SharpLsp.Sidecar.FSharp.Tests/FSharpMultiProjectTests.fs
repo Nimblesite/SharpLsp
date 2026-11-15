@@ -57,7 +57,7 @@ let private element (name: string) (children: obj list) =
 let private attribute (name: string) (value: string) = XAttribute(XName.Get name, value) :> obj
 
 /// `root/<name>/<name>.fsproj` compiling `source` as `file` and referencing `references`.
-let private writeProject root (name: string) file (source: string) (references: string list) =
+let internal writeProject root (name: string) file (source: string) (references: string list) =
     let dir = NativePaths.Resolve(root, name)
     Directory.CreateDirectory dir |> ignore
 

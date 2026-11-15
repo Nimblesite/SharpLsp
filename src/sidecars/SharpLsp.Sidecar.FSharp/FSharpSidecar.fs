@@ -343,6 +343,11 @@ type FSharpSidecar() as this =
     member private this.NotifyDiagnosticChange(ct: CancellationToken) =
         this.NotifyAsync("diagnostics/refresh", String.Empty, ct)
 
+    /// Keep the process under its memory budget for the life of the returned timer; the
+    /// process entry point starts it, so in-process test hosts never exit on it.
+    /// [SIDECAR-PROCESS-MEMORY]
+    member _.StartMemoryBudget() = FSharpMemoryBudget.start workspace
+
     member private this.NotifyScopeChangeAsync(changed: bool, ct: CancellationToken) =
         task {
             if changed && refreshSupported then
