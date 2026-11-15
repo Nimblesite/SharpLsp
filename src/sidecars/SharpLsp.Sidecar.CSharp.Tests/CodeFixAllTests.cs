@@ -113,7 +113,10 @@ public sealed class CodeFixAllTests : IDisposable
             """;
         File.WriteAllText(NativePaths.Join(_root, "Core", "Core.csproj"), csproj);
         File.WriteAllText(NativePaths.Join(_root, "Billing", "Billing.csproj"), billingCsproj);
-        File.WriteAllText(NativePaths.Join(_root, "Core", "Settings.cs"), "namespace FixAll.Core;\n");
+        File.WriteAllText(
+            NativePaths.Join(_root, "Core", "Settings.cs"),
+            "namespace FixAll.Core;\n"
+        );
         File.WriteAllText(NativePaths.Join(_root, "Core", "Inventory.cs"), Inventory);
         File.WriteAllText(NativePaths.Join(_root, "Core", "Warehouse.cs"), Warehouse);
         File.WriteAllText(NativePaths.Join(_root, "Billing", "Invoice.cs"), Invoice);
@@ -151,7 +154,10 @@ public sealed class CodeFixAllTests : IDisposable
         using var manager = await OpenAsync();
         var actions = await ListedAsync(manager);
         var offered = actions.FirstOrDefault(action =>
-            action.Title.Contains("var' instead of explicit type", StringComparison.OrdinalIgnoreCase)
+            action.Title.Contains(
+                "var' instead of explicit type",
+                StringComparison.OrdinalIgnoreCase
+            )
         );
         Assert.NotNull(offered);
 
@@ -225,18 +231,15 @@ public sealed class CodeFixAllTests : IDisposable
         var result = await manager.FixAllAsync(outside, "UseImplicitType", "document");
 
         Assert.True(result.IsError);
-        Assert.Contains("not part of the loaded C# solution", result.Match(_ => "", error => error));
+        Assert.Contains(
+            "not part of the loaded C# solution",
+            result.Match(_ => "", error => error)
+        );
     }
 
     private async Task<List<CodeActionItem>> ListedAsync(WorkspaceManager manager)
     {
-        var result = await manager.GetCodeActionsAsync(
-            _inventoryPath,
-            6,
-            8,
-            6,
-            11
-        );
+        var result = await manager.GetCodeActionsAsync(_inventoryPath, 6, 8, 6, 11);
         Assert.False(result.IsError, result.Match(_ => "ok", error => error));
         var actions = result.Match(value => value, _ => []);
         Assert.NotEmpty(actions);
@@ -262,8 +265,8 @@ public sealed class CodeFixAllTests : IDisposable
 
     private static int EditsIn(WorkspaceEditResult edit, string filePath)
     {
-        return edit.DocumentChanges
-            .Where(change => NativePaths.AreEqual(change.FilePath, filePath))
+        return edit
+            .DocumentChanges.Where(change => NativePaths.AreEqual(change.FilePath, filePath))
             .Sum(change => change.Edits.Count);
     }
 

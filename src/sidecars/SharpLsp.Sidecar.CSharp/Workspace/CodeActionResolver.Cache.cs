@@ -114,5 +114,4 @@ internal sealed partial class CodeActionResolver
             FixAllScopes: fixAll is null ? null : [.. fixAll.Scopes]
         );
     }
-
 }

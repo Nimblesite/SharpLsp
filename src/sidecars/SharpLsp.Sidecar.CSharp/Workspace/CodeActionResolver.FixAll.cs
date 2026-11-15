@@ -47,7 +47,14 @@ internal sealed partial class CodeActionResolver
         var fixAllScope = ScopeOf(scope);
         return fixAllScope is null
             ? FixAllFailure(fixKey, $"the scope '{scope}' is not one this fix supports")
-            : await FixAllAsync(anchor, provider, provider.GetFixAllProvider()!, fixAllScope.Value, fixKey, ct)
+            : await FixAllAsync(
+                    anchor,
+                    provider,
+                    provider.GetFixAllProvider()!,
+                    fixAllScope.Value,
+                    fixKey,
+                    ct
+                )
                 .ConfigureAwait(false);
     }
 
@@ -87,12 +94,12 @@ internal sealed partial class CodeActionResolver
     )
     {
         var operations = await action.GetOperationsAsync(ct).ConfigureAwait(false);
-        var applyOp = operations.OfType<Microsoft.CodeAnalysis.CodeActions.ApplyChangesOperation>()
+        var applyOp = operations
+            .OfType<Microsoft.CodeAnalysis.CodeActions.ApplyChangesOperation>()
             .FirstOrDefault();
         return applyOp is null
             ? FixAllFailure(fixKey, $"fixing every occurrence of '{fixKey}' produced no changes")
-            : await ResolveChangesAsync(action.Title, solution, applyOp, ct)
-                .ConfigureAwait(false);
+            : await ResolveChangesAsync(action.Title, solution, applyOp, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -101,7 +108,10 @@ internal sealed partial class CodeActionResolver
     /// the offered scopes, or the action carries no equivalence key.
     /// [FIXALL-SCOPES]
     /// </summary>
-    internal static FixAllCapability? FixAllCapabilityOf(CodeFixProvider provider, CodeAction action)
+    internal static FixAllCapability? FixAllCapabilityOf(
+        CodeFixProvider provider,
+        CodeAction action
+    )
     {
         var scopes = SupportedFixAllScopes(provider);
         return scopes.IsEmpty || string.IsNullOrEmpty(action.EquivalenceKey)
