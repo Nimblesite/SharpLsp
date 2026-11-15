@@ -47,19 +47,16 @@ pub async fn list_outdated(
 }
 
 /// The vulnerable-package listing: `dotnet list package --vulnerable
-/// --include-transitive --format json`, parsed as raw `JSON` for
-/// [`super::vulnerability`]. `dotnet list` restores a project with no assets
-/// by itself, so while restoring is not `allowed` it runs `--no-restore`: an
-/// audit must never be the restore the user switched off. [PKG-VULN-DIAG] [DIAG-RESTORE]
-pub(crate) async fn run_list_vulnerable(
-    project_path: &str,
-    allowed: bool,
-) -> Result<serde_json::Value> {
-    let audit = ["--vulnerable", "--include-transitive"];
-    let offline = ["--vulnerable", "--include-transitive", "--no-restore"];
+/// --include-transitive --no-restore --format json`, parsed as raw `JSON` for
+/// [`super::vulnerability`]. A background audit is read-only: `dotnet list`
+/// would otherwise restore a project by itself, rewriting its `obj/` inputs under
+/// every in-flight diagnostic pull and restoring while restore is switched off.
+/// A project with no assets yet fails the scan, which retries on the next pull.
+/// [PKG-VULN-DIAG] [DIAG-RESTORE]
+pub(crate) async fn run_list_vulnerable(project_path: &str) -> Result<serde_json::Value> {
     run_list_json(
         project_path,
-        if allowed { &audit[..] } else { &offline[..] },
+        &["--vulnerable", "--include-transitive", "--no-restore"],
     )
     .await
 }
