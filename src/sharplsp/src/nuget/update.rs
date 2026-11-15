@@ -320,16 +320,33 @@ fn proposal_message(package_id: &str, current: &str, proposed: Option<&str>) -> 
 }
 
 /// `NuGet`'s four numeric release components plus ordered prerelease identifiers.
-#[derive(Debug, Eq, PartialEq)]
-struct NuGetVersion {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct NuGetVersion {
     /// Major, minor, patch, and revision; omitted components are zero.
     release: [u64; 4],
     /// Dot-separated `SemVer` prerelease identifiers.
     prerelease: Vec<Identifier>,
 }
 
+impl NuGetVersion {
+    /// The major release component; `0.x` lines gate minor boundaries.
+    pub(crate) fn major(&self) -> u64 {
+        self.release[0]
+    }
+
+    /// The minor release component.
+    pub(crate) fn minor(&self) -> u64 {
+        self.release[1]
+    }
+
+    /// Whether this is a stable (non-prerelease) version.
+    pub(crate) fn is_stable(&self) -> bool {
+        self.prerelease.is_empty()
+    }
+}
+
 /// A prerelease identifier, numeric when `NuGet` gives it numeric precedence.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum Identifier {
     /// Numeric identifiers precede text and compare numerically.
     Numeric(u64),
@@ -414,6 +431,17 @@ fn parse_prerelease(text: &str) -> Result<Vec<Identifier>> {
             ))
         })
         .collect()
+}
+
+/// Parse a concrete `NuGet` version, ignoring build metadata for precedence.
+/// Shared by bounded updates and advisory-range comparisons. [PKG-VULN-FIX]
+pub(crate) fn parse_version(text: &str) -> Result<NuGetVersion> {
+    parse(text)
+}
+
+/// Compare two versions with `NuGet` precedence, shared with advisory ranges.
+pub(crate) fn compare_versions(left: &NuGetVersion, right: &NuGetVersion) -> Ordering {
+    compare(left, right)
 }
 
 /// Compare release components first and prerelease precedence second.

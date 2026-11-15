@@ -171,6 +171,14 @@ pub(crate) fn reconfigure(
     if let Err(error) = pull_diagnostics::state::configure(&config.diagnostics) {
         warn!(%error, "Diagnostic configuration could not be applied");
     }
+    if changed(&services.applied.nuget, &config.nuget) {
+        crate::nuget::vulnerability::configure(&config.nuget.vulnerabilities);
+        crate::nuget::vulnerability::invalidate_all();
+        if let Err(error) = pull_diagnostics::state::invalidate() {
+            warn!(%error, "Vulnerable-package diagnostics could not be refreshed");
+        }
+        info!("Vulnerability severity mapping applied live");
+    }
     notify_restart_only(&services.applied, &config, client);
     services.applied = config;
 }

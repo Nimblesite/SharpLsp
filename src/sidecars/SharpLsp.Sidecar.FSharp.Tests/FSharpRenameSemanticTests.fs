@@ -380,23 +380,28 @@ let ``rename refuses an empty escaped identifier`` () = task {
 }
 
 /// [RENAME-ERRORS] The FCS lexer calls a trailing-bang word an identifier, but
-/// the compiler reserves it (FS1141). Rename must refuse edits that cannot compile.
+/// the compiler reserves it (FS1141): `let bad! x = x` fails to compile, and a
+/// word like `a!b` is not even one identifier token. Rename must refuse every
+/// spelling that cannot compile, while ``double-backtick`` escaping stays legal.
 [<Fact>]
 let ``rename refuses an unescaped identifier ending in a reserved bang`` () = task {
     let! (state, dir, _fsproj, paths) =
         loadWorkspace [ "Rename.fs", source [ "module Rename"; "let compute n = n + 1" ] ]
     try
-        let! renamed =
-            FSharpRename.renameResult state paths[0] 1 4 "compute!" System.Threading.CancellationToken.None
-        match renamed with
-        | Ok edits -> failwith $"reserved bang rename returned {edits |> List.map editKey}"
-        | Error message -> Assert.Contains("Invalid F# rename name", message)
-        let! escaped =
-            FSharpRename.renameResult state paths[0] 1 4 "``compute!``" System.Threading.CancellationToken.None
-        match escaped with
-        | Error message -> failwith $"escaped bang identifier was rejected: {message}"
-        | Ok edits ->
-            Assert.Contains(edits, fun edit -> edit.NewText = "``compute!``")
+        for reserved in [ "bad!"; "x!"; "compute!"; "a!b" ] do
+            let! renamed =
+                FSharpRename.renameResult state paths[0] 1 4 reserved System.Threading.CancellationToken.None
+            match renamed with
+            | Ok edits -> failwith $"reserved bang rename '{reserved}' returned {edits |> List.map editKey}"
+            | Error message ->
+                Assert.Contains("Invalid F# rename name", message)
+                Assert.Contains(reserved, message)
+        for escaped in [ "``compute!``"; "``x!``" ] do
+            let! allowed =
+                FSharpRename.renameResult state paths[0] 1 4 escaped System.Threading.CancellationToken.None
+            match allowed with
+            | Error message -> failwith $"escaped bang identifier '{escaped}' was rejected: {message}"
+            | Ok edits -> Assert.True(edits |> List.exists (fun edit -> edit.NewText = escaped), $"no edit wrote {escaped}")
     finally
         cleanup dir
 }

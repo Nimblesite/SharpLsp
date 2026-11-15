@@ -24,12 +24,28 @@ type CodeActionItemResult =
       [<Key(2)>] Kind: string
       [<Key(3)>] IsPreferred: bool
       /// The reference the action adds before its open; null for an edit action. [REFACTOR-IMPORT-REFERENCE]
-      [<Key(4)>] Reference: SharpLsp.Sidecar.Common.Messages.ReferenceImport | null }
+      [<Key(4)>] Reference: SharpLsp.Sidecar.Common.Messages.ReferenceImport | null
+      /// The action's stable batch identity (its fix key); null when the fix
+      /// runs only on its one occurrence. [FIXALL-SCOPES] (GitHub #577)
+      [<Key(5)>] FixKey: string | null
+      /// The scopes ("document", "project", "solution") the fix batch-runs
+      /// at; null with FixKey. [FIXALL-SCOPES]
+      [<Key(6)>] FixAllScopes: string array | null }
 
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]
 type CodeActionResolveRequest =
     { [<Key(0)>] Id: int }
+
+/// `codeAction/fixAll` request: the batch form of one offered fix, identified
+/// by its stable fix key and the scope to run it at — the same positional
+/// layout as the C# sidecar's `FixAllRequest`. Implements [FIXALL-SCOPES].
+[<MessagePackObject(AllowPrivate = true)>]
+[<NoComparison; NoEquality>]
+type FixAllRequest =
+    { [<Key(0)>] FilePath: string
+      [<Key(1)>] FixKey: string
+      [<Key(2)>] Scope: string }
 
 [<MessagePackObject(AllowPrivate = true)>]
 [<NoComparison; NoEquality>]

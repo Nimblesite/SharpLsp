@@ -161,17 +161,45 @@ internal sealed record CodeActionRequest(
 /// The reference the action adds before its import; null for an edit action.
 /// [REFACTOR-IMPORT-REFERENCE]
 /// </param>
+/// <param name="FixKey">
+/// The action's Roslyn <c>EquivalenceKey</c> — the stable identity a fix-all
+/// resolve passes back. Null when the fix runs only on its one occurrence.
+/// [FIXALL-SCOPES] (GitHub #577)
+/// </param>
+/// <param name="FixAllScopes">
+/// The scopes the provider's fix-all supports — <c>document</c>, <c>project</c>,
+/// <c>solution</c>. Null when the fix has no fix-all. [FIXALL-SCOPES]
+/// </param>
 [MessagePackObject(AllowPrivate = true)]
 internal sealed record CodeActionItem(
     [property: Key(0)] int Id,
     [property: Key(1)] string Title,
     [property: Key(2)] string Kind,
     [property: Key(3)] bool IsPreferred,
-    [property: Key(4)] ReferenceImport? Reference
+    [property: Key(4)] ReferenceImport? Reference,
+    [property: Key(5)] string? FixKey,
+    [property: Key(6)] List<string>? FixAllScopes
 );
 
 [MessagePackObject(AllowPrivate = true)]
 internal sealed record CodeActionResolveRequest([property: Key(0)] int Id);
+
+// ── Fix All Types ([FIXALL], GitHub #577) ───────────────────────
+
+/// <summary>
+/// <c>codeAction/fixAll</c> request: the fix-all form of one offered fix,
+/// identified by its equivalence key and the scope to run it at.
+/// Implements [FIXALL-SCOPES] for C#.
+/// </summary>
+/// <param name="FilePath">Absolute path of the anchor document the fix was offered on.</param>
+/// <param name="FixKey">The <c>CodeAction</c> equivalence key identifying the fix — never a title.</param>
+/// <param name="Scope">The scope to fix at: <c>document</c>, <c>project</c> or <c>solution</c>.</param>
+[MessagePackObject(AllowPrivate = true)]
+internal sealed record FixAllRequest(
+    [property: Key(0)] string FilePath,
+    [property: Key(1)] string FixKey,
+    [property: Key(2)] string Scope
+);
 
 [MessagePackObject(AllowPrivate = true)]
 internal sealed record TextEditResult(

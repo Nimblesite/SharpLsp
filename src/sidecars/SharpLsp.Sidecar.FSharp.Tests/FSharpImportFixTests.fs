@@ -8,6 +8,7 @@ open System
 open System.IO
 open System.Threading
 open FSharp.Compiler.Diagnostics
+open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
@@ -264,6 +265,77 @@ let ``a solution package row and a project row coexist for one unresolved type``
             cleanup root
     }
 
+/// The one action with `title`, with its offered titles when there is not exactly one.
+let private soleOffered (title: string) (actions: FSharpCodeActions.GeneratedAction list) =
+    match actions |> List.filter (fun action -> action.Title = title) with
+    | [ action ] -> action
+    | offered ->
+        let names = actions |> List.map (fun action -> action.Title) |> String.concat "; "
+        failwith $"expected exactly one '{title}', {offered.Length} offered; all: {names}"
+
+/// `action`'s sole edit as (startLine, startChar, endLine, endChar, newText).
+let private editOf (action: FSharpCodeActions.GeneratedAction) =
+    let edit = Assert.Single(action.Edits)
+    (edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter, edit.NewText)
+
+/// [REFACTOR-IMPORT-FSHARP] SDK 10.0.404+ reports `Task.Delay(1)`'s FS0039 on the member
+/// `Delay` of the unopened type, where 10.0.403 reported it on `Task` itself. Both
+/// diagnostic shapes must offer the same `open` insertion position (GitHub #583).
+[<Fact>]
+let ``both FS0039 shapes of an unopened type offer its namespace open`` () =
+    task {
+        let original = source [ "module Tasks.Library"; ""; "let value = Task.Delay(1)" ]
+        let! state, dir, _, paths = loadWorkspace [ "Tasks.fs", original ]
+        try
+            let! parse, before, src = checkedFixture state paths[0]
+            let openTitle = "Add 'open System.Threading.Tasks' — imports every type and module in namespace System.Threading.Tasks"
+            let shape (start, finish) qualifyTitle span =
+                let range = Range.mkRange paths[0] (Position.mkPos 3 start) (Position.mkPos 3 finish)
+                let actions = FSharpNameFixes.imports state parse before src paths[0] range
+                Assert.Equal((2, 0, 2, 0, "open System.Threading.Tasks\n"), soleOffered openTitle actions |> editOf)
+                Assert.Equal(span, soleOffered qualifyTitle actions |> editOf)
+            // 10.0.403: the range covers `Task`; qualify replaces that ident alone.
+            shape
+                (12, 16)
+                "Change 'Task' to 'System.Threading.Tasks.Task' — qualifies this one use; no open added"
+                (2, 12, 2, 16, "System.Threading.Tasks.Task")
+            // 10.0.404+: the range covers `Delay`; qualify replaces the whole `Task.Delay`.
+            shape
+                (17, 22)
+                "Change 'Task.Delay' to 'System.Threading.Tasks.Task.Delay' — qualifies this one use; no open added"
+                (2, 12, 2, 22, "System.Threading.Tasks.Task.Delay")
+            // Whichever shape this SDK reports, applying the open clears FS0039 for real.
+            let! fixedSource, _openEdit, checkedFile = applySole state paths[0] original openTitle 2 13
+            Assert.Equal(
+                source [ "module Tasks.Library"; ""; "open System.Threading.Tasks"; "let value = Task.Delay(1)" ],
+                fixedSource
+            )
+            assertNoErrors checkedFile
+        finally
+            cleanup dir
+    }
+
+/// [REFACTOR-IMPORT-FSHARP] The member re-target must stay gated on the qualifier
+/// being unresolved: a misspelled member of a type already in scope (`Console` via
+/// `open System`) is a typo, not a missing namespace.
+[<Fact>]
+let ``a member misspelling of a type in scope gains no namespace open`` () =
+    task {
+        let original = source [ "module Console.Library"; ""; "open System"; "let value = Console.ReadLnie()" ]
+        let! state, dir, _, paths = loadWorkspace [ "Console.fs", original ]
+        try
+            let! parse, before, src = checkedFixture state paths[0]
+            let range = Range.mkRange paths[0] (Position.mkPos 4 20) (Position.mkPos 4 28)
+            let actions = FSharpNameFixes.imports state parse before src paths[0] range
+            // The compiler reports the member miss on `ReadLnie` itself.
+            let diagnostic = Assert.Single(before.Diagnostics |> Array.filter (fun d -> d.ErrorNumber = 39))
+            Assert.Equal((4, 20, 4, 28), (diagnostic.StartLine, diagnostic.StartColumn, diagnostic.EndLine, diagnostic.EndColumn))
+            Assert.Empty(actions |> List.filter (fun action -> action.Title.StartsWith("Add 'open")))
+            Assert.Empty(actions |> List.filter (fun action -> action.Title.StartsWith("Change 'Console")))
+        finally
+            cleanup dir
+    }
+
 [<Fact>]
 let ``a well known package is offered only with an explicit latest stable install title`` () =
     task {
@@ -282,6 +354,32 @@ let ``a well known package is offered only with an explicit latest stable instal
             let! fixedSource, edit, _ = applySole state path original title 2 16
             Assert.Equal("open FSharp.Data\n", edit.NewText)
             Assert.Equal(source [ "module App.Library"; ""; "open FSharp.Data"; "let provider = typeof<JsonProvider>" ], fixedSource)
+        finally
+            cleanup root
+    }
+
+/// [REFACTOR-IMPORT-FSHARP] FSharp.Core 10.1.404 (SDK 10.0.404+) auto-opens a `Task`
+/// module, so an unopened `Task.Delay(1)` binds `Task` to that module and FCS reports
+/// FS0039 on `Delay`. The open-namespace fix must still be offered there, and applying
+/// it must clear the error for real (GitHub #583).
+[<Fact>]
+let ``Task Delay against FSharp Core with a Task module offers the tasks namespace open`` () =
+    task {
+        let app = source [ "module App.Library"; ""; "let value = Task.Delay(1)" ]
+        let! state, root = loadSolution [ projectXml "App" [] [ "FSharp.Core", "10.1.404" ] |> fun (n, x) -> n, x, app ]
+        try
+            let path = libraryPath root "App"
+            let! _, before, _ = checkedFixture state path
+            let delay = Assert.Single(before.Diagnostics |> Array.filter (fun d -> d.ErrorNumber = 39))
+            Assert.Equal((3, 17, 3, 22), (delay.StartLine, delay.StartColumn, delay.EndLine, delay.EndColumn))
+            Assert.Contains("'Delay'", delay.Message)
+            let openTitle = "Add 'open System.Threading.Tasks' — imports every type and module in namespace System.Threading.Tasks"
+            let! _, actions = actionsAt state path 2 18
+            Assert.Contains(actions, fun action -> action.Title.StartsWith("Change 'Task.Delay' to 'System.Threading.Tasks.Task.Delay'"))
+            let! fixedSource, edit, checkedFile = applySole state path app openTitle 2 18
+            Assert.Equal("open System.Threading.Tasks\n", edit.NewText)
+            Assert.Equal(source [ "module App.Library"; ""; "open System.Threading.Tasks"; "let value = Task.Delay(1)" ], fixedSource)
+            assertNoErrors checkedFile
         finally
             cleanup root
     }

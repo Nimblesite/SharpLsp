@@ -15,18 +15,19 @@ Implements [FIXALL-MODEL], [FIXALL-RULES], [FIXALL-RULES-TABLE].
 
 Implements [FIXALL-SCOPES] for F#.
 
-- [ ] Batch form for remove unused open, simplify name, remove unused declaration, `_` prefix, add `new`.
+- [x] Batch form for remove unused open, simplify name, remove unused declaration, `_` prefix, add `new`.
 - [ ] Scope resolution: containing binding/type (AST), document, project (`FSharpProjectOptions`), solution.
-- [ ] Merge per-file edits from AST ranges; drop and report overlaps.
-- [ ] Failing E2E first: two-project F# fixture, fix-all unused opens per scope (bug #577).
+  - Done: document, project, solution in `SharpLsp.Sidecar.FSharp/FSharpFixAll.fs` (`scopeFiles`). Remaining: containing binding/type.
+- [x] Merge per-file edits from AST ranges; drop and report overlaps (`FSharpFixAll.mergeFileEdits`, Serilog report).
+- [x] Failing E2E first: two-project F# fixture, fix-all unused opens per scope (bug #577) — `FSharpFixAllTests`.
 
 ## Phase 3: C# Fix All (P0)
 
 Implements [FIXALL-SCOPES] for C#.
 
-- [ ] Detect `GetFixAllProvider()` + `GetSupportedFixAllScopes` per listed fix; record `EquivalenceKey`.
-- [ ] Compute fix-all via `FixAllContext` for each scope; refactor-all where the provider supports it.
-- [ ] Failing E2E first: "Use implicit type" across a real multi-project `.sln`.
+- [x] Detect `GetFixAllProvider()` + `GetSupportedFixAllScopes` per listed fix; record `EquivalenceKey`.
+- [x] Compute fix-all via `FixAllContext` for each scope; refactor-all where the provider supports it.
+- [x] Failing E2E first: "Use implicit type" across a real multi-project `.sln`.
 
 ## Phase 4: LSP Command Flow (P0)
 

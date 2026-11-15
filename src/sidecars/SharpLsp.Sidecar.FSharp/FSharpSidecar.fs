@@ -29,6 +29,23 @@ type FSharpSidecar() as this =
             try Task.FromResult(Helpers.serializeOk (enumerate workspace) ct)
             with ex -> Task.FromResult(ByteResult.Failure(ex.Message)))
 
+    /// One fix's edits as the wire-shaped workspace edit the host applies.
+    let toWorkspaceEditResult (edits: FSharpCodeFixes.DocumentEdit list) : WorkspaceEditResult =
+        { DocumentChanges =
+            edits
+            |> List.map (fun dc ->
+                { FilePath = dc.FilePath
+                  Edits =
+                    dc.Edits
+                    |> List.map (fun e ->
+                        { StartLine = e.StartLine
+                          StartCharacter = e.StartCharacter
+                          EndLine = e.EndLine
+                          EndCharacter = e.EndCharacter
+                          NewText = e.NewText })
+                    |> Array.ofList })
+            |> Array.ofList }
+
     do
         // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
         base.Register("analyzers/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
@@ -209,9 +226,38 @@ type FSharpSidecar() as this =
                         actions
                         |> List.map (fun a ->
                             { Id = a.Id; Title = a.Title
-                              Kind = a.Kind; IsPreferred = a.IsPreferred; Reference = a.Reference })
+                              Kind = a.Kind; IsPreferred = a.IsPreferred; Reference = a.Reference
+                              FixKey = a.FixKey
+                              FixAllScopes = a.FixAllScopes |> Option.ofObj |> Option.map Array.ofList |> Option.toObj })
                         |> Array.ofList
                     return Helpers.serializeOk results ct
+                with ex ->
+                    return ByteResult.Failure(ex.Message)
+            }))
+
+        // Fix all ([FIXALL-SCOPES], GitHub #577): one fix, every occurrence of the
+        // scope, as one workspace edit. A fix-all that fixes nothing fails with
+        // its reason in plain words — never an empty edit. [REFACTOR-NEVER-SILENT]
+        base.Register("codeAction/fixAll", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
+            task {
+                try
+                    let request = MessagePackSerializer.Deserialize<FixAllRequest>(payload, cancellationToken = ct)
+                    let analyzers = if analyzersEnabled then Some analyzerConfig else None
+
+                    match! FSharpFixAll.fixAll workspace analyzers request.FilePath request.FixKey request.Scope ct with
+                    | FSharpFixAll.Applied(edits, dropped) ->
+                        if dropped > 0 then
+                            Log.Warning(
+                                "F# fix-all {FixKey} at {Scope} dropped {Dropped} overlapping edits",
+                                request.FixKey,
+                                request.Scope,
+                                dropped
+                            )
+
+                        return Helpers.serializeOk (toWorkspaceEditResult edits) ct
+                    | FSharpFixAll.Refused reason ->
+                        Log.Warning("F# fix-all {FixKey} at {Scope} refused: {Reason}", request.FixKey, request.Scope, reason)
+                        return ByteResult.Failure(reason)
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
@@ -221,23 +267,7 @@ type FSharpSidecar() as this =
             try
                 let request = MessagePackSerializer.Deserialize<CodeActionResolveRequest>(payload, cancellationToken = ct)
                 match FSharpCodeFixes.resolveCodeAction codeFixState request.Id with
-                | Some edit ->
-                    let result =
-                        { DocumentChanges =
-                            edit.DocumentChanges
-                            |> List.map (fun dc ->
-                                { FilePath = dc.FilePath
-                                  Edits =
-                                    dc.Edits
-                                    |> List.map (fun e ->
-                                        { StartLine = e.StartLine
-                                          StartCharacter = e.StartCharacter
-                                          EndLine = e.EndLine
-                                          EndCharacter = e.EndCharacter
-                                          NewText = e.NewText })
-                                    |> Array.ofList })
-                            |> Array.ofList }
-                    Task.FromResult<ByteResult>(Helpers.serializeOk result ct)
+                | Some edit -> Task.FromResult<ByteResult>(Helpers.serializeOk (toWorkspaceEditResult edit.DocumentChanges) ct)
                 | None ->
                     // [REFACTOR-NEVER-SILENT] Never turn an expired action into an empty edit.
                     let reason = "the code action is no longer available: the document changed after it was offered; invoke the quick fix again"
@@ -342,6 +372,11 @@ type FSharpSidecar() as this =
     /// Invalidate the host query even when the IPC request stream is idle. [DIAG-IPC-REFRESH]
     member private this.NotifyDiagnosticChange(ct: CancellationToken) =
         this.NotifyAsync("diagnostics/refresh", String.Empty, ct)
+
+    /// Keep the process under its memory budget for the life of the returned timer; the
+    /// process entry point starts it, so in-process test hosts never exit on it.
+    /// [SIDECAR-PROCESS-MEMORY]
+    member _.StartMemoryBudget() = FSharpMemoryBudget.start workspace
 
     member private this.NotifyScopeChangeAsync(changed: bool, ct: CancellationToken) =
         task {

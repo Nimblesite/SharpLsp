@@ -205,6 +205,19 @@ Production launch MUST be direct, so the Rust `Child` PID and handshake PID iden
 
 A generation-scoped watcher reports every exit. Zero exit after acknowledged shutdown reaches `Stopped`; any other active-state exit enters backoff. The child is always reaped, including after timeout or hard kill; dropping its handle is only a safety net.
 
+### Memory Budget `[SIDECAR-PROCESS-MEMORY]`
+
+The F# sidecar keeps its resident set under a budget, because FSharp.Compiler.Service keeps every project builder, typed tree and check result it has made (GitHub #566).
+
+- **Soft limit:** 2 GB by default. A fully checked twelve-project F# repository settles near 1.5 GB, so a lower default would trim a healthy workspace into a rebuild loop. Set it in megabytes with `SHARPLSP_FSHARP_MEMORY_LIMIT_MB`; a missing, malformed or non-positive value keeps the default.
+- **Hard limit:** always twice the soft limit.
+- **Check:** every 30 s, the process entry point measures the working set.
+  - Above the soft limit, the sidecar invalidates every checker cache, collects, and logs the before and after sizes. Later requests rebuild what they need.
+  - Still above the hard limit after that trim, it logs an error and exits with code `3`. The host's backoff restart ([SIDECAR-PROCESS-EXIT]) then brings up a fresh sidecar.
+- **Reloads:** a workspace reload releases the builds of the options it replaced.
+- **GC:** the sidecar runs with `System.GC.ConserveMemory`, so the collector compacts rather than grow the heap between collections.
+- **Tests:** in-process test hosts never start the budget.
+
 ## IPC Session `[SIDECAR-IPC]`
 
 ### Frame and Envelope Contract `[SIDECAR-IPC-FRAMING]`

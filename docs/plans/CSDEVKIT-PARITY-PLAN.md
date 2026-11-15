@@ -293,7 +293,8 @@ Features users expect within the first day of use.
   - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
   - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
   - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
-  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`).
+  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`), and `Run on <tfm>` preflight failures carry their text as the run's own output too.
+  - [x] MTP projects with no `global.json` opt-in and no runner switch are discovered and run through their own module, never the VSTest target — #581; the restored package graph names the projects MSBuild must evaluate, `xunit.v3`'s own console (`-list full/json`, `-id`, `-result-trx`) is learned per module, and F#-first fixtures — the C# one reproducing the issue's exact package set — pass through the real profiles (`test-explorer-mtp-native.test.ts`, `test-mtp-native-parsers.test.ts`).
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
   - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
@@ -339,9 +340,11 @@ Features that make the daily experience smooth.
 
 - [ ] **P3.3: Solution Explorer Enhancements**
   - [x] Load every standalone C# project in a solutionless monorepo (#575): three real-SDK layouts prove nested loading, sibling inclusion and working diagnostics; 21 discovery/regression checks pass.
+  - [x] Load the projects a solution does NOT list (#575): the C# sidecar's walk reports standalone projects beside a picked solution and loads them with it (restore deduped, listed first; the one-batch solution load survives when nothing stands beside it); F# loads every discovered `.fsproj` from the root — host e2e proves closed-file `workspace/diagnostic` reports the excluded C# and F# projects (`monorepo_load.rs`), and all 20 discovery checks pass.
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
   - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.
+  - [x] Add-to-Solution never dead-ends without a solution (#576): the target picker offers “Create New Solution…” which scaffolds via `dotnet new sln`, wires the project in and becomes the loaded solution; a solution-less workspace offers Create Solution instead of a bare warning. `scaffolding-solution-add-e2e.test.ts` ties the manifest `when` clauses to live solution/project rows and drives the command from real rows into an empty `.slnx`.
   - [x] Add project reference via UI — `sharplsp.addProjectReference` (`context-menus.test.ts`, `nuget-deps-e2e.test.ts`)
   - [x] Add NuGet package from explorer context menu — `sharplsp.nuget.addFromExplorer` / `browseNuGetPackages` on explorer items
 

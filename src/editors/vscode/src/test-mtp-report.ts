@@ -10,6 +10,7 @@ import type { TestRunOptions, TestRunOutcome } from './test-execution.js';
 import { netFrameworkDebugRefusal } from './test-frameworks.js';
 import type { MtpModuleRun } from './test-listing-model.js';
 import { rejectedMtpOption } from './test-mtp.js';
+import { rejectedXunitOption, xunitRunArgs, type MtpCli } from './test-mtp-cli.js';
 
 type Reporter = 'trx' | 'xunit-trx';
 
@@ -20,6 +21,8 @@ interface MtpInvocation {
   readonly cwd: string;
   readonly options: TestRunOptions;
   readonly trxName: string;
+  /** The command line a listing proved this module answers. [TEST-MTP-RUN] */
+  readonly cli: MtpCli | undefined;
 }
 
 /**
@@ -121,7 +124,10 @@ export function runArgs(
   options: TestRunOptions,
   trxName: string,
   reporter: Reporter = 'trx',
+  cli?: MtpCli,
 ): string[] {
+  if (cli === 'xunit')
+    return ['exec', modulePath, ...xunitRunArgs(uids, resultsDirectory, trxName)];
   const report = reportFor(modulePath, options, reporter);
   return ['exec', modulePath, ...moduleRunArgs(uids, resultsDirectory, options, trxName, report)];
 }
@@ -185,13 +191,51 @@ function moduleRunArgs(
 
 /** A rejected optional reporter must not make a runnable xUnit project fail. */
 export async function runReported(invocation: MtpInvocation): Promise<DotnetRun> {
+  if (invocation.cli === 'xunit') return await runXunit(invocation);
   const standard = await runReporter(invocation, 'trx');
   const { options } = invocation;
   if (options.debug === true || options.signal?.aborted === true) return standard;
+  // A module no listing classified refused every MTP option in its OWN voice —
+  // it was rebuilt since discovery, or discovery predates #581. One run on its
+  // own console beats reporting runnable tests as not run; a module that
+  // refuses that too keeps the MTP diagnosis.
+  if (refusedNatively(standard)) {
+    const native = await runXunit({ ...invocation, cli: 'xunit' });
+    return refusedNatively(native) ? standard : native;
+  }
   if (!refusedReporter(standard, '--report-trx')) return standard;
   // Command-line validation ran no tests. Keep the selection and report name.
   const fallback = await runReporter(invocation, 'xunit-trx');
   return refusedReporter(fallback, '--report-xunit-trx') ? standard : fallback;
+}
+
+/** True when the module refused the command line in the xunit.v3 runner's voice. */
+function refusedNatively(run: DotnetRun): boolean {
+  const output = `${run.stdout}\n${run.stderr}`;
+  return !run.killed && run.failed && rejectedXunitOption(output) !== undefined;
+}
+
+/**
+ * One invocation of a module speaking the `xunit.v3` runner's own console.
+ *
+ * Its `-result-trx` is built in, so there is no reporter to negotiate and no
+ * waiting host controller to avoid under Debug. Coverage has no option to
+ * forward — the collection request is answered by a log entry, never by a
+ * refused command line that would fail a run that could have run (#581).
+ */
+async function runXunit(invocation: MtpInvocation): Promise<DotnetRun> {
+  const { modulePath, uids, resultsDirectory, cwd, options, trxName } = invocation;
+  if (options.coverage === true)
+    info(
+      `${fileNameOf(modulePath)} runs the xunit.v3 console, which collects no coverage; ` +
+        'Run with Coverage reports the run without a coverage report',
+    );
+  if (options.debug === true)
+    info(
+      `${fileNameOf(modulePath)} runs the xunit.v3 console, which announces no test host ` +
+        'pid for a debugger to attach; the selection runs without one ([TEST-MTP-DEBUG])',
+    );
+  return await runModule(modulePath, xunitRunArgs(uids, resultsDirectory, trxName), cwd, options);
 }
 
 /** Missing reporters on other frameworks keep the original package diagnosis. */

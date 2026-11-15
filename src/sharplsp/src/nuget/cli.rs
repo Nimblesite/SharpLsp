@@ -31,8 +31,7 @@ pub async fn list_installed_occurrences(project_path: &str) -> Result<Vec<Instal
     Ok(installed_packages(output))
 }
 
-/// Ask the configured sources for the newest stable release in the current line.
-/// The host still validates and selects the result with `NuGet` version semantics.
+/// Ask the configured sources for the newest stable release in the current line./// The host still validates and selects the result with `NuGet` version semantics.
 pub async fn list_outdated(
     target: &NuGetTarget,
     zero_major: bool,
@@ -47,26 +46,44 @@ pub async fn list_outdated(
     Ok(outdated_packages(output))
 }
 
+/// The vulnerable-package listing: `dotnet list package --vulnerable
+/// --include-transitive --no-restore --format json`, parsed as raw `JSON` for
+/// [`super::vulnerability`]. A background audit is read-only: `dotnet list`
+/// would otherwise restore a project by itself, rewriting its `obj/` inputs under
+/// every in-flight diagnostic pull and restoring while restore is switched off.
+/// A project with no assets yet fails the scan, which retries on the next pull.
+/// [PKG-VULN-DIAG] [DIAG-RESTORE]
+pub(crate) async fn run_list_vulnerable(project_path: &str) -> Result<serde_json::Value> {
+    run_list_json(
+        project_path,
+        &["--vulnerable", "--include-transitive", "--no-restore"],
+    )
+    .await
+}
+
 /// Run the machine-readable direct-package listing with optional bounds.
 async fn run_list(project_path: &str, extra: &[&str]) -> Result<DotNetListOutput> {
+    Ok(serde_json::from_value(
+        run_list_json(project_path, extra).await?,
+    )?)
+}
+
+/// Run `dotnet list <project> package` with `--format json` and options, and
+/// return the parsed `JSON` document. Shared by the direct listing and the
+/// vulnerable-package audit. [PKG-VULN-DIAG]
+async fn run_list_json(project_path: &str, extra: &[&str]) -> Result<serde_json::Value> {
     info!("nuget/list: target={project_path} options={extra:?}");
     let mut command = tokio::process::Command::new("dotnet");
     let _ = command.args(["list", project_path, "package", "--format", "json"]);
     let _ = command.args(extra);
     crate::utils::hide_console_window_tokio(&mut command);
     let output = command.output().await.context("spawn dotnet list")?;
-    parse_output(&output)
-}
-
-/// Decode a successful listing or retain both diagnostic streams on failure.
-fn parse_output(output: &std::process::Output) -> Result<DotNetListOutput> {
+    let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
         anyhow::bail!("dotnet list failed: {stderr}{stdout}");
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).context("parse dotnet list JSON output")
+    Ok(serde_json::from_str(&stdout)?)
 }
 
 /// Map every framework's direct package to the installed response shape.

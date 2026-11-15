@@ -84,6 +84,9 @@ internal sealed partial class CodeActionResolver
             .ConfigureAwait(false);
     }
 
+    // [FIXALL-SCOPES]: the fix context answers for the provider that created it,
+    // so every listed fix knows whether it can run beyond its one occurrence.
+
     private async Task RegisterFixProvidersAsync(
         Document document,
         Dictionary<string, ImmutableArray<Diagnostic>> diagnostics,
@@ -194,11 +197,12 @@ internal sealed partial class CodeActionResolver
         CancellationToken ct
     )
     {
-        var context = CreateFixContext(document, diagnostic, items, ct);
+        var context = CreateFixContext(provider, document, diagnostic, items, ct);
         await provider.RegisterCodeFixesAsync(context).ConfigureAwait(false);
     }
 
     private CodeFixContext CreateFixContext(
+        CodeFixProvider provider,
         Document document,
         Diagnostic diagnostic,
         List<CodeActionItem> items,
@@ -208,7 +212,14 @@ internal sealed partial class CodeActionResolver
         return new CodeFixContext(
             document,
             diagnostic,
-            (action, _) => CacheAndAdd(action, FixKind(diagnostic.Id), items, null),
+            (action, _) =>
+                CacheAndAdd(
+                    action,
+                    FixKind(diagnostic.Id),
+                    items,
+                    null,
+                    FixAllCapabilityOf(provider, action)
+                ),
             ct
         );
     }
@@ -363,98 +374,6 @@ internal sealed partial class CodeActionResolver
             || providerName.Contains("IntroduceVariable", StringComparison.OrdinalIgnoreCase)
             || providerName.Contains("IntroduceConstant", StringComparison.OrdinalIgnoreCase)
             || providerName.Contains("IntroduceField", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void CacheAndAdd(
-        CodeAction action,
-        string kind,
-        List<CodeActionItem> items,
-        string? parentTitle
-    )
-    {
-        var title = Qualified(parentTitle, action.Title);
-        // An action with options needs an IDE dialog a headless host cannot show, and
-        // its options service does not exist here, so resolving it throws. It is never
-        // offered: Roslyn's own "Generate overrides..." has a headless replacement, and
-        // the rest wait for one. [REFACTOR-NO-DIALOG] (GitHub #201)
-        if (
-            action is CodeActionWithOptions
-            || CacheNestedActions(action, kind, items, title)
-            || IsDuplicate(title, kind, items)
-        )
-        {
-            return;
-        }
-
-        items.Add(CacheAction(action, kind, title));
-    }
-
-    private bool CacheNestedActions(
-        CodeAction action,
-        string kind,
-        List<CodeActionItem> items,
-        string title
-    )
-    {
-        if (action.NestedActions.IsEmpty)
-        {
-            return false;
-        }
-
-        foreach (var nested in action.NestedActions)
-        {
-            CacheAndAdd(nested, kind, items, title);
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// A flattened child's title, carrying the container it came from when it
-    /// cannot stand without it.
-    /// </summary>
-    /// <remarks>
-    /// LSP has no submenus, so a nested action arrives in the same flat list as
-    /// every other and its title is all the user reads before choosing. Roslyn
-    /// writes children in two shapes: sentences that name themselves ("Inline
-    /// and keep 'X'", "Convert to binary") and continuations of the PARENT's
-    /// sentence ("and update call sites directly", "into new overload") that say
-    /// nothing alone. Only the continuations are joined, and with a space, so
-    /// the result reads as the sentence Roslyn actually wrote. Renaming the
-    /// self-contained ones would only make them stutter.
-    /// </remarks>
-    private static string Qualified(string? parentTitle, string title)
-    {
-        return string.IsNullOrEmpty(parentTitle) || !IsContinuation(title)
-            ? title
-            : parentTitle + " " + title;
-    }
-
-    /// <summary>
-    /// Whether a child's title continues its parent's sentence instead of
-    /// naming itself. Roslyn writes those in lower case, and only those.
-    /// </summary>
-    private static bool IsContinuation(string title)
-    {
-        return title.Length > 0 && char.IsLower(title[0]);
-    }
-
-    private static bool IsDuplicate(string title, string kind, List<CodeActionItem> items)
-    {
-        return items.Any(item => item.Title == title && item.Kind == kind);
-    }
-
-    internal CodeActionItem CacheAction(CodeAction action, string kind, string title)
-    {
-        var id = Interlocked.Increment(ref _nextId);
-        _pendingActions[id] = action;
-        return new CodeActionItem(
-            Id: id,
-            Title: title,
-            Kind: kind,
-            IsPreferred: action.Priority == CodeActionPriority.High,
-            Reference: null
-        );
     }
 
     private static async Task<WorkspaceEditResult> BuildWorkspaceEditAsync(

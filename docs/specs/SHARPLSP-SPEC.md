@@ -185,6 +185,18 @@ nested siblings of a root project. They are restored before loading; an explicit
 project path still selects that project and its references. Multiple projects never
 fall back to loose-file analysis (#575).
 
+A solution the walk picks does not own the tree: the standalone projects the same walk
+met load beside the solution's own projects, deduplicated, so a monorepo solution that
+lists one project no longer hides its siblings (#575). Only the solution's own projects
+are restored on open; the projects beside it load as they stand, because the tree may hold
+projects mid-build or mid-delete, and restoring one of those stalled the whole open. The solution loads
+first, in one batch where the rule below allows; its unlisted siblings load after it,
+so they never cost the batch. An explicit solution — `csharp.solution_path` or
+`sharplsp/loadSolution` — still opens exactly what was named, without a walk. The F#
+sidecar given the workspace root loads every discovered `.fsproj` the same way, listed
+or not; opening a file outside every loaded project additionally adopts its owner
+([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING], [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]).
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD] Loading a Solution into Roslyn
 
 Roslyn's `MSBuildProjectLoader` starts and tears down a BuildHost process for every `LoadProjectInfoAsync` call, so loading a solution project by project pays that start once per project (NLog, 15 projects: 21.5s one by one, 8s in one batch). A solution from which **no F# project is reachable** — listed, or referenced by a C# project however deep — is therefore loaded in one `LoadSolutionInfoAsync` batch through one BuildHost.
@@ -616,6 +628,16 @@ Roslyn's `AddImport` and `FullyQualify` fixes stay the engine for the namespace 
 #### [REFACTOR-IMPORT-FSHARP] F# Import Fixes
 
 F# gets every row C# gets except the alias row. The namespace row is `Add 'open N'`. It is placed where FCS's `FindNearestPointToInsertOpenDeclaration` puts it ([ANALYZERS-FSAC-CODEFIX-COMPILER]). The fully qualified row replaces the diagnostic's range with the entity's full name, as written in code (backticks kept). It is offered for every entity the namespace row would open, and also for an entity in an `[<AutoOpen>]` or `[<RequireQualifiedAccess>]` module that FCS's insertion context reaches. The static row (`open type N.C`) is offered for each accessible .NET or F# type that declares a static member or nested type named `T`, up to three, when the file's language version supports `open type` (F# 5+).
+
+An FS0039 can land on either side of a dotted use. On .NET SDK 10.0.403 it lands on the unresolved name (`Task` in `Task.Delay(1)`). From SDK 10.0.404, FSharp.Core auto-opens a `Task` module, so `Task` binds to that module and the error lands on the member (`Delay`).
+
+The member shape is re-anchored on its qualifier:
+
+1. Walk the untyped syntax tree to the long identifier the diagnostic range sits in (`Task.Delay`).
+2. Compute the rows above for its first identifier, keeping only types in an unopened namespace that have an accessible static member or nested type named like the flagged member (`System.Threading.Tasks.Task` has `Delay`).
+3. Offer the result. The `open` goes to the same position as in the type shape. The fully qualified row replaces the whole long identifier (`Task.Delay` → `System.Threading.Tasks.Task.Delay`).
+
+A misspelled member of a type already in scope (`Console.ReadLnie` with `open System`) is a typo, not a missing namespace. No unopened type declares that member, so no import row is offered for it.
 
 #### [REFACTOR-IMPORT-REFERENCE] Names from Outside the Project's References
 

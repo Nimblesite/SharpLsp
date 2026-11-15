@@ -26,6 +26,7 @@ let private usageError (error: string) : int =
 let private runSidecar (options: SidecarStartupOptions) : int =
     try
         let sidecar = new FSharpSidecar()
+        use _budget = sidecar.StartMemoryBudget()
         task {
             try
                 do! sidecar.RunAsync(options)

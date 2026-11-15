@@ -76,7 +76,7 @@ const CMD_OPEN_SOLUTION = 'sharplsp.openSolution';
  * behaviour. To control/observe the live solution selection we must go through the
  * exported provider (`clear()` / `loadSolution()`) and the registered
  * `sharplsp.openSolution` command, which mutate the bundled state that the dist
- * `pickSolutionFile` actually consults.
+ * `pickTargetSolution` actually consults.
  */
 interface ExplorerApi {
   explorerProvider: {
@@ -550,7 +550,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
         track(projDir);
         assert.ok(projFile, 'the project file must be locatable before adding it');
 
-        // Ensure NO active solution is pinned so the dist pickSolutionFile shows the
+        // Ensure NO active solution is pinned so the dist pickTargetSolution shows the
         // solution QuickPick (the workspace has multiple solutions). Driving the LIVE
         // provider's clear() resets the bundled state.solutionPath — a test-side
         // `state` import cannot. Reset again in teardown.
@@ -560,7 +560,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
         await waitForWorkspaceProject(`${projName}.${extension}`);
 
         // The command finds *.csproj/*.fsproj across the workspace → pick ours by name;
-        // then pickSolutionFile shows a QuickPick (multiple solutions) → pick ours.
+        // then pickTargetSolution shows a QuickPick (multiple solutions) → pick ours.
         const solutionPick = (items: readonly unknown[]) =>
             (items as { label: string; path: string }[]).find((i) => i.path === slnPath),
           node =
@@ -604,7 +604,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
     track(slnPath);
     track(projDir);
 
-    // Pin the active solution via the LIVE command so the dist pickSolutionFile
+    // Pin the active solution via the LIVE command so the dist pickTargetSolution
     // short-circuits to it (no solution QuickPick). This drives the bundled
     // state.solutionPath — the only instance the dist command reads. Reset in
     // teardown via getProvider().clear().
@@ -622,7 +622,7 @@ suite('Scaffolding E2E (drive real commands)', () => {
       'the active solution must gain the project',
     );
     // Only ONE QuickPick (the project picker) — the active solution was taken from
-    // the bundled state, so pickSolutionFile never prompted for a solution.
+    // the bundled state, so pickTargetSolution never prompted for a solution.
     assert.strictEqual(
       stubs.log.quickPickItems.length,
       1,

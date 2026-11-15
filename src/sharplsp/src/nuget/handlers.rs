@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::sidecar::manager::SidecarManager;
 
-use super::restore_job::spawn_restore;
+use super::restore_job::{spawn_restore, Engines};
 use super::{cli, consolidate, edit, lanes, parse, search, targets, types, unused, update};
 
 /// Handle `sharplsp/nuget/targets` — enumerate projects and props files.
@@ -93,7 +93,7 @@ pub fn handle_install(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
-    csharp: Option<&Arc<SidecarManager>>,
+    [csharp, fsharp]: Engines<'_>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/install");
     let params: types::InstallParams = serde_json::from_value(req.params)?;
@@ -117,7 +117,7 @@ pub fn handle_install(
         &params.version,
     )?;
 
-    finish_with_restore(response, runtime, sender, &target)
+    finish_with_restore(response, runtime, sender, &target, [csharp, fsharp])
 }
 
 /// Install `package_id` at `version` into the project at `project_path` for an
@@ -133,7 +133,7 @@ pub fn install_into_project(
 ) -> Result<types::PackageEditResponse> {
     let target = types::NuGetTarget::from_project_path(project_path);
     let response = apply_install(sidecar, runtime, &target, package_id, version)?;
-    restore_if_modified(&response, runtime, sender, &target);
+    restore_if_modified(&response, runtime, sender, &target, [Some(sidecar), None]);
     Ok(response)
 }
 
@@ -143,7 +143,7 @@ pub fn handle_uninstall(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
-    csharp: Option<&Arc<SidecarManager>>,
+    [csharp, fsharp]: Engines<'_>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/uninstall");
     let params: types::UninstallParams = serde_json::from_value(req.params)?;
@@ -154,7 +154,7 @@ pub fn handle_uninstall(
     };
     let response = apply_uninstall(sidecar, runtime, &target, &params.package_id)?;
 
-    finish_with_restore(response, runtime, sender, &target)
+    finish_with_restore(response, runtime, sender, &target, [csharp, fsharp])
 }
 
 /// Message returned when no C# sidecar is available to perform an `MSBuild`
@@ -242,7 +242,7 @@ pub fn handle_consolidate(
     req: Request,
     runtime: &Runtime,
     sender: Sender<Message>,
-    csharp: Option<&Arc<SidecarManager>>,
+    [csharp, fsharp]: Engines<'_>,
 ) -> Result<serde_json::Value> {
     info!("Handling sharplsp/nuget/consolidate");
     let params: types::ConsolidateParams = serde_json::from_value(req.params)?;
@@ -250,7 +250,13 @@ pub fn handle_consolidate(
         consolidate::consolidate(&params.solution_path, params.dry_run, csharp, runtime)?;
     if !params.dry_run && !response.modified_files.is_empty() {
         let target = types::NuGetTarget::from_project_path(&params.solution_path);
-        spawn_restore(runtime, sender, &target, response.modified_files.clone());
+        spawn_restore(
+            runtime,
+            sender,
+            &target,
+            response.modified_files.clone(),
+            [csharp, fsharp],
+        );
     }
     Ok(serde_json::to_value(response)?)
 }
@@ -262,8 +268,9 @@ fn finish_with_restore(
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
+    engines: Engines<'_>,
 ) -> Result<serde_json::Value> {
-    restore_if_modified(&response, runtime, sender, target);
+    restore_if_modified(&response, runtime, sender, target, engines);
     Ok(serde_json::to_value(response)?)
 }
 
@@ -273,9 +280,16 @@ fn restore_if_modified(
     runtime: &tokio::runtime::Runtime,
     sender: Sender<Message>,
     target: &types::NuGetTarget,
+    engines: Engines<'_>,
 ) {
     if response.success && !response.modified_files.is_empty() {
-        spawn_restore(runtime, sender, target, response.modified_files.clone());
+        spawn_restore(
+            runtime,
+            sender,
+            target,
+            response.modified_files.clone(),
+            engines,
+        );
     }
 }
 

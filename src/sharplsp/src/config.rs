@@ -29,6 +29,8 @@ pub struct SharpLspConfig {
     pub analyzers: AnalyzersConfig,
     /// Profiler settings.
     pub profiler: ProfilerConfig,
+    /// `NuGet` package-maintenance settings. Implements [PKG-VULN-SEVERITY].
+    pub nuget: crate::config_nuget::NuGetConfig,
 }
 
 /// Configuration shared by test discovery, execution and debugging.
@@ -297,6 +299,10 @@ mod tests {
         assert!(!config.analyzers.monorepo);
         assert_eq!(config.profiler.max_concurrent_sessions, 5);
         assert_eq!(config.profiler.output_directory, ".sharplsp/profiles");
+        assert_eq!(
+            config.nuget.vulnerabilities.high,
+            crate::config_nuget::MappedSeverity::Error
+        );
     }
 
     #[test]

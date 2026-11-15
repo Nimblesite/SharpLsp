@@ -44,6 +44,7 @@
     <Compile Include="FSharpDesignTimeTests.fs" />
     <Compile Include="FSharpFallbackAssetsTests.fs" />
     <Compile Include="FSharpMultiProjectTests.fs" />
+    <Compile Include="FSharpMemoryRetentionTests.fs" />
     <Compile Include="FSharpResolvedReferenceTests.fs" />
     <Compile Include="FSharpCSharpReferenceTests.fs" />
     <Compile Include="FSharpOwningProjectTests.fs" />
@@ -59,6 +60,8 @@
     <Compile Include="FSharpWildcardCompileTests.fs" />
     <Compile Include="FSharpHoverDocsTests.fs" />
     <Compile Include="FSharpInlayHintTests.fs" />
+    <Compile Include="FSharpFixAllTests.fs" />
+    <Compile Include="FSharpFixAllIpcTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

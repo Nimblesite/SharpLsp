@@ -60,6 +60,7 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("textDocument/documentHighlight", HandleDocumentHighlightAsync);
         Register("textDocument/codeAction", HandleCodeActionAsync);
         Register("codeAction/resolve", HandleCodeActionResolveAsync);
+        Register("codeAction/fixAll", HandleFixAllAsync);
         Register("textDocument/codeLens", HandleCodeLensAsync);
         Register("textDocument/prepareCallHierarchy", HandlePrepareCallHierarchyAsync);
         Register("callHierarchy/incomingCalls", HandleIncomingCallsAsync);
@@ -226,6 +227,20 @@ internal sealed partial class CSharpSidecar : SidecarHost
         return HandleRequestAsync(
             payload,
             (CodeActionResolveRequest request) => _workspace.ResolveCodeActionAsync(request.Id, ct),
+            ct
+        );
+    }
+
+    /// <summary>
+    /// The fix-all form of an offered fix: every occurrence in the document,
+    /// project or solution, as one workspace edit. [FIXALL-SCOPES] (GitHub #577)
+    /// </summary>
+    private Task<ByteResult> HandleFixAllAsync(byte[] payload, CancellationToken ct)
+    {
+        return HandleRequestAsync(
+            payload,
+            (FixAllRequest request) =>
+                _workspace.FixAllAsync(request.FilePath, request.FixKey, request.Scope, ct),
             ct
         );
     }

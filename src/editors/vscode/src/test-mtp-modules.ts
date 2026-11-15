@@ -22,6 +22,41 @@ import { evaluateProject, type ProjectProperties } from './msbuild.js';
 /** Solution file extensions `dotnet sln list` accepts. */
 const SOLUTION_EXTENSIONS = ['.sln', '.slnx', '.slnf'];
 
+/** NuGet package ids whose presence makes a project a possible MTP module. */
+const MTP_PACKAGE_IDS = ['Microsoft.Testing.Platform', 'Microsoft.Testing.Platform.MSBuild'];
+
+/**
+ * True when `target`'s RESTORED package graph holds a Microsoft.Testing.Platform
+ * package, `false` when it holds none, `undefined` when nothing is restored to
+ * read. Parsed, never searched: the assets file is JSON.
+ *
+ * This is the cheap half of [TEST-MTP-DETECT]: it decides whether a project is
+ * worth an MSBuild evaluation BEFORE the doomed VSTest passes run, using the
+ * package graph restore wrote — the same graph that makes
+ * `IsTestingPlatformApplication` true transitively (xunit.v3, TUnit, MSTest 4).
+ * It never overrides the property: only MSBuild's own evaluation decides that a
+ * project IS an MTP application, so a library that merely references the
+ * package stays a library.
+ */
+export function referencesMtpPackage(projectFile: string): boolean | undefined {
+  const assets = joinPath(directoryOf(projectFile), 'obj', 'project.assets.json');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(assets, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  const libraries = parsed.libraries;
+  if (!isRecord(libraries)) return undefined;
+  return Object.keys(libraries).some((id) => MTP_PACKAGE_IDS.includes(id.split('/')[0] ?? ''));
+}
+
+/** True for a plain object, so a JSON shape is narrowed before it is read. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Everything `dotnet build <folder>` picks up from a folder's top level. */
 const BUILDABLE_EXTENSIONS = ['.csproj', '.fsproj', '.vbproj', ...SOLUTION_EXTENSIONS];
 
@@ -180,15 +215,42 @@ async function evaluateCandidate(
 async function findMtpProjects(
   target: string,
   timeoutMs: number,
-): Promise<{ candidates: MtpProject[]; warnings: string[] }> {
+  worthEvaluating: (projectFile: string) => boolean = () => true,
+): Promise<MtpProjectScan> {
   const candidates: MtpProject[] = [];
   const warnings: string[] = [];
   for (const projectFile of await projectsOf(target, timeoutMs)) {
+    if (!worthEvaluating(projectFile)) continue;
     const found = await evaluateCandidate(projectFile);
     warnings.push(...found.warnings);
     if (found.candidate !== undefined) candidates.push(found.candidate);
   }
-  return { candidates, warnings };
+  return { projects: candidates, warnings };
+}
+
+/**
+ * The MTP projects MSBuild evaluates in `target`, WITHOUT building, reading only
+ * projects whose restored package graph holds an MTP package.
+ *
+ * This is the BEFORE-VSTest half of [TEST-MTP-DETECT] (#581): a project that
+ * references Microsoft.Testing.Platform — through `xunit.v3` or TUnit, or by
+ * itself — must never reach the VSTest target, which the .NET 10 SDK refuses
+ * outright for it. Reading the assets file first keeps the check off the hot
+ * path of every sweep: a solution whose projects hold no MTP package pays one
+ * JSON read per project, and a project nothing has restored yet is left to the
+ * VSTest passes, which restore it — the probe that runs after them
+ * ({@link probeMtpProjects}) evaluates exhaustively and also catches a project
+ * that sets `IsTestingPlatformApplication` itself with no MTP package at all.
+ */
+export async function evaluatedMtpProjects(
+  target: string,
+  timeoutMs: number = DOTNET_TIMEOUT_MS,
+): Promise<MtpProjectScan> {
+  return await findMtpProjects(
+    target,
+    timeoutMs,
+    (projectFile) => referencesMtpPackage(projectFile) === true,
+  );
 }
 
 /** The candidates whose modules the build really produced. */
@@ -206,7 +268,7 @@ function onDisk(candidates: readonly MtpProject[], warnings: readonly string[]):
 /** Resolve current MSBuild outputs after a build, without building again. */
 export async function builtMtpProjects(target: string, timeoutMs: number): Promise<MtpProjectScan> {
   const found = await findMtpProjects(target, timeoutMs);
-  return onDisk(found.candidates, found.warnings);
+  return onDisk(found.projects, found.warnings);
 }
 
 /** Build `target` so every test module exists before anything is asked of it. */
@@ -250,6 +312,21 @@ export async function scanMtpProjects(
 }
 
 /**
+ * Build and report `found`'s candidates — the tail a probe runs once MSBuild has
+ * named an MTP project. Nothing is built when it named none.
+ */
+export async function probeScan(
+  found: MtpProjectScan,
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<MtpProjectScan> {
+  if (found.projects.length === 0) return { projects: [], warnings: found.warnings };
+  const built = await buildTarget(target, cwd, timeoutMs);
+  return onDisk(found.projects, [...found.warnings, ...built]);
+}
+
+/**
  * Report the MTP test projects of a target the VSTest passes have just
  * restored, building it only when there turns out to be one.
  *
@@ -263,8 +340,5 @@ export async function probeMtpProjects(
   cwd: string,
   timeoutMs: number = DOTNET_TIMEOUT_MS,
 ): Promise<MtpProjectScan> {
-  const found = await findMtpProjects(target, timeoutMs);
-  if (found.candidates.length === 0) return { projects: [], warnings: found.warnings };
-  const built = await buildTarget(target, cwd, timeoutMs);
-  return onDisk(found.candidates, [...found.warnings, ...built]);
+  return await probeScan(await findMtpProjects(target, timeoutMs), target, cwd, timeoutMs);
 }

@@ -165,26 +165,36 @@ async function addToSolutionIfAny(
 
 /** Create a new solution via `dotnet new sln`, then offer to add a first project. */
 async function newSolution(): Promise<void> {
+  try {
+    const created = await createSolutionByName();
+    if (created === undefined) return;
+    info(`Created solution ${fileNameOf(created.path)}`);
+    await vscode.commands.executeCommand(CMD_OPEN_SOLUTION, created.path);
+    await offerFirstProject(created.path);
+  } catch (err) {
+    reportFailure(err);
+  }
+}
+
+/** Ask for a solution name and scaffold it in the workspace root. */
+async function createSolutionByName(): Promise<SolutionTarget | undefined> {
   const folder = workspaceFolder();
   if (folder === undefined) {
     void vscode.window.showErrorMessage('No workspace folder open.');
-    return;
+    return undefined;
   }
   const name = await vscode.window.showInputBox({
     prompt: 'Solution name',
     placeHolder: 'MySolution',
   });
-  if (name === undefined || name === '') {
-    return;
-  }
-  try {
-    const solutionPath = await createSolution(folder, name);
-    info(`Created solution ${name}`);
-    await vscode.commands.executeCommand(CMD_OPEN_SOLUTION, solutionPath);
-    await offerFirstProject(solutionPath);
-  } catch (err) {
-    reportFailure(err);
-  }
+  if (name === undefined || name === '') return undefined;
+  return { path: await createSolution(folder, name), created: true };
+}
+
+/** Offer to scaffold the workspace's first solution instead of dead-ending. */
+async function offerNewSolution(message: string): Promise<SolutionTarget | undefined> {
+  const choice = await vscode.window.showWarningMessage(message, 'Create Solution');
+  return choice === 'Create Solution' ? await createSolutionByName() : undefined;
 }
 
 /** Prompt to scaffold a first project into a brand-new solution. */
@@ -313,46 +323,84 @@ async function projectForSelection(node?: ExplorerNode): Promise<vscode.Uri | un
 async function addProjectToSolution(node?: ExplorerNode): Promise<void> {
   const project = await projectForSelection(node);
   if (project === undefined) return;
-  const solutionPath =
-    node?.nodeType === NodeType.Solution
-      ? node.projectFilePath
-      : await pickSolutionFile(node?.nodeType !== NodeType.Project);
-  if (solutionPath === undefined) return;
+  // A solution row fixes the target to that solution; every other entry point
+  // chooses one ([SE-SOLUTION-ADD-CONTEXT]).
+  const solutionRow = node?.nodeType === NodeType.Solution ? node.projectFilePath : undefined;
   try {
-    await addProjectToSolutionFile(solutionPath, project.fsPath);
+    const target =
+      solutionRow !== undefined
+        ? { path: solutionRow, created: false }
+        : await pickTargetSolution(node === undefined);
+    if (target === undefined) return;
+    await addProjectToSolutionFile(target.path, project.fsPath);
     void vscode.window.showInformationMessage(
       `Added ${vscode.workspace.asRelativePath(project)} to solution`,
     );
-    await vscode.commands.executeCommand(CMD_REFRESH_EXPLORER);
+    // A freshly created solution becomes the loaded one so the explorer shows
+    // the add; an existing target only refreshes the current tree.
+    if (target.created) {
+      await vscode.commands.executeCommand(CMD_OPEN_SOLUTION, target.path);
+    } else {
+      await vscode.commands.executeCommand(CMD_REFRESH_EXPLORER);
+    }
   } catch (err) {
     reportFailure(err);
   }
 }
 
-async function pickSolutionFile(preferActive = true): Promise<string | undefined> {
-  const selected = state.solutionPath.value;
-  if (preferActive && selected !== undefined) {
-    return selected;
-  }
+/** The target of an add: a solution path plus whether SharpLsp just created it. */
+interface SolutionTarget {
+  readonly path: string;
+  readonly created: boolean;
+}
 
-  const solutions = await findSolutions();
-  if (solutions.length === 0) {
-    void vscode.window.showWarningMessage('No .sln or .slnx file found.');
-    return undefined;
-  }
-  if (solutions.length === 1) {
-    return solutions[0]?.path;
-  }
+/** QuickPick row that scaffolds a brand-new solution instead of choosing one. */
+const CREATE_SOLUTION_PICK = { label: '$(add) Create New Solution…' } as const;
 
-  const picked = await vscode.window.showQuickPick(
-    solutions.map((solution) => ({
+/** One row of the target-solution QuickPick. */
+interface SolutionPick {
+  readonly label: string;
+  readonly description?: string;
+  readonly path?: string;
+}
+
+/** The QuickPick rows for `solutions`, plus the create-new escape hatch. */
+function solutionPicks(solutions: readonly { name: string; path: string }[]): SolutionPick[] {
+  return [
+    ...solutions.map((solution): SolutionPick => ({
       label: solution.name,
       description: solution.path,
       path: solution.path,
     })),
-    { placeHolder: 'Select solution file' },
-  );
-  return picked?.path;
+    CREATE_SOLUTION_PICK,
+  ];
+}
+
+/**
+ * The solution an existing project joins: the active one (palette shortcut),
+ * the user's workspace pick, or a brand-new solution when the workspace has
+ * none — a workspace without a solution must never dead-end at a warning
+ * (#576). Implements [SE-SOLUTION-ADD-CONTEXT].
+ */
+async function pickTargetSolution(preferActive: boolean): Promise<SolutionTarget | undefined> {
+  if (preferActive) {
+    const selected = state.solutionPath.value;
+    if (selected !== undefined) return { path: selected, created: false };
+  }
+  const solutions = await findSolutions();
+  if (solutions.length === 0) {
+    return await offerNewSolution('No .sln or .slnx file found in the workspace.');
+  }
+  const [only] = solutions;
+  if (only !== undefined && solutions.length === 1) {
+    return { path: only.path, created: false };
+  }
+  const picked = await vscode.window.showQuickPick<SolutionPick>(solutionPicks(solutions), {
+    placeHolder: 'Select solution file',
+  });
+  if (picked === undefined) return undefined;
+  if (picked === CREATE_SOLUTION_PICK) return await createSolutionByName();
+  return picked.path !== undefined ? { path: picked.path, created: false } : undefined;
 }
 
 /** Generate the source body for a new file of the given snippet type. Pure. */

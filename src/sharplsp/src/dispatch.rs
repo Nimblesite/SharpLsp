@@ -334,6 +334,7 @@ fn handle_custom_request(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
+    let engines = [csharp_sidecar, fsharp_sidecar];
     match req.method.as_str() {
         "sharplsp/workspaceSymbols" => handle_workspace_symbols(
             req,
@@ -354,23 +355,17 @@ fn handle_custom_request(
         "sharplsp/nuget/installed" => nuget::handlers::handle_installed(req, runtime),
         "sharplsp/nuget/updatePreview" => nuget::update::handle_preview(req, runtime),
         "sharplsp/nuget/install" => {
-            nuget::handlers::handle_install(req, runtime, connection.sender.clone(), csharp_sidecar)
+            nuget::handlers::handle_install(req, runtime, connection.sender.clone(), engines)
         }
-        "sharplsp/nuget/uninstall" => nuget::handlers::handle_uninstall(
-            req,
-            runtime,
-            connection.sender.clone(),
-            csharp_sidecar,
-        ),
+        "sharplsp/nuget/uninstall" => {
+            nuget::handlers::handle_uninstall(req, runtime, connection.sender.clone(), engines)
+        }
         "sharplsp/nuget/unused" => {
             nuget::handlers::handle_unused(req, runtime, csharp_sidecar, fsharp_sidecar)
         }
-        "sharplsp/nuget/consolidate" => nuget::handlers::handle_consolidate(
-            req,
-            runtime,
-            connection.sender.clone(),
-            csharp_sidecar,
-        ),
+        "sharplsp/nuget/consolidate" => {
+            nuget::handlers::handle_consolidate(req, runtime, connection.sender.clone(), engines)
+        }
         // The reference behind an import quick fix ([REFACTOR-IMPORT-REFERENCE])
         "workspace/executeCommand" if import_command::is_import_command(&req) => {
             import_command::handle(&req, runtime, connection.sender.clone(), csharp_sidecar)

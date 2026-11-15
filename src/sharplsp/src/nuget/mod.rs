@@ -3,6 +3,7 @@
 //! All `NuGet` operations live in the Rust LSP host (Tier 1). The extension
 //! is a thin UI shell that sends `sharplsp/nuget/*` custom requests.
 
+pub mod anchor;
 pub mod cache;
 pub mod cli;
 pub mod consolidate;
@@ -12,7 +13,10 @@ pub mod lanes;
 pub mod parse;
 mod restore_job;
 pub mod search;
+pub mod sources;
 pub mod targets;
 pub mod types;
 pub mod unused;
 pub mod update;
+pub mod version_range;
+pub mod vulnerability;

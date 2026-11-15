@@ -110,5 +110,11 @@ pub(crate) fn trigger_diagnostics(
     let Some((sidecar, uri, file_path)) = push_target(uri, csharp_sidecar, fsharp_sidecar) else {
         return;
     };
-    diagnostics::request_in_background(runtime, sidecar, connection.sender.clone(), uri, file_path);
+    diagnostics::request_in_background(
+        runtime.handle(),
+        sidecar,
+        connection.sender.clone(),
+        uri,
+        file_path,
+    );
 }

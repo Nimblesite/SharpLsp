@@ -89,7 +89,9 @@ internal sealed partial class WorkspaceManager
                 Title: entry.Action.Title,
                 Kind: entry.Action.Kind,
                 IsPreferred: entry.Action.IsPreferred,
-                Reference: null
+                Reference: null,
+                FixKey: null,
+                FixAllScopes: null
             )),
         ];
     }

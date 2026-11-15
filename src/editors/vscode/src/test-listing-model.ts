@@ -9,6 +9,8 @@
  * Implements [TEST-DISCOVERY-FQN] and [TEST-MTP-DISCOVERY].
  */
 
+import type { MtpCli } from './test-mtp-cli.js';
+
 /** The outcome of enumerating one target. Never an exception. */
 export interface TestListing {
   /** Fully-qualified names, in discovery order, de-duplicated. */
@@ -68,6 +70,12 @@ export interface MtpModuleRun {
   readonly buildTarget: string;
   /** Test id to the `--filter-uid` values that run it. */
   readonly uidsById: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The command line the module itself was observed to answer — MTP's own, or
+   * the `xunit.v3` runner's. Absent until a listing proved one, and then a run
+   * speaks the dialect it proved. Spec: [TEST-MTP-DISCOVERY], #581.
+   */
+  readonly cli?: MtpCli;
 }
 
 /** One built test assembly and the fully-qualified names it contributed. */

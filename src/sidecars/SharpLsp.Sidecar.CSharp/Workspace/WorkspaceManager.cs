@@ -325,7 +325,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         var (target, candidates) = +discovered;
-        var projects = (+discovered).Projects;
+        var standalone = (+discovered).Projects;
 
         if (target is null)
         {
@@ -357,10 +357,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (AutoRestoreOnOpen)
         {
-            var restored =
-                projects.Length > 0
-                    ? await WorkspaceRestore.EnsureProjectsAsync(projects, ct).ConfigureAwait(false)
-                    : await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false);
+            var restored = await RestoreOwnedAsync(target, standalone, ct).ConfigureAwait(false);
             if (restored.IsError)
             {
                 return restored;
@@ -377,8 +374,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         _workspace = MSBuildWorkspace.Create(properties);
         _ = _workspace.RegisterWorkspaceFailedHandler(LogWorkspaceFailure);
 
+        // A solution discovery picked does not own the tree: the projects of the same walk
+        // it does not list load beside it (#575). [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY]
         var loaded = await RoslynProjectLoading
-            .LoadAsync(_workspace, target, ct, projects.Length > 0 ? projects : null)
+            .LoadDiscoveredAsync(_workspace, target, standalone, ct)
             .ConfigureAwait(false);
 
         await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
@@ -399,6 +398,23 @@ internal sealed partial class WorkspaceManager : IDisposable
         );
 
         return new VoidResult.Ok<Unit, string>(Unit.Value);
+    }
+
+    /// <summary>
+    /// Restore what the open owns: a solution's own projects, or — with no solution —
+    /// every project the walk met. Projects beside a solution are loaded as they stand,
+    /// never restored on open: the tree may hold projects mid-build or mid-delete, and
+    /// restoring one of those stalled the whole open for the restore timeout. [DIAG-RESTORE]
+    /// </summary>
+    private static async Task<VoidResult> RestoreOwnedAsync(
+        string target,
+        string[] standalone,
+        CancellationToken ct
+    )
+    {
+        return SolutionFileReader.IsSolutionFile(target) || standalone.Length is 0
+            ? await WorkspaceRestore.EnsureTargetAsync(target, ct).ConfigureAwait(false)
+            : await WorkspaceRestore.EnsureProjectsAsync(standalone, ct).ConfigureAwait(false);
     }
 
     /// <summary>

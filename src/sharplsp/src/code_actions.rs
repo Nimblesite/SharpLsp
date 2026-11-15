@@ -32,12 +32,35 @@ const FSHARP_NOT_RUNNING: &str = "the F# language service is not running";
 /// The reason an action with no resolvable id cannot resolve.
 const MISSING_ID: &str = "the quick fix carries no id this server can resolve; invoke it again";
 
+/// The plain-words reason a fix-all resolve answers with while the enforcement
+/// writers ([FIXALL-ENFORCE]) do not exist yet: asking to enforce must fail
+/// loudly rather than silently fix without writing the rule.
+const ENFORCE_UNAVAILABLE: &str = concat!(
+    "enforcing the rule is not available yet; run the fix without enforce and ",
+    "configure the rule by hand"
+);
+
 /// Handle `textDocument/codeAction` — returns available code fixes and refactorings.
 pub fn handle_code_action(
     req: Request,
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
+    // `MSBuild` documents never reach the sidecar: their actions are the
+    // host's vulnerable-package update fixes. [PKG-VULN-FIX]
+    if let Ok(params) = serde_json::from_value::<CodeActionParams>(req.params.clone()) {
+        if let Ok(path) = crate::paths::uri_to_path(params.text_document.uri.as_str()) {
+            if crate::nuget::vulnerability::owns_document(&path)
+                || crate::nuget::vulnerability::appends_to_sidecar(&path)
+            {
+                let actions = runtime.block_on(crate::nuget::vulnerability::fix_actions(
+                    &path,
+                    params.range,
+                ));
+                return Ok(serde_json::to_value(actions)?);
+            }
+        }
+    }
     with_sidecar(req, sidecar, |sidecar, params: CodeActionParams| {
         let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
         let Some(items) = request_sidecar::<Vec<SidecarCodeActionItem>, _>(
@@ -53,7 +76,14 @@ pub fn handle_code_action(
         let doc_uri = params.text_document.uri;
         let actions: Vec<CodeActionOrCommand> = items
             .iter()
-            .map(|item| CodeActionOrCommand::CodeAction(map_code_action(item, &doc_uri)))
+            .flat_map(|item| {
+                // The single-site fix first, then one `Fix all: <title>` action per
+                // scope its provider supports. [FIXALL-LSP]
+                std::iter::once(CodeActionOrCommand::CodeAction(map_code_action(
+                    item, &doc_uri,
+                )))
+                .chain(fix_all_actions(item, &doc_uri))
+            })
             .collect();
         Ok(serde_json::to_value(actions)?)
     })
@@ -73,6 +103,11 @@ pub fn handle_code_action_resolve(
     let Some(sidecar) = sidecar else {
         return Err(refused(&request_id, None, service_not_running(&action)));
     };
+    // A fix-all action resolves through the `FixAllRequest` in its data, not the
+    // single-site id. [FIXALL-LSP]
+    if let Some(fix_all) = fix_all_data(&action) {
+        return resolve_fix_all(&request_id, runtime, sidecar, &action, &fix_all);
+    }
     let id =
         resolve_id(&action).ok_or_else(|| refused(&request_id, None, MISSING_ID.to_string()))?;
     let edit = request_sidecar_strict::<SidecarWorkspaceEdit, _>(
@@ -97,6 +132,67 @@ fn resolve_id(action: &CodeAction) -> Option<i32> {
         .as_ref()
         .and_then(|data| data.get("id"))
         .and_then(|id| serde_json::from_value(id.clone()).ok())
+}
+
+/// The `FixAllRequest` a fix-all action carries in its `data`, when it has one.
+/// [FIXALL-LSP]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FixAllData {
+    /// The fix's stable identity — Roslyn's `EquivalenceKey` on the C# side.
+    fix_key: String,
+    /// The scope to fix at: document, project or solution.
+    scope: String,
+    /// Whether the associated rules must also be written ([FIXALL-ENFORCE]).
+    #[serde(default)]
+    enforce: bool,
+}
+
+/// The `FixAllRequest` of `action`'s `data`, when it carries one.
+fn fix_all_data(action: &CodeAction) -> Option<FixAllData> {
+    action
+        .data
+        .as_ref()
+        .and_then(|data| data.get("fixAll").cloned())
+        .and_then(|fix_all| serde_json::from_value(fix_all).ok())
+}
+
+/// Resolve a fix-all action: the sidecar computes every occurrence of the fix
+/// in the scope as one workspace edit. A failure is an LSP error carrying the
+/// reason — never a silent no-op. [FIXALL-LSP] [REFACTOR-NEVER-SILENT]
+fn resolve_fix_all(
+    request_id: &lsp_server::RequestId,
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &SidecarManager,
+    action: &CodeAction,
+    fix_all: &FixAllData,
+) -> Result<serde_json::Value> {
+    if fix_all.enforce {
+        return Err(refused(request_id, None, ENFORCE_UNAVAILABLE.to_string()));
+    }
+    let path = action
+        .data
+        .as_ref()
+        .and_then(|data| data.get("uri"))
+        .and_then(|uri| uri.as_str())
+        .and_then(|raw| crate::paths::uri_to_path(raw).ok())
+        .ok_or_else(|| refused(request_id, None, MISSING_ID.to_string()))?;
+    let edit = request_sidecar_strict::<SidecarWorkspaceEdit, _>(
+        runtime,
+        sidecar,
+        "codeAction/fixAll",
+        &SidecarFixAllReq {
+            file_path: path,
+            fix_key: fix_all.fix_key.clone(),
+            scope: fix_all.scope.clone(),
+        },
+    )
+    .map_err(|error| refused(request_id, None, error.to_string()))?;
+    let mut resolved = action.clone();
+    resolved.edit = Some(
+        map_workspace_edit(&edit).map_err(|error| refused(request_id, None, error.to_string()))?,
+    );
+    Ok(serde_json::to_value(resolved)?)
 }
 
 /// The plain-words reason a resolve answers when no sidecar runs for the
@@ -292,6 +388,52 @@ struct SidecarCodeActionItem {
     /// edit action. [REFACTOR-IMPORT-REFERENCE]
     #[serde(default)]
     reference: Option<crate::import_command::SidecarReferenceImport>,
+    /// The fix's stable identity (Roslyn `EquivalenceKey`), when the fix can run
+    /// beyond its one occurrence. [FIXALL-SCOPES]
+    #[serde(default)]
+    fix_key: Option<String>,
+    /// The scopes ("document", "project", "solution") the fix's provider
+    /// supports fixing every occurrence at. [FIXALL-SCOPES]
+    #[serde(default)]
+    fix_all_scopes: Option<Vec<String>>,
+}
+
+/// The `Fix all: <title>` actions for one fix-all-capable item — one per scope
+/// the provider supports, each carrying the `FixAllRequest` in its `data` so it
+/// resolves to one workspace edit for that scope. [FIXALL-LSP] (GitHub #577)
+fn fix_all_actions(item: &SidecarCodeActionItem, doc_uri: &Uri) -> Vec<CodeActionOrCommand> {
+    let scopes = item.fix_all_scopes.clone().unwrap_or_default();
+    let capable = item.fix_key.is_some();
+    scopes
+        .into_iter()
+        .filter(|_| capable)
+        .map(|scope| CodeActionOrCommand::CodeAction(fix_all_action(item, &scope, doc_uri)))
+        .collect()
+}
+
+/// The next fix-all action's `data.id`: every listed action carries a unique,
+/// fresh, positive id, and the host mints these far above the sidecars' own
+/// counters, which start at 1. Resolve reads `fixAll` first, never this id.
+static NEXT_FIX_ALL_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1 << 30);
+
+/// One `Fix all in <scope>: <title>` action. [FIXALL-LSP]
+fn fix_all_action(item: &SidecarCodeActionItem, scope: &str, doc_uri: &Uri) -> CodeAction {
+    let id = NEXT_FIX_ALL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    CodeAction {
+        title: format!("Fix all in {scope}: {}", item.title),
+        kind: Some(map_action_kind(&item.kind)),
+        is_preferred: Some(false),
+        data: Some(serde_json::json!({
+            "id": id,
+            "fixAll": {
+                "fixKey": item.fix_key,
+                "scope": scope,
+                "enforce": false,
+            },
+            "uri": doc_uri.as_str(),
+        })),
+        ..CodeAction::default()
+    }
 }
 
 /// Request sent to the sidecar to resolve a code action by ID.
@@ -299,6 +441,19 @@ struct SidecarCodeActionItem {
 struct SidecarCodeActionResolveReq {
     /// Identifier of the code action to resolve.
     id: i32,
+}
+
+/// Request sent to the sidecar to run a fix at every occurrence of its scope:
+/// a `(file_path, fix_key, scope)` positional `MessagePack` array matching the
+/// sidecar's `FixAllRequest` Key layout. [FIXALL-SCOPES]
+#[derive(serde::Serialize)]
+struct SidecarFixAllReq {
+    /// Absolute path of the anchor document the fix was offered on.
+    file_path: String,
+    /// The fix's equivalence key — never a title.
+    fix_key: String,
+    /// The scope to fix at: document, project or solution.
+    scope: String,
 }
 
 /// Edits for a single document returned by the sidecar.
@@ -332,3 +487,11 @@ pub(crate) struct SidecarWorkspaceEdit<T = SidecarTextEdit> {
     reason = "test code — panics are the correct failure mode"
 )]
 mod tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code — panics are the correct failure mode"
+)]
+mod tests_fixall;

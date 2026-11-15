@@ -38,7 +38,12 @@ import {
   type TestListing,
 } from './test-listing-model.js';
 import { frameworkMoniker } from './test-frameworks.js';
-import { listBuiltMtpTests, listMtpTests, probeMtpTests } from './test-mtp-discovery.js';
+import {
+  listBuiltMtpTests,
+  listMtpTests,
+  mtpBeforeVstest,
+  probeMtpTests,
+} from './test-mtp-discovery.js';
 import { usesMtpRunner } from './test-mtp.js';
 import { removeDirRecursive } from './utils.js';
 
@@ -236,6 +241,13 @@ export async function listTests(
   // with code 5 and lists nothing. Go straight to the runner that can answer.
   if (usesMtpRunner(cwd))
     return await (noBuild ? listBuiltMtpTests : listMtpTests)(target, cwd, timeoutMs);
+  // [TEST-MTP-DETECT]: a project whose RESTORED package graph holds
+  // Microsoft.Testing.Platform is an MTP module to MSBuild too, and the .NET 10
+  // SDK's VSTest target refuses it outright — the doomed passes below must not
+  // run for it at all (#581). Reading the graph costs one JSON read per
+  // project; a target it names no MTP project for falls through untouched.
+  const beforeVstest = await mtpBeforeVstest(target, cwd, timeoutMs, noBuild);
+  if (beforeVstest !== undefined) return beforeVstest;
   const vstest = await listWithVsTest(target, cwd, timeoutMs, noBuild);
   if (vstest.byAssembly.length > 0) return vstest;
   return await withMtpProbe(vstest, target, cwd, timeoutMs, noBuild);

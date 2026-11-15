@@ -20,6 +20,9 @@ use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
 mod policy;
+mod restored;
+
+pub(crate) use restored::publish_after_restore;
 
 /// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
 const PUSH_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -96,7 +99,7 @@ pub type PushTarget = (Arc<SidecarManager>, Uri, String);
 /// Non-blocking: the main loop continues processing messages while
 /// the sidecar computes diagnostics.
 pub fn request_in_background(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &tokio::runtime::Handle,
     sidecar: Arc<SidecarManager>,
     sender: crossbeam_channel::Sender<Message>,
     uri: Uri,
@@ -127,7 +130,7 @@ pub fn publish_now(
         still_pushing(pushes).await
     });
     for (sidecar, uri, file_path) in unfinished {
-        request_in_background(runtime, sidecar, sender.clone(), uri, file_path);
+        request_in_background(runtime.handle(), sidecar, sender.clone(), uri, file_path);
     }
 }
 
@@ -385,6 +388,13 @@ async fn fetch_cancellable(
     source_tag: &str,
     cancel: Option<&lspkit_server::CancellationToken>,
 ) -> Result<Vec<Diagnostic>> {
+    // `MSBuild` documents have no sidecar truth for vulnerable packages: props
+    // files are entirely host-owned, and project files (F# and C#) keep their
+    // sidecar's diagnostics with the `NuGet` findings appended.
+    // Implements [PKG-VULN-DIAG].
+    if crate::nuget::vulnerability::owns_document(file_path) {
+        return Ok(crate::nuget::vulnerability::document_diagnostics(file_path).await);
+    }
     let payload = rmp_serde::to_vec(file_path).context("serialize file path")?;
     let method = if crate::paths::has_extension(file_path, &["csproj", "fsproj"]) {
         "workspace/diagnostics/project"
@@ -397,10 +407,14 @@ async fn fetch_cancellable(
         .context(DIAGNOSTICS_REQUEST)?;
     let results: Vec<SidecarDiagnostic> =
         rmp_serde::from_slice(&response_bytes).context("deserialize diagnostics")?;
-    Ok(results
+    let mut diagnostics = results
         .into_iter()
         .map(|r| to_lsp_diagnostic(r, source_tag))
-        .collect())
+        .collect::<Vec<_>>();
+    if crate::nuget::vulnerability::appends_to_sidecar(file_path) {
+        diagnostics.extend(crate::nuget::vulnerability::document_diagnostics(file_path).await);
+    }
+    Ok(diagnostics)
 }
 
 /// Whether the latest publication for `uri` is a tier-2 placeholder that a

@@ -37,6 +37,8 @@ fn map_code_action_carries_metadata() {
         kind: "quickfix".to_string(),
         is_preferred: true,
         reference: None,
+        fix_key: None,
+        fix_all_scopes: None,
     };
     let uri: Uri = "file:///tmp/Foo.cs".parse().unwrap();
     let action = map_code_action(&item, &uri);
@@ -65,6 +67,8 @@ fn map_code_action_with_a_reference_resolves_its_import_and_carries_the_command(
         kind: "quickfix".to_string(),
         is_preferred: false,
         reference: Some(reference),
+        fix_key: None,
+        fix_all_scopes: None,
     };
     let uri: Uri = "file:///s/App/Probe.cs".parse().unwrap();
     let action = map_code_action(&item, &uri);

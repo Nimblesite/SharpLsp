@@ -146,7 +146,9 @@ internal sealed partial class CodeActionResolver
             Title: fix.Action.Title,
             Kind: QuickFix,
             IsPreferred: fix.Preferred,
-            Reference: fix.Reference
+            Reference: fix.Reference,
+            FixKey: null,
+            FixAllScopes: null
         );
     }
 }

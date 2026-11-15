@@ -29,16 +29,17 @@ internal static class SolutionLoader
 
     /// <summary>
     /// The target under <paramref name="workspacePath"/>, or the solutions competing for it,
-    /// from ONE walk of the tree. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] and
-    /// [SCRIPT-DEGRADE].
+    /// from ONE walk of the tree. A solution the walk picks does not hide the standalone
+    /// projects it met: they are reported beside it and load with it (#575). Implements
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] and [SCRIPT-DEGRADE].
     /// </summary>
     internal static Result<Discovery, string> Discover(string workspacePath)
     {
         try
         {
-            var discovery = FindExplicitOrRootMatch(workspacePath) is { } match
-                ? new Discovery(match, [])
-                : FindRecursiveMatch(workspacePath);
+            var discovery = File.Exists(workspacePath)
+                ? new Discovery(ExplicitFileTarget(workspacePath), [])
+                : FindFromWalk(workspacePath);
             return new Result<Discovery, string>.Ok<Discovery, string>(discovery);
         }
         catch (Exception ex)
@@ -69,28 +70,9 @@ internal static class SolutionLoader
         return Array.Exists(extensions, candidate => NativePaths.HasExtension(path, candidate));
     }
 
-    private static string? FindExplicitOrRootMatch(string workspacePath)
-    {
-        return File.Exists(workspacePath) ? ExplicitFileTarget(workspacePath)
-            : Directory.Exists(workspacePath) ? FindInRootDirectory(workspacePath)
-            : null;
-    }
-
     private static string? ExplicitFileTarget(string workspacePath)
     {
         return IsProjectOrSolutionFile(workspacePath) ? workspacePath : null;
-    }
-
-    private static string? FindInRootDirectory(string workspacePath)
-    {
-        var rootFiles = Directory.GetFiles(workspacePath);
-        var solutionFiles = Array.FindAll(rootFiles, IsSolution);
-        return solutionFiles.Length switch
-        {
-            1 => solutionFiles[0],
-            > 1 => PickBestSolution(solutionFiles, workspacePath),
-            _ => null,
-        };
     }
 
     private static string PickBestSolution(string[] solutionFiles, string workspacePath)
@@ -104,10 +86,14 @@ internal static class SolutionLoader
     }
 
     /// <summary>
-    /// One solution nested anywhere is the target; several compete and none is guessed, so
-    /// the caller can ask which to load; with none, all standalone projects load together.
+    /// One recursive walk of a directory. A solution sitting in the directory itself wins
+    /// (the best-named of several, as before); otherwise a sole nested solution is the
+    /// target, several compete and none is guessed, and with no solution the first
+    /// project is. Whatever it picks, every project file the walk met is reported:
+    /// a solution does not own the tree, so the standalone projects beside it load too
+    /// (#575). Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
     /// </summary>
-    private static Discovery FindRecursiveMatch(string workspacePath)
+    private static Discovery FindFromWalk(string workspacePath)
     {
         if (!Directory.Exists(workspacePath))
         {
@@ -117,11 +103,51 @@ internal static class SolutionLoader
         var found = NativePaths.WorkspaceFiles(workspacePath, ProjectOrSolutionExtensions);
         var solutionFiles = Array.FindAll(found, IsSolution);
         var projectFiles = Array.FindAll(found, path => !IsSolution(path));
-        return solutionFiles.Length switch
+        var rootSolutions = Array.FindAll(
+            solutionFiles,
+            solution => SitsInRoot(workspacePath, solution)
+        );
+        return new Discovery(
+            WalkTarget(workspacePath, rootSolutions, solutionFiles, projectFiles),
+            WalkCompeting(rootSolutions, solutionFiles)
+        )
         {
-            1 => new Discovery(solutionFiles[0], []),
-            > 1 => new Discovery(null, solutionFiles),
-            _ => new Discovery(projectFiles.FirstOrDefault(), []) { Projects = projectFiles },
+            Projects = projectFiles,
         };
+    }
+
+    /// <summary>The solution a walk opens: a root-level one named best, a sole nested
+    /// one, or — with no solution — the first project.</summary>
+    private static string? WalkTarget(
+        string workspacePath,
+        string[] rootSolutions,
+        string[] solutionFiles,
+        string[] projectFiles
+    )
+    {
+        return rootSolutions.Length > 0
+            ? PickBestSolution(rootSolutions, workspacePath)
+            : solutionFiles.Length switch
+            {
+                1 => solutionFiles[0],
+                > 1 => null,
+                _ => projectFiles.FirstOrDefault(),
+            };
+    }
+
+    /// <summary>Several nested solutions compete; a root-level solution settles the
+    /// choice, so nothing competes then.</summary>
+    private static string[] WalkCompeting(string[] rootSolutions, string[] solutionFiles)
+    {
+        return rootSolutions.Length == 0 && solutionFiles.Length > 1 ? solutionFiles : [];
+    }
+
+    /// <summary>Whether <paramref name="file"/> sits directly in <paramref name="root"/>.</summary>
+    private static bool SitsInRoot(string root, string file)
+    {
+        return NativePaths.AreEqual(
+            NativePaths.AsDirectory(NativePaths.DirectoryOf(file)),
+            NativePaths.AsDirectory(root)
+        );
     }
 }

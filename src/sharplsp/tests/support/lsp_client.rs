@@ -23,8 +23,9 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::mpsc::Receiver;
 
 use serde_json::{json, Value};
 
@@ -51,6 +52,29 @@ pub fn path_to_file_uri(path: &Path) -> String {
 
 static REQUEST_ID: AtomicI32 = AtomicI32::new(1000);
 
+/// Read one framed JSON-RPC message; `None` at end of stream.
+fn read_message(reader: &mut BufReader<std::process::ChildStdout>) -> Option<Value> {
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        let read = reader.read_line(&mut line).ok()?;
+        if read == 0 {
+            return None; // EOF
+        }
+        let trimmed = line.trim().to_string();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
+            content_length = len_str.parse().unwrap();
+        }
+    }
+    assert!(content_length > 0, "no Content-Length header");
+    let mut body = vec![0u8; content_length];
+    reader.read_exact(&mut body).expect("read message body");
+    Some(serde_json::from_slice(&body).expect("parse message body"))
+}
+
 fn next_id() -> i32 {
     REQUEST_ID.fetch_add(1, Ordering::Relaxed)
 }
@@ -66,7 +90,13 @@ pub struct Start<'a> {
 pub struct LspClient {
     child: Child,
     stdin: Option<ChildStdin>,
-    reader: BufReader<ChildStdout>,
+    /// Messages read by the reader thread; a bounded receive makes every wait
+    /// fail the test instead of hanging it (`waiting_client.rs`).
+    pub receiver: Receiver<Value>,
+    /// Notifications that arrived while a response was awaited; the bounded
+    /// notification wait consumes them so a test never loses a
+    /// `publishDiagnostics` sent mid-request.
+    pub pending: Vec<Value>,
 }
 
 impl LspClient {
@@ -107,10 +137,20 @@ impl LspClient {
             .expect("failed to spawn sharplsp");
         let stdin = child.stdin.take().expect("no stdin");
         let stdout = child.stdout.take().expect("no stdout");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let _reader = std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            while let Some(message) = read_message(&mut reader) {
+                if sender.send(message).is_err() {
+                    return;
+                }
+            }
+        });
         Self {
             child,
             stdin: Some(stdin),
-            reader: BufReader::new(stdout),
+            receiver,
+            pending: Vec::new(),
         }
     }
 
@@ -124,22 +164,9 @@ impl LspClient {
     }
 
     fn recv(&mut self) -> Value {
-        let mut content_length: usize = 0;
-        loop {
-            let mut line = String::new();
-            self.reader.read_line(&mut line).unwrap();
-            let trimmed = line.trim().to_string();
-            if trimmed.is_empty() {
-                break;
-            }
-            if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
-                content_length = len_str.parse().unwrap();
-            }
-        }
-        assert!(content_length > 0, "no Content-Length header");
-        let mut body = vec![0u8; content_length];
-        self.reader.read_exact(&mut body).unwrap();
-        serde_json::from_slice(&body).unwrap()
+        self.receiver
+            .recv()
+            .expect("sharplsp closed its stdout before answering")
     }
 
     pub fn request(&mut self, method: &str, params: Value) -> Value {
@@ -155,6 +182,7 @@ impl LspClient {
             if msg.get("id").is_some() {
                 return msg;
             }
+            self.pending.push(msg);
         }
     }
 
