@@ -44,7 +44,7 @@ pub fn extract_attr(line: &str, attr: &str) -> Option<String> {
 }
 
 /// Decode entities through the XML parser, never through source-text matching.
-fn attribute_value(
+pub(crate) fn attribute_value(
     element: &BytesStart<'_>,
     name: &str,
     decoder: Decoder,

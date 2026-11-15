@@ -95,7 +95,11 @@ pub(crate) fn resolve(
 fn validate(config: &SharpLspConfig) -> Result<()> {
     ensure!(
         !config.testing.configuration.trim().is_empty()
-            && !config.testing.configuration.chars().any(|value| value.is_control() || matches!(value, ';' | ',')),
+            && !config
+                .testing
+                .configuration
+                .chars()
+                .any(|value| value.is_control() || matches!(value, ';' | ',')),
         "testing.configuration must be a nonempty MSBuild configuration name without control characters, commas or semicolons"
     );
     for name in &config.debug.exceptions.ignore {

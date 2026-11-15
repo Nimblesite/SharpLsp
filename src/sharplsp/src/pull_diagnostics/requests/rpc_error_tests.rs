@@ -56,7 +56,11 @@ fn a_compiler_refusal_is_answered_without_a_retrigger() {
             Some(json!({"retriggerRequest": false})),
             "never asked again at once: {cause}"
         );
-        assert!(refused.message.contains(cause), "carries the compiler's cause: {}", refused.message);
+        assert!(
+            refused.message.contains(cause),
+            "carries the compiler's cause: {}",
+            refused.message
+        );
     }
 }
 

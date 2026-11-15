@@ -9,6 +9,7 @@ mod code_actions;
 mod code_lens;
 mod config;
 mod config_debug;
+mod config_nuget;
 mod configuration;
 mod configuration_live;
 mod cross_language;
@@ -254,6 +255,7 @@ fn run_server() -> Result<()> {
         [csharp_sidecar.as_ref(), fsharp_sidecar.as_ref()],
         connection.sender.clone(),
     )?;
+    nuget::vulnerability::configure(&sharplsp_config.nuget.vulnerabilities);
     pull_diagnostics::events::start(
         [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
         &runtime,

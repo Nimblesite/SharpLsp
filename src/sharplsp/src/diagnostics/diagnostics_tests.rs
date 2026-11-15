@@ -196,7 +196,7 @@ fn failed_fetch_after_revert_must_not_strand_stale_published_diagnostics() {
 
     // Edit 1: broken text — the error surfaces (repro precondition).
     request_in_background(
-        &runtime,
+        runtime.handle(),
         Arc::clone(&manager),
         sender.clone(),
         uri.clone(),
@@ -211,7 +211,7 @@ fn failed_fetch_after_revert_must_not_strand_stale_published_diagnostics() {
 
     // Edit 2: the revert — this fetch fails transiently. The pipeline must
     // keep retrying for the newest text and publish the clean result.
-    request_in_background(&runtime, manager, sender, uri, "X.fs".to_string());
+    request_in_background(runtime.handle(), manager, sender, uri, "X.fs".to_string());
     let converged = recv_publication(&receiver, std::time::Duration::from_secs(10));
     assert!(
         converged.diagnostics.is_empty(),
@@ -272,7 +272,7 @@ fn provisional_filebased_set_must_be_republished_once_restore_settles() {
     let uri: Uri = "file:///app.cs".parse().unwrap();
 
     // One didOpen — the only client event this document ever gets.
-    request_in_background(&runtime, manager, sender, uri, "App.cs".to_string());
+    request_in_background(runtime.handle(), manager, sender, uri, "App.cs".to_string());
 
     let provisional = recv_publication(&receiver, std::time::Duration::from_secs(10));
     assert!(
