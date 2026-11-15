@@ -69,6 +69,8 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       across the loaded solution graph.
 - [ ] Count inheritance, interface implementation, overrides, attributes,
       construction, invocation, and member access as uses.
+- [x] Roll member uses from outside a type up to the type (extension calls, static
+      access, generated partials); members using each other keep nothing alive (#580).
 - [ ] Suppress nested-member cascades when the containing public type is already
       reported unused.
 - [ ] Exclude generated files, `obj/`, `bin/`, metadata-only symbols, and package

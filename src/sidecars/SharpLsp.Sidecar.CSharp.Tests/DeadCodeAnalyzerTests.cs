@@ -17,6 +17,9 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
 {
     private readonly string _root = NativePaths.Temp($"sharplsp-deadcode-{Guid.NewGuid():N}");
 
+    /// <summary>Path of the fixture's only source file.</summary>
+    private string SourcePath => NativePaths.Join(_root, "Dead.cs");
+
     // A self-contained project with deliberate dead and live symbols:
     //   Helper   — called by Caller            → ALIVE
     //   Caller   — called by Run               → ALIVE
@@ -94,10 +97,16 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
         return manager;
     }
 
-    private async Task<List<DiagnosticResult>> DeadDiagnosticsAsync(WorkspaceManager manager)
+    /// <summary>
+    /// Every <c>SLSPC0101</c> diagnostic the sidecar publishes for one file — shared with
+    /// <see cref="DeadCodeAnalyzerMemberReferenceTests"/>.
+    /// </summary>
+    internal static async Task<List<DiagnosticResult>> DeadDiagnosticsAsync(
+        WorkspaceManager manager,
+        string path
+    )
     {
-        var sourcePath = NativePaths.Join(_root, "Dead.cs");
-        var result = await manager.GetDiagnosticsAsync(sourcePath).ConfigureAwait(false);
+        var result = await manager.GetDiagnosticsAsync(path).ConfigureAwait(false);
         Assert.False(result.IsError, result.Match(_ => "ok", err => err));
         var all = result.Match(value => value, _ => new List<DiagnosticResult>());
         return [.. all.Where(d => d.Code == DeadCodeAnalyzer.DiagnosticCode)];
@@ -113,7 +122,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
     {
         using var manager = await LoadAsync();
         // Analyzer defaults off until the host configures it.
-        var dead = await DeadDiagnosticsAsync(manager);
+        var dead = await DeadDiagnosticsAsync(manager, SourcePath);
         Assert.Empty(dead);
     }
 
@@ -122,7 +131,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
     {
         using var manager = await LoadAsync();
         manager.ConfigureAnalyzers(deadCode: true, monorepo: false);
-        var dead = await DeadDiagnosticsAsync(manager);
+        var dead = await DeadDiagnosticsAsync(manager, SourcePath);
 
         var hidden = ByName(dead, "Hidden");
         Assert.NotNull(hidden);
@@ -146,7 +155,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
     {
         using var manager = await LoadAsync();
         manager.ConfigureAnalyzers(deadCode: true, monorepo: true);
-        var dead = await DeadDiagnosticsAsync(manager);
+        var dead = await DeadDiagnosticsAsync(manager, SourcePath);
 
         var orphan = ByName(dead, "Orphan");
         Assert.NotNull(orphan);
@@ -175,7 +184,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
     {
         using var manager = await LoadAsync();
         manager.ConfigureAnalyzers(deadCode: true, monorepo: true);
-        var dead = await DeadDiagnosticsAsync(manager);
+        var dead = await DeadDiagnosticsAsync(manager, SourcePath);
 
         // Referenced symbols are alive.
         Assert.Null(ByName(dead, "Helper"));
@@ -192,7 +201,170 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
     {
         using var manager = await LoadAsync();
         manager.ConfigureAnalyzers(deadCode: false, monorepo: true);
-        var dead = await DeadDiagnosticsAsync(manager);
+        var dead = await DeadDiagnosticsAsync(manager, SourcePath);
         Assert.Empty(dead);
+    }
+}
+
+/// <summary>
+/// A type whose members are used is referenced, even though no call site ever names
+/// the type: extension-method calls (<c>logger.Foo()</c>), static member access,
+/// and members implemented by source-generated partials (<c>[LoggerMessage]</c>)
+/// bind to the member symbol only ([ANALYZERS-REFERENCE-MODEL]: member access counts
+/// as a use). A type-name-only search flags such live static classes as dead — issue
+/// #580. Proven on a real project restored against the real
+/// <c>Microsoft.Extensions.Logging</c> package, so the LoggerMessage source generator
+/// really runs and really supplies the other half of the partial method.
+/// </summary>
+public sealed class DeadCodeAnalyzerMemberReferenceTests : IDisposable
+{
+    private const string Csproj = """
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup>
+            <TargetFramework>net10.0</TargetFramework>
+            <OutputType>Library</OutputType>
+          </PropertyGroup>
+          <ItemGroup>
+            <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+          </ItemGroup>
+        </Project>
+        """;
+
+    // The issue-#580 repro: extension method declared only via [LoggerMessage], whose
+    // implementation lives in generated code, called only through extension syntax.
+    private const string LogSource = """
+        using Microsoft.Extensions.Logging;
+
+        namespace ExtDemo;
+
+        internal static partial class Log
+        {
+            [LoggerMessage(LogLevel.Information, "Revalidated {Name}.")]
+            public static partial void Revalidated(this ILogger logger, string name);
+        }
+        """;
+
+    // Extension-only static class: alive solely through "abc".CountVowels().
+    private const string ExtensionsSource = """
+        namespace ExtDemo;
+
+        internal static class StringExtensions
+        {
+            internal static int CountVowels(this string text) => text.Length;
+        }
+        """;
+
+    // Referenced only through its nested type and its const — never instantiated.
+    private const string ConfigSource = """
+        namespace ExtDemo;
+
+        internal class ConfigHolder
+        {
+            internal const int Limit = 4;
+
+            internal sealed class Inner
+            {
+                public int Value = 1;
+            }
+        }
+        """;
+
+    // The control: genuinely dead, so the member roll-up must not silence it — not even
+    // when its own members use each other, which is no use from outside the type.
+    private const string AbandonedSource = """
+        namespace ExtDemo;
+
+        internal static class Abandoned
+        {
+            internal static int Nope() => 0;
+
+            internal static int Twin() => Limit;
+
+            private const int Limit = 1;
+        }
+        """;
+
+    private const string ConsumerSource = """
+        using Microsoft.Extensions.Logging;
+
+        namespace ExtDemo;
+
+        public sealed class Consumer(ILogger<Consumer> logger)
+        {
+            public void Run()
+            {
+                logger.Revalidated("x");
+                _ = "abc".CountVowels();
+                _ = ConfigHolder.Limit;
+                _ = new ConfigHolder.Inner().Value;
+            }
+        }
+        """;
+
+    private readonly ProjectlessWorkspaceFixture _files = new("deadcode-members");
+    private readonly string _csprojPath;
+    private readonly string _logPath;
+    private readonly string _extensionsPath;
+    private readonly string _configPath;
+    private readonly string _abandonedPath;
+
+    public DeadCodeAnalyzerMemberReferenceTests()
+    {
+        _csprojPath = _files.Write("Ext.csproj", Csproj);
+        _logPath = _files.Write("Log.cs", LogSource);
+        _extensionsPath = _files.Write("StringExtensions.cs", ExtensionsSource);
+        _configPath = _files.Write("ConfigHolder.cs", ConfigSource);
+        _abandonedPath = _files.Write("Abandoned.cs", AbandonedSource);
+        _ = _files.Write("Consumer.cs", ConsumerSource);
+        var (exitCode, output) = DotnetBuild.Restore(_csprojPath);
+        Assert.True(exitCode == 0, $"dotnet restore must succeed: {output}");
+    }
+
+    public void Dispose()
+    {
+        _files.Dispose();
+    }
+
+    private static string Messages(List<DiagnosticResult> diagnostics)
+    {
+        return string.Join("; ", diagnostics.Select(diagnostic => diagnostic.Message));
+    }
+
+    [Fact]
+    public async Task Types_referenced_only_through_members_are_not_flagged()
+    {
+        using var manager = new WorkspaceManager();
+        Assert.False((await ProjectlessWorkspaceFixture.OpenAsync(manager, _csprojPath)).IsError);
+        manager.ConfigureAnalyzers(deadCode: true, monorepo: false);
+
+        // Extension-only static class: "abc".CountVowels() never names StringExtensions.
+        var extensions = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _extensionsPath);
+        Assert.True(extensions.Count == 0, Messages(extensions));
+
+        // [LoggerMessage] static partial class: logger.Revalidated("x") binds to
+        // Log.Revalidated, and the generated partial must roll up to the same type.
+        var log = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _logPath);
+        Assert.True(log.Count == 0, Messages(log));
+
+        // Nested type and const references keep the containing class alive.
+        var config = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _configPath);
+        Assert.True(config.Count == 0, Messages(config));
+    }
+
+    [Fact]
+    public async Task A_truly_unreferenced_internal_type_is_still_flagged()
+    {
+        using var manager = new WorkspaceManager();
+        Assert.False((await ProjectlessWorkspaceFixture.OpenAsync(manager, _csprojPath)).IsError);
+        manager.ConfigureAnalyzers(deadCode: true, monorepo: false);
+
+        var dead = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _abandonedPath);
+        var type = dead.Find(d => d.Message.Contains("'Abandoned'"));
+        Assert.NotNull(type);
+        Assert.Equal("Warning", type!.Severity);
+        Assert.Equal("SLSPC0101", type.Code);
+        // The member roll-up must not silence the dead member inside it either.
+        Assert.Contains(dead, d => d.Message.Contains("'Nope'"));
+        Assert.Contains(dead, d => d.Message.Contains("'Twin'"));
     }
 }

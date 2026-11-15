@@ -19,6 +19,8 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 ///   * Protected members are skipped (an external subclass may override them).
 ///
 /// Reference identity comes from <see cref="SymbolFinder"/>, never string matching.
+/// A type is referenced when it or any of its members is referenced — member uses
+/// (extension calls, static access, generated partials) never name the type.
 /// </summary>
 internal static class DeadCodeAnalyzer
 {
@@ -184,14 +186,63 @@ internal static class DeadCodeAnalyzer
     {
         try
         {
-            var refs = await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false);
-            return refs.Any(r => r.Locations.Any());
+            return await SymbolReferencedAsync(symbol, scope, ct).ConfigureAwait(false)
+                || (
+                    symbol is INamedTypeSymbol type
+                    && await MembersReferencedAsync(type, scope, ct).ConfigureAwait(false)
+                );
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
             // On any analysis failure, prefer silence (do not flag as dead).
             return true;
         }
+    }
+
+    private static async Task<bool> SymbolReferencedAsync(
+        ISymbol symbol,
+        SearchScope scope,
+        CancellationToken ct
+    )
+    {
+        var refs = await scope.FindReferencesAsync(symbol, ct).ConfigureAwait(false);
+        return refs.Any(r => r.Locations.Any());
+    }
+
+    /// <summary>
+    /// Whether any member of <paramref name="type"/> is referenced anywhere in scope
+    /// — including nested types and consts. Extension-method calls (<c>logger.Foo()</c>),
+    /// static member access, and members implemented by source-generated partials
+    /// (<c>[LoggerMessage]</c>) bind to the member symbol without ever naming the
+    /// containing type, so the type itself must roll member references up (issue #580,
+    /// [ANALYZERS-REFERENCE-MODEL]: member access counts as a use). Only a use from
+    /// outside the type's own declarations counts: members calling each other inside a
+    /// dead type keep nothing alive.
+    /// </summary>
+    private static async Task<bool> MembersReferencedAsync(
+        INamedTypeSymbol type,
+        SearchScope scope,
+        CancellationToken ct
+    )
+    {
+        foreach (var member in type.GetMembers())
+        {
+            var refs = await scope.FindReferencesAsync(member, ct).ConfigureAwait(false);
+            if (refs.SelectMany(r => r.Locations).Any(use => !Declares(type, use.Location)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Whether <paramref name="location"/> lies inside a declaration of <paramref name="type"/>.</summary>
+    private static bool Declares(INamedTypeSymbol type, Location location)
+    {
+        return type.DeclaringSyntaxReferences.Any(declaration =>
+            declaration.SyntaxTree == location.SourceTree
+            && declaration.Span.Contains(location.SourceSpan)
+        );
     }
 
     private static Location IdentifierLocation(SyntaxNode node)
