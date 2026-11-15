@@ -174,7 +174,7 @@ internal sealed partial class CodeActionResolver
 
     /// <summary>
     /// Feeds a <see cref="FixAllContext"/> from the sidecar's own analyzer
-    /// pipeline: every style diagnostic of a document a fix is listed for, filtered to
+    /// pipeline: every compiler and style diagnostic of a document a fix is listed for, filtered to
     /// the provider's fixable ids. Project-level diagnostics — those with no
     /// source location — do not exist for style fixes and answer empty.
     /// [FIXALL-SCOPES]
@@ -201,7 +201,11 @@ internal sealed partial class CodeActionResolver
             var diagnostics = await AnalyzerDiagnosticResolver
                 .ResolveAsync(document, model, root.FullSpan, analyzers, ct)
                 .ConfigureAwait(false);
-            return diagnostics.Where(diagnostic => fixableIds.Contains(diagnostic.Id));
+            // Compiler diagnostics (CS0219 and kin) list fixes too, so they feed it as well.
+            return model
+                .GetDiagnostics(cancellationToken: ct)
+                .Concat(diagnostics)
+                .Where(diagnostic => fixableIds.Contains(diagnostic.Id));
         }
 
         /// <summary>Every fixable diagnostic of every document in the project.</summary>

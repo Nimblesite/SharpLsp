@@ -244,6 +244,33 @@ public sealed class CodeFixAllTests : IDisposable
         Assert.Equal([legacyPath], FilesOf(project));
     }
 
+    /// <summary>
+    /// A compiler diagnostic's fix-all resolves too: CS0219 (Inventory's unused
+    /// <c>label</c>) comes from the compiler, not an analyzer, and its listed
+    /// fix-all must find it. [FIXALL-SCOPES] [REFACTOR-NEVER-SILENT]
+    /// </summary>
+    [Fact]
+    public async Task A_listed_fix_all_for_a_compiler_diagnostic_resolves()
+    {
+        using var manager = await OpenAsync();
+        var listed = await manager.GetCodeActionsAsync(_inventoryPath, 7, 15, 7, 20);
+        var actions = listed.Match(value => value, _ => []);
+        var offered = actions.FirstOrDefault(action =>
+            action.Title.Contains("unused variable", StringComparison.OrdinalIgnoreCase)
+            && action.FixKey is not null
+        );
+        Assert.True(
+            offered is not null,
+            string.Join(" | ", actions.Select(action => $"{action.Title}#{action.FixKey}"))
+        );
+
+        var document = Unwrap(
+            await manager.FixAllAsync(_inventoryPath, offered!.FixKey!, "document")
+        );
+        Assert.Equal([_inventoryPath], FilesOf(document));
+        Assert.True(EditsIn(document, _inventoryPath) >= 1);
+    }
+
     [Fact]
     public async Task A_fix_key_never_offered_answers_the_stale_reason()
     {
