@@ -109,6 +109,7 @@
     <Compile Include="FSharpConversionFixes.fs" />
     <Compile Include="FSharpDeadCodeFixes.fs" />
     <Compile Include="FSharpCodeFixes.fs" />
+    <Compile Include="FSharpFixAll.fs" />
     <Compile Include="FSharpCompletion.fs" />
     <Compile Include="FSharpRenameAliases.fs" />
     <Compile Include="FSharpRenameIndexers.fs" />

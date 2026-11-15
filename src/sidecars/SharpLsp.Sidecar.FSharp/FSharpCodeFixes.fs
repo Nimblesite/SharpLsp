@@ -21,7 +21,39 @@ type CodeActionItem =
       Kind: string
       IsPreferred: bool
       /// The reference added before resolve; null for a plain edit. [REFACTOR-IMPORT-REFERENCE]
-      Reference: ReferenceImport | null }
+      Reference: ReferenceImport | null
+      /// The fix's stable batch identity ([FIXALL-SCOPES], GitHub #577); null
+      /// when the fix runs only on its one occurrence.
+      FixKey: string | null
+      /// The scopes ("document", "project", "solution") the fix batch-runs
+      /// at; null with FixKey. [FIXALL-SCOPES]
+      FixAllScopes: string list | null }
+
+/// The stable fix-all identities of the batch-capable F# fixes — one per row
+/// of [FIXALL-RULES-TABLE], data the host's `Fix all: …` menu reads.
+module FixAllKeys =
+    /// Remove unused open — SLSPF0102. [FIXALL-RULES-TABLE]
+    [<Literal>]
+    let RemoveUnusedOpen = "SLSPF0102"
+
+    /// Simplify name — SLSPF0103. [FIXALL-RULES-TABLE]
+    [<Literal>]
+    let SimplifyName = "SLSPF0103"
+
+    /// Remove unused declaration — SLSPF0101. [FIXALL-RULES-TABLE]
+    [<Literal>]
+    let RemoveUnusedDeclaration = "SLSPF0101"
+
+    /// Prefix unused value with `_` — FS1182. [FIXALL-RULES-TABLE]
+    [<Literal>]
+    let PrefixUnusedValue = "FS1182"
+
+    /// Add `new` for IDisposable — FS0760. [FIXALL-RULES-TABLE]
+    [<Literal>]
+    let AddNewForDisposable = "FS0760"
+
+    /// Every batch-capable fix runs at these three scopes. [FIXALL-SCOPES]
+    let scopes: string list = [ "document"; "project"; "solution" ]
 
 [<NoComparison; NoEquality>]
 type TextEdit =
@@ -56,6 +88,14 @@ let createState () : CodeFixState =
 let private nextId (state: CodeFixState) =
     Interlocked.Increment(&state.NextId)
 
+/// The wire-shaped edit of one raw edit (0-based LSP coordinates).
+let ofRawEdit (e: FSharpCodeActions.RawEdit) : TextEdit =
+    { StartLine = e.StartLine
+      StartCharacter = e.StartCharacter
+      EndLine = e.EndLine
+      EndCharacter = e.EndCharacter
+      NewText = e.NewText }
+
 /// Cache a workspace edit and return a CodeActionItem.
 let private cacheAction
     (state: CodeFixState)
@@ -70,7 +110,16 @@ let private cacheAction
       Title = title
       Kind = kind
       IsPreferred = isPreferred
-      Reference = null }
+      Reference = null
+      FixKey = null
+      FixAllScopes = null }
+
+/// One offered action stamped with its fix's batch identity and scopes, so the
+/// host can offer `Fix all: …` for it. [FIXALL-SCOPES] (GitHub #577)
+let private asFixAll (fixKey: string) (item: CodeActionItem) : CodeActionItem =
+    { item with
+        FixKey = fixKey
+        FixAllScopes = FixAllKeys.scopes }
 
 /// Check if a diagnostic's range overlaps with the requested range.
 let private overlapsRange
@@ -88,20 +137,14 @@ let private wrapGeneratedAction
         { DocumentChanges =
             action.Edits
             |> List.groupBy (fun e -> e.FilePath)
-            |> List.map (fun (fp, edits) ->
-                { FilePath = fp
-                  Edits =
-                    edits
-                    |> List.map (fun e ->
-                        { StartLine = e.StartLine
-                          StartCharacter = e.StartCharacter
-                          EndLine = e.EndLine
-                          EndCharacter = e.EndCharacter
-                          NewText = e.NewText }) }) }
+            |> List.map (fun (fp, edits) -> { FilePath = fp; Edits = edits |> List.map ofRawEdit }) }
     cacheAction state action.Title action.Kind action.IsPreferred edit
 
-let private wrapImportAction state (action, reference) =
-    { wrapGeneratedAction state action with Reference = reference }
+let private wrapImportAction fixKey state (action, reference) =
+    { wrapGeneratedAction state action with
+        Reference = reference
+        FixKey = fixKey |> Option.toObj
+        FixAllScopes = match fixKey with Some _ -> FixAllKeys.scopes | None -> null }
 
 /// Collect type-informed code actions (union stubs, record stubs).
 let private collectTypeInformedActions
@@ -139,7 +182,8 @@ let private simplifyNameActions filePath (names: (range * string) list) startLin
 
 /// Collect analyzer-driven fixes (unused-open removal, name simplification) from
 /// the shared [FSharpLocalAnalysis] findings, so the always-on diagnostic hints
-/// and these fixes are always computed from the same FCS results.
+/// and these fixes are always computed from the same FCS results. Each carries
+/// its batch identity for the host's fix-all menu. [FIXALL-SCOPES]
 let private collectAnalyzerActions
     (state: CodeFixState)
     (filePath: string)
@@ -151,10 +195,15 @@ let private collectAnalyzerActions
     async {
         let! findings = FSharpLocalAnalysis.getFileAnalyzerFindings checkResults source
 
-        return
+        let unusedOpens =
             removeUnusedOpenActions filePath findings.UnusedOpens startLine endLine
-            @ simplifyNameActions filePath findings.SimplifiableNames startLine endLine
-            |> List.map (wrapGeneratedAction state)
+            |> List.map (wrapGeneratedAction state >> asFixAll FixAllKeys.RemoveUnusedOpen)
+
+        let simplified =
+            simplifyNameActions filePath findings.SimplifiableNames startLine endLine
+            |> List.map (wrapGeneratedAction state >> asFixAll FixAllKeys.SimplifyName)
+
+        return unusedOpens @ simplified
     }
 
 /// The diagnostics on the requested lines.
@@ -209,14 +258,23 @@ let private tryFixesFor workspace parseResults checkResults source filePath diag
             return []
     }
 
-let rec private collectDiagnosticActions workspace filePath source parseResults checkResults diagnostics =
+/// The batch identity a diagnostic's quick fix carries, when it has one.
+/// [FIXALL-SCOPES]
+let private fixKeyOf (number: int) : string option =
+    match number with
+    | 760 -> Some FixAllKeys.AddNewForDisposable
+    | 1182 -> Some FixAllKeys.PrefixUnusedValue
+    | _ -> None
+
+let rec private collectDiagnosticActions workspace filePath source parseResults checkResults (diagnostics: FSharpDiagnostic list) =
     task {
         match diagnostics with
         | [] -> return []
         | diagnostic :: rest ->
+            let key = fixKeyOf diagnostic.ErrorNumber
             let! current = tryFixesFor workspace parseResults checkResults source filePath diagnostic
             let! remaining = collectDiagnosticActions workspace filePath source parseResults checkResults rest
-            return current @ remaining
+            return (current |> List.map (fun pair -> (pair, key))) @ remaining
     }
 
 /// The quick fixes of the diagnostics on the requested lines, each offered once: FCS
@@ -224,7 +282,7 @@ let rec private collectDiagnosticActions workspace filePath source parseResults 
 let private diagnosticActions state workspace filePath source parseResults checkResults diagnostics =
     task {
         let! actions = collectDiagnosticActions workspace filePath source parseResults checkResults diagnostics
-        return actions |> List.distinct |> List.map (wrapImportAction state)
+        return actions |> List.distinct |> List.map (fun ((action, reference), key) -> wrapImportAction key state (action, reference))
     }
 
 let private interfaceActions
@@ -253,7 +311,7 @@ let private deadCodeActions state workspace analyzers filePath parseResults chec
             return
                 dead
                 |> List.choose (FSharpDeadCodeFixes.removal checkResults source filePath candidates)
-                |> List.map (wrapGeneratedAction state)
+                |> List.map (wrapGeneratedAction state >> asFixAll FixAllKeys.RemoveUnusedDeclaration)
     }
 
 let private collectCodeActions

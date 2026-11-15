@@ -60,6 +60,7 @@
     <Compile Include="FSharpWildcardCompileTests.fs" />
     <Compile Include="FSharpHoverDocsTests.fs" />
     <Compile Include="FSharpInlayHintTests.fs" />
+    <Compile Include="FSharpFixAllTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
