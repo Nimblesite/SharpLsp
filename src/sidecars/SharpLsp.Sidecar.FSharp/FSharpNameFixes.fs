@@ -180,6 +180,10 @@ let private qualifyAction filePath (r: range) name fullName =
     let title = $"Change '{name}' to '{fullName}' — qualifies this one use; no open added"
     FSharpQuickFix.replace title false filePath r fullName
 
+/// The namespace-`open` rows of `candidates`, each anchored at `r`'s line.
+let private openActions parseResults line filePath (r: range) candidates =
+    namespaceNames candidates |> List.map (openAction parseResults line filePath r)
+
 let private hasMember rights name (entity: FSharpEntity) =
     entity.MembersFunctionsAndValues
     |> Seq.exists (fun m ->
@@ -192,7 +196,8 @@ let private hasNested rights name (entity: FSharpEntity) =
 let private accessibleType rights (entity: FSharpEntity) =
     not entity.IsNamespace && not entity.IsFSharpModule && entity.IsAccessible(rights)
 
-let private staticTypes (checkResults: FSharpCheckFileResults) name =
+/// The full names of every accessible type with a static member or nested type `name`.
+let private typesWith (checkResults: FSharpCheckFileResults) name =
     let rights = checkResults.ProjectContext.AccessibilityRights
     FSharpEntityIndex.types checkResults
     |> List.filter (fun entity ->
@@ -200,7 +205,9 @@ let private staticTypes (checkResults: FSharpCheckFileResults) name =
     |> List.choose (fun entity -> entity.TryFullName)
     |> List.distinct
     |> List.sort
-    |> List.truncate MAX_SUGGESTIONS
+
+let private staticTypes checkResults name =
+    typesWith checkResults name |> List.truncate MAX_SUGGESTIONS
 
 let private supportsOpenType (checkResults: FSharpCheckFileResults) =
     checkResults.ProjectContext.ProjectOptions.OtherOptions
@@ -220,6 +227,52 @@ let private staticActions parseResults checkResults line filePath (r: range) nam
             let title = $"Add 'open type {fullName}' — imports the static members and nested types of {fullName}"
             FSharpQuickFix.insertLine title filePath at $"open type {fullName}")
 
+// ── FS0039 on a member of an unopened type ──────────────────────
+
+/// The qualifier of the long identifier whose final ident `r` covers (`Task` for
+/// `Task.Delay`), with that whole identifier's range: SDK 10.0.404+ reports an
+/// unopened type's FS0039 on the member rather than on the type itself.
+/// [REFACTOR-IMPORT-FSHARP]
+let private unopenedTypeOfMemberUse (parseResults: FSharpParseFileResults) (r: range) =
+    let visitor =
+        { new SyntaxVisitorBase<range * Ident>() with
+            member _.VisitExpr(_, _, defaultTraverse, expr) =
+                match expr with
+                | SynExpr.LongIdent(longDotId = dotted) ->
+                    let idents = dotted.LongIdent
+                    let memberIdent = List.tryLast idents
+                    match memberIdent with
+                    | Some memberIdent when
+                        idents.Length > 1
+                        && Range.rangeContainsPos memberIdent.idRange r.Start
+                        && Range.rangeContainsPos memberIdent.idRange r.End ->
+                        Some(dotted.Range, List.head idents)
+                    | _ -> defaultTraverse expr
+                | _ -> defaultTraverse expr }
+
+    SyntaxTraversal.Traverse(r.Start, parseResults.ParseTree, visitor)
+
+/// The import rows of a member whose qualifier names, in an unopened namespace, a type
+/// that has that member: the `open` both FS0039 shapes of `Task.Delay` offer — on the
+/// type (SDK 10.0.403) or on the member `Delay` (10.0.404+, whose FSharp.Core binds
+/// `Task` to its own auto-opened module) — plus the whole identifier's qualification.
+/// A qualifier with no such type (a misspelt member) offers nothing here.
+/// [REFACTOR-IMPORT-FSHARP]
+let private qualifierImports workspace parseResults (checkResults: FSharpCheckFileResults) line filePath (r: range) name =
+    unopenedTypeOfMemberUse parseResults r
+    |> Option.bind (fun (whole, qualifier) ->
+        let owners = typesWith checkResults name |> Set.ofList
+        let entities = FSharpEntityIndex.entities workspace checkResults ()
+        candidatesFor parseResults entities r qualifier.idText
+        |> List.filter (fun (_, idents) -> owners.Contains(String.concat "." idents))
+        |> function
+            | [] -> None
+            | candidates ->
+                (openActions parseResults line filePath r candidates)
+                @ (qualifiedNames candidates
+                   |> List.map (fun owner -> qualifyAction filePath whole $"{qualifier.idText}.{name}" $"{owner}.{name}"))
+                |> Some)
+
 /// Every in-reach FS0039 import: namespace opens, full qualification, and
 /// `open type` for accessible static members or nested types.
 /// [REFACTOR-IMPORT-FSHARP]
@@ -228,10 +281,14 @@ let imports workspace parseResults (checkResults: FSharpCheckFileResults) source
     match flaggedText line r with
     | None -> []
     | Some name ->
-        let candidates = candidatesFor parseResults (FSharpEntityIndex.entities workspace checkResults ()) r name
-        (namespaceNames candidates |> List.map (openAction parseResults line filePath r))
-        @ (qualifiedNames candidates |> List.map (qualifyAction filePath r name))
-        @ staticActions parseResults checkResults line filePath r name
+        let statics = staticActions parseResults checkResults line filePath r name
+        match qualifierImports workspace parseResults checkResults line filePath r name with
+        | Some actions -> actions @ statics
+        | None ->
+            let candidates = candidatesFor parseResults (FSharpEntityIndex.entities workspace checkResults ()) r name
+            (openActions parseResults line filePath r candidates)
+            @ (qualifiedNames candidates |> List.map (qualifyAction filePath r name))
+            @ statics
 
 // ── FS1182: mark the unused value ───────────────────────────────
 

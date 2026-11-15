@@ -617,6 +617,16 @@ Roslyn's `AddImport` and `FullyQualify` fixes stay the engine for the namespace 
 
 F# gets every row C# gets except the alias row. The namespace row is `Add 'open N'`. It is placed where FCS's `FindNearestPointToInsertOpenDeclaration` puts it ([ANALYZERS-FSAC-CODEFIX-COMPILER]). The fully qualified row replaces the diagnostic's range with the entity's full name, as written in code (backticks kept). It is offered for every entity the namespace row would open, and also for an entity in an `[<AutoOpen>]` or `[<RequireQualifiedAccess>]` module that FCS's insertion context reaches. The static row (`open type N.C`) is offered for each accessible .NET or F# type that declares a static member or nested type named `T`, up to three, when the file's language version supports `open type` (F# 5+).
 
+An FS0039 can land on either side of a dotted use. On .NET SDK 10.0.403 it lands on the unresolved name (`Task` in `Task.Delay(1)`). From SDK 10.0.404, FSharp.Core auto-opens a `Task` module, so `Task` binds to that module and the error lands on the member (`Delay`).
+
+The member shape is re-anchored on its qualifier:
+
+1. Walk the untyped syntax tree to the long identifier the diagnostic range sits in (`Task.Delay`).
+2. Compute the rows above for its first identifier, keeping only types in an unopened namespace that have an accessible static member or nested type named like the flagged member (`System.Threading.Tasks.Task` has `Delay`).
+3. Offer the result. The `open` goes to the same position as in the type shape. The fully qualified row replaces the whole long identifier (`Task.Delay` → `System.Threading.Tasks.Task.Delay`).
+
+A misspelled member of a type already in scope (`Console.ReadLnie` with `open System`) is a typo, not a missing namespace. No unopened type declares that member, so no import row is offered for it.
+
 #### [REFACTOR-IMPORT-REFERENCE] Names from Outside the Project's References
 
 When the name is declared somewhere the file's project cannot reach yet, the fix adds the reference and the import together:
