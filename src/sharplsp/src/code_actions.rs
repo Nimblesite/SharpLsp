@@ -46,20 +46,8 @@ pub fn handle_code_action(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    // `MSBuild` documents never reach the sidecar: their actions are the
-    // host's vulnerable-package update fixes. [PKG-VULN-FIX]
-    if let Ok(params) = serde_json::from_value::<CodeActionParams>(req.params.clone()) {
-        if let Ok(path) = crate::paths::uri_to_path(params.text_document.uri.as_str()) {
-            if crate::nuget::vulnerability::owns_document(&path)
-                || crate::nuget::vulnerability::appends_to_sidecar(&path)
-            {
-                let actions = runtime.block_on(crate::nuget::vulnerability::fix_actions(
-                    &path,
-                    params.range,
-                ));
-                return Ok(serde_json::to_value(actions)?);
-            }
-        }
+    if let Some(actions) = crate::nuget::vulnerability::msbuild_actions(runtime, &req.params) {
+        return Ok(serde_json::to_value(actions)?);
     }
     with_sidecar(req, sidecar, |sidecar, params: CodeActionParams| {
         let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
@@ -100,6 +88,10 @@ pub fn handle_code_action_resolve(
 ) -> Result<serde_json::Value> {
     let request_id = req.id;
     let action: CodeAction = serde_json::from_value(req.params)?;
+    // The vulnerable-package update applies through its command. [PKG-VULN-FIX]
+    if crate::nuget::vulnerability::command::is_update_action(&action) {
+        return Ok(serde_json::to_value(action)?);
+    }
     let Some(sidecar) = sidecar else {
         return Err(refused(&request_id, None, service_not_running(&action)));
     };

@@ -370,6 +370,10 @@ fn handle_custom_request(
         "workspace/executeCommand" if import_command::is_import_command(&req) => {
             import_command::handle(&req, runtime, connection.sender.clone(), csharp_sidecar)
         }
+        // The vulnerable-package update quick fix ([PKG-VULN-FIX])
+        "workspace/executeCommand" if nuget::vulnerability::command::is_update_command(&req) => {
+            nuget::vulnerability::command::handle(&req, runtime, connection.sender.clone(), engines)
+        }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
         "sharplsp/project/addCompileItem" => {
             project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
