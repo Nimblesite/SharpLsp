@@ -34,11 +34,20 @@ pub(super) trait WaitingClient {
         keep: impl Fn(&Value) -> bool,
     ) -> Value;
 
+    /// Drop every buffered `method` notification: they predate whatever the
+    /// caller waits for next, so only later ones can answer it.
+    fn discard_buffered(&mut self, method: &str);
+
     /// Open a document with its current on-disk text.
     fn open_document(&mut self, path: &Path, language_id: &str);
 }
 
 impl WaitingClient for LspClient {
+    fn discard_buffered(&mut self, method: &str) {
+        self.pending
+            .retain(|msg| msg.get("method").and_then(Value::as_str) != Some(method));
+    }
+
     fn notification(
         &mut self,
         method: &str,
