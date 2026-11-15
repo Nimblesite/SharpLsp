@@ -411,13 +411,20 @@ fn fix_all_actions(item: &SidecarCodeActionItem, doc_uri: &Uri) -> Vec<CodeActio
         .collect()
 }
 
+/// The next fix-all action's `data.id`: every listed action carries a unique,
+/// fresh, positive id, and the host mints these far above the sidecars' own
+/// counters, which start at 1. Resolve reads `fixAll` first, never this id.
+static NEXT_FIX_ALL_ID: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(1 << 30);
+
 /// One `Fix all in <scope>: <title>` action. [FIXALL-LSP]
 fn fix_all_action(item: &SidecarCodeActionItem, scope: &str, doc_uri: &Uri) -> CodeAction {
+    let id = NEXT_FIX_ALL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     CodeAction {
         title: format!("Fix all in {scope}: {}", item.title),
         kind: Some(map_action_kind(&item.kind)),
         is_preferred: Some(false),
         data: Some(serde_json::json!({
+            "id": id,
             "fixAll": {
                 "fixKey": item.fix_key,
                 "scope": scope,

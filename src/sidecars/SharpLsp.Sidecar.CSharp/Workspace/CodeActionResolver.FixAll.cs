@@ -174,7 +174,7 @@ internal sealed partial class CodeActionResolver
 
     /// <summary>
     /// Feeds a <see cref="FixAllContext"/> from the sidecar's own analyzer
-    /// pipeline: every reportable style diagnostic of a document, filtered to
+    /// pipeline: every style diagnostic of a document a fix is listed for, filtered to
     /// the provider's fixable ids. Project-level diagnostics — those with no
     /// source location — do not exist for style fixes and answer empty.
     /// [FIXALL-SCOPES]
@@ -194,8 +194,12 @@ internal sealed partial class CodeActionResolver
             {
                 return [];
             }
+            // The listing's own query over the whole file, not the report's: a fix
+            // offered for a default-hidden style rule (IDE0161 with no severity) must
+            // find that same occurrence, or the offered fix-all fixes nothing.
+            var root = await model.SyntaxTree.GetRootAsync(ct).ConfigureAwait(false);
             var diagnostics = await AnalyzerDiagnosticResolver
-                .ResolveDocumentAsync(document, model, analyzers, ct)
+                .ResolveAsync(document, model, root.FullSpan, analyzers, ct)
                 .ConfigureAwait(false);
             return diagnostics.Where(diagnostic => fixableIds.Contains(diagnostic.Id));
         }

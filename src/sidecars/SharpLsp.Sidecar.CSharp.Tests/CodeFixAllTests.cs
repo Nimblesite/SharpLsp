@@ -65,6 +65,16 @@ public sealed class CodeFixAllTests : IDisposable
         }
         """;
 
+    /// <summary>A block namespace: the preferred style names no severity, so IDE0161
+    /// stays at its default hidden severity, yet
+    /// its fix — and that fix's fix-all — is listed at the namespace.</summary>
+    private const string Legacy = """
+        namespace FixAll.Legacy
+        {
+            public static class Ledger { }
+        }
+        """;
+
     private readonly string _root = NativePaths.Temp($"sharplsp-fixall-{Guid.NewGuid():N}");
     private readonly string _slnPath;
     private readonly string _inventoryPath;
@@ -82,6 +92,7 @@ public sealed class CodeFixAllTests : IDisposable
             csharp_style_var_for_built_in_types = true:warning
             csharp_style_var_when_type_is_apparent = true:warning
             csharp_style_var_elsewhere = true:warning
+            csharp_style_namespace_declarations = file_scoped
             """;
         File.WriteAllText(NativePaths.Join(_root, ".editorconfig"), editorConfig);
         const string csproj = """
@@ -120,6 +131,7 @@ public sealed class CodeFixAllTests : IDisposable
         File.WriteAllText(NativePaths.Join(_root, "Core", "Inventory.cs"), Inventory);
         File.WriteAllText(NativePaths.Join(_root, "Core", "Warehouse.cs"), Warehouse);
         File.WriteAllText(NativePaths.Join(_root, "Billing", "Invoice.cs"), Invoice);
+        File.WriteAllText(NativePaths.Join(_root, "Core", "Legacy.cs"), Legacy);
         _slnPath = NativePaths.Join(_root, "FixAll.sln");
         _inventoryPath = NativePaths.Join(_root, "Core", "Inventory.cs");
         WriteSolution();
@@ -198,6 +210,38 @@ public sealed class CodeFixAllTests : IDisposable
         // The scopes nest: document < project < solution.
         Assert.True(document.DocumentChanges.Count < project.DocumentChanges.Count);
         Assert.True(project.DocumentChanges.Count < solution.DocumentChanges.Count);
+    }
+
+    /// <summary>
+    /// A fix-all is offered only when it can resolve: the default-hidden
+    /// IDE0161 fix is listed at a block namespace, so its fix-all finds that same
+    /// occurrence — never "no occurrences" for the site that offered it.
+    /// [FIXALL-SCOPES] [REFACTOR-NEVER-SILENT]
+    /// </summary>
+    [Fact]
+    public async Task A_listed_fix_all_for_a_default_hidden_style_rule_resolves()
+    {
+        using var manager = await OpenAsync();
+        var legacyPath = NativePaths.Join(_root, "Core", "Legacy.cs");
+        var listed = await manager.GetCodeActionsAsync(legacyPath, 0, 10, 0, 16);
+        var actions = listed.Match(value => value, _ => []);
+        var offered = actions.FirstOrDefault(action =>
+            action.Title.Contains("file-scoped namespace", StringComparison.OrdinalIgnoreCase)
+            && action.FixKey is not null
+        );
+        Assert.True(
+            offered is not null,
+            string.Join(" | ", actions.Select(action => $"{action.Title}#{action.FixKey}"))
+        );
+        Assert.Contains("document", offered!.FixAllScopes!);
+
+        var document = Unwrap(await manager.FixAllAsync(legacyPath, offered.FixKey!, "document"));
+        Assert.Equal([legacyPath], FilesOf(document));
+        Assert.True(EditsIn(document, legacyPath) >= 1);
+
+        // The project holds no other block namespace, so project scope edits the same file.
+        var project = Unwrap(await manager.FixAllAsync(legacyPath, offered.FixKey!, "project"));
+        Assert.Equal([legacyPath], FilesOf(project));
     }
 
     [Fact]
