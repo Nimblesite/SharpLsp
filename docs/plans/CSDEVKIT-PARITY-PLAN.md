@@ -340,6 +340,7 @@ Features that make the daily experience smooth.
 
 - [ ] **P3.3: Solution Explorer Enhancements**
   - [x] Load every standalone C# project in a solutionless monorepo (#575): three real-SDK layouts prove nested loading, sibling inclusion and working diagnostics; 21 discovery/regression checks pass.
+  - [x] Load the projects a solution does NOT list (#575): the C# sidecar's walk reports standalone projects beside a picked solution and loads them with it (restore deduped, listed first; the one-batch solution load survives when nothing stands beside it); F# loads every discovered `.fsproj` from the root — host e2e proves closed-file `workspace/diagnostic` reports the excluded C# and F# projects (`monorepo_load.rs`), and all 20 discovery checks pass.
   - [ ] Solution Folders display and management
   - [x] Open .csproj/.fsproj from project node — `sharplsp.openProjectFile` (`context-menus.test.ts`)
   - [x] Add existing project from solution/project context menus — `sharplsp.addProjectToSolution`, [SE-SOLUTION-ADD-CONTEXT], #576. Four selected-node regressions fail before the fix; all 131 scaffolding/context-menu checks pass afterward, including F#/C# membership and unchanged palette behavior.

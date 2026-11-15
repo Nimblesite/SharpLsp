@@ -185,6 +185,16 @@ nested siblings of a root project. They are restored before loading; an explicit
 project path still selects that project and its references. Multiple projects never
 fall back to loose-file analysis (#575).
 
+A solution the walk picks does not own the tree: the standalone projects the same walk
+met load beside the solution's own projects, restored and deduplicated, so a monorepo
+solution that lists one project no longer hides its siblings (#575). The solution loads
+first, in one batch where the rule below allows; its unlisted siblings load after it,
+so they never cost the batch. An explicit solution — `csharp.solution_path` or
+`sharplsp/loadSolution` — still opens exactly what was named, without a walk. The F#
+sidecar given the workspace root loads every discovered `.fsproj` the same way, listed
+or not; opening a file outside every loaded project additionally adopts its owner
+([SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING], [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]).
+
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD] Loading a Solution into Roslyn
 
 Roslyn's `MSBuildProjectLoader` starts and tears down a BuildHost process for every `LoadProjectInfoAsync` call, so loading a solution project by project pays that start once per project (NLog, 15 projects: 21.5s one by one, 8s in one batch). A solution from which **no F# project is reachable** — listed, or referenced by a C# project however deep — is therefore loaded in one `LoadSolutionInfoAsync` batch through one BuildHost.

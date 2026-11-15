@@ -324,4 +324,47 @@ public sealed class SolutionLoaderTests : IDisposable
         var value = Resolve(app);
         Assert.Equal(wanted, value);
     }
+
+    /// <summary>
+    /// A solution discovery picks does not own the tree: every standalone project the
+    /// same walk met is reported beside it, so it loads too — a solution that lists one
+    /// project of a monorepo no longer hides the others (#575). Implements
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Fact]
+    public void Solution_in_root_still_reports_standalone_projects_beside_it()
+    {
+        var solution = NativePaths.Join(_root, "Main.sln");
+        var listed = NativePaths.Join(_root, "Lib", "Lib.csproj");
+        var excluded = NativePaths.Join(_root, "apps", "tool", "Tool.csproj");
+        Touch(
+            solution,
+            listed,
+            excluded,
+            NativePaths.Join(_root, "apps", "tool", "obj", "Copy.csproj")
+        );
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(solution, discovery.Target);
+        Assert.Empty(discovery.Competing);
+        Assert.Equal(
+            new[] { listed, excluded }.Order(NativePaths.Comparer),
+            discovery.Projects.Order(NativePaths.Comparer)
+        );
+    }
+
+    /// <summary>A nested sole solution reports the standalone projects beside it too.</summary>
+    [Fact]
+    public void Nested_solution_still_reports_standalone_projects_beside_it()
+    {
+        var solution = NativePaths.Join(_root, "backend", "Api.slnx");
+        var excluded = NativePaths.Join(_root, "apps", "web", "Web.csproj");
+        Touch(solution, excluded);
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(solution, discovery.Target);
+        Assert.Equal([excluded], discovery.Projects);
+    }
 }

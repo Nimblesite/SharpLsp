@@ -28,7 +28,9 @@ internal static class RoslynProjectLoading
     /// <summary>The project files Roslyn itself loads; an <c>.fsproj</c> is the F# sidecar's.</summary>
     private static readonly string[] RoslynProjects = [".csproj", ".vbproj"];
 
-    /// <summary>Load <paramref name="target"/>, a solution or one project, with no F# built.</summary>
+    /// <summary>Load <paramref name="target"/>, a solution or one project, with no F# built.
+    /// <paramref name="projects"/> names the exact entries to load when no solution was
+    /// found, or <see langword="null"/> to load exactly what the target lists.</summary>
     internal static async Task<Solution> LoadAsync(
         MSBuildWorkspace workspace,
         string target,
@@ -49,6 +51,54 @@ internal static class RoslynProjectLoading
                     ct
                 )
                 .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Load what discovery found: a solution — in one batch where it can — and then every
+    /// project the same walk met that the solution does not list, so a monorepo solution
+    /// that lists one project no longer hides its siblings (#575); with no solution, every
+    /// project the walk met. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] and
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD].
+    /// </summary>
+    internal static async Task<Solution> LoadDiscoveredAsync(
+        MSBuildWorkspace workspace,
+        string target,
+        IReadOnlyList<string> walked,
+        CancellationToken ct
+    )
+    {
+        if (!SolutionFileReader.IsSolutionFile(target))
+        {
+            return await LoadAsync(workspace, target, ct, walked.Count > 0 ? walked : null)
+                .ConfigureAwait(false);
+        }
+        var solution = await LoadAsync(workspace, target, ct).ConfigureAwait(false);
+        var listed = await EntriesAsync(target, ct).ConfigureAwait(false);
+        var unlisted = walked.Except(listed, NativePaths.Comparer).ToList();
+        return unlisted.Count is 0
+            ? solution
+            : await LoadUnlistedAsync(workspace, solution, target, unlisted, ct)
+                .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <paramref name="solution"/> with the <paramref name="unlisted"/> projects beside it,
+    /// each linked to the projects it already holds, plus a placeholder per F# project they
+    /// reach that it does not hold yet.
+    /// </summary>
+    private static async Task<Solution> LoadUnlistedAsync(
+        MSBuildWorkspace workspace,
+        Solution solution,
+        string target,
+        IReadOnlyList<string> unlisted,
+        CancellationToken ct
+    )
+    {
+        var fsharp = FSharpReachedFrom(unlisted);
+        fsharp.ExceptWith(solution.Projects.Select(project => project.FilePath).OfType<string>());
+        var loader = new MSBuildProjectLoader(workspace, PropertiesFor(workspace, target));
+        return await LoadEachProjectAsync(WithPlaceholders(solution, fsharp), loader, unlisted, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -89,8 +139,9 @@ internal static class RoslynProjectLoading
     /// <summary>
     /// A solution no F# project is reachable from, in ONE batch. Roslyn starts and tears down
     /// a BuildHost process per <c>LoadProjectInfoAsync</c> call, so project-by-project loading
-    /// cost NLog's 15 projects 21.5s against 8s batched. Nothing here can build an F# project,
-    /// so the batch needs no placeholders. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD].
+    /// cost NLog's 15 projects 21.5s against 8s batched. Unlisted projects beside it load
+    /// afterwards, so they never cost the batch. Nothing here can build an F# project, so the
+    /// batch needs no placeholders. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD].
     /// </summary>
     private static async Task<Solution> LoadWholeSolutionAsync(
         Solution solution,
