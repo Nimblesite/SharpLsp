@@ -4,6 +4,7 @@
 //! `WorkspaceEdit` deleting exactly the unused opens of that scope.
 
 use super::*;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// A file of `module`, with one unused `open System.Text` on line 2 (0-based).
@@ -13,14 +14,16 @@ fn unused_open_source(module: &str) -> String {
 
 /// A project file compiling `files`, referencing `references`.
 fn fsproj(files: &[&str], references: &[&str]) -> String {
-    let compiles: String = files
+    let compiles = files.iter().fold(String::new(), |mut items, file| {
+        let _ = writeln!(items, "    <Compile Include=\"{file}\" />");
+        items
+    });
+    let refs = references
         .iter()
-        .map(|file| format!("    <Compile Include=\"{file}\" />\n"))
-        .collect();
-    let refs: String = references
-        .iter()
-        .map(|reference| format!("    <ProjectReference Include=\"{reference}\" />\n"))
-        .collect();
+        .fold(String::new(), |mut items, reference| {
+            let _ = writeln!(items, "    <ProjectReference Include=\"{reference}\" />");
+            items
+        });
     format!(
         "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    \
          <TargetFramework>net10.0</TargetFramework>\n  </PropertyGroup>\n  \
