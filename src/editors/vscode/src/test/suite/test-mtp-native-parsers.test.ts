@@ -17,6 +17,7 @@ import {
   xunitListArgs,
   xunitRunArgs,
 } from '../../test-mtp-cli.js';
+import { joinPath } from '../../paths.js';
 import { runArgs } from '../../test-mtp-report.js';
 import { referencesMtpPackage } from '../../test-mtp-modules.js';
 import { removeDirRecursive } from './test-helpers';
@@ -152,17 +153,18 @@ suite('xunit.v3 native console — readers and arguments (#581)', () => {
   });
 
   test('a native run selects by uid pairs and reports by absolute path', () => {
+    // The report path is the native join: `\\` on Windows, `/` elsewhere.
     assert.deepEqual(xunitRunArgs([], '/tmp/res', 'Tests.0.trx'), [
       '-noLogo',
       '-noColor',
       '-result-trx',
-      '/tmp/res/Tests.0.trx',
+      joinPath('/tmp/res', 'Tests.0.trx'),
     ]);
     assert.deepEqual(xunitRunArgs(['aa', 'bb'], '/tmp/res', 'Tests.1.trx'), [
       '-noLogo',
       '-noColor',
       '-result-trx',
-      '/tmp/res/Tests.1.trx',
+      joinPath('/tmp/res', 'Tests.1.trx'),
       '-id',
       'aa',
       '-id',
