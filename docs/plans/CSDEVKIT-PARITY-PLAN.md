@@ -293,7 +293,8 @@ Features users expect within the first day of use.
   - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
   - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
   - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
-  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`).
+  - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`), and `Run on <tfm>` preflight failures carry their text as the run's own output too.
+  - [x] MTP projects with no `global.json` opt-in and no runner switch are discovered and run through their own module, never the VSTest target — #581; the restored package graph names the projects MSBuild must evaluate, `xunit.v3`'s own console (`-list full/json`, `-id`, `-result-trx`) is learned per module, and F#-first fixtures — the C# one reproducing the issue's exact package set — pass through the real profiles (`test-explorer-mtp-native.test.ts`, `test-mtp-native-parsers.test.ts`).
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
   - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`

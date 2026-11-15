@@ -21,6 +21,12 @@ import { extensionOf, fileNameOf, samePath } from './paths';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import { runModule } from './test-mtp-report.js';
 import {
+  XUNIT_LIST_OPTIONS,
+  parseXunitTestList,
+  rejectedXunitOption,
+  type MtpCli,
+} from './test-mtp-cli.js';
+import {
   mergeMultiTargeted,
   type MtpModuleRun,
   type TestAssemblyListing,
@@ -36,9 +42,11 @@ import {
   type MtpTest,
 } from './test-mtp.js';
 import {
-  probeMtpProjects,
-  scanMtpProjects,
   builtMtpProjects,
+  evaluatedMtpProjects,
+  probeMtpProjects,
+  probeScan,
+  scanMtpProjects,
   type MtpProject,
   type MtpProjectScan,
 } from './test-mtp-modules.js';
@@ -55,6 +63,8 @@ export function listArgs(modulePath: string): string[] {
 interface ModuleListing {
   readonly tests: readonly MtpTest[];
   readonly warnings: readonly string[];
+  /** The command line the module was observed to answer, when one was. */
+  readonly cli: MtpCli | undefined;
 }
 
 /** Run `--list-tests json` against one module. */
@@ -69,6 +79,7 @@ async function listModule(
   if (rejected !== undefined) {
     return {
       tests: [],
+      cli: undefined,
       warnings: [
         `${fileNameOf(modulePath)} rejected ${rejected}. ` +
           'Its Microsoft.Testing.Platform version is older than 2.3, which is the first ' +
@@ -76,7 +87,27 @@ async function listModule(
       ],
     };
   }
-  return moduleListing(modulePath, run);
+  // `xunit.v3` 4.0.1+ ships its own runner console and refuses every MTP
+  // option, this one included. The module still lists its tests — through ITS
+  // command — so stopping here would rebuild the empty Testing view of #581.
+  if (rejectedXunitOption(output) !== undefined)
+    return await listXunitModule(modulePath, cwd, timeoutMs);
+  return { ...moduleListing(modulePath, run), cli: 'mtp' };
+}
+
+/** Run `-list full/json` against an xunit.v3 runner module. */
+async function listXunitModule(
+  modulePath: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<ModuleListing> {
+  const run = await runModule(modulePath, XUNIT_LIST_OPTIONS, cwd, { timeoutMs });
+  const listing = parseXunitTestList(run.stdout);
+  const failure =
+    listing.tests.length === 0 && run.failed
+      ? [`${fileNameOf(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
+      : [];
+  return { tests: listing.tests, warnings: [...listing.warnings, ...failure], cli: 'xunit' };
 }
 
 /** Distinguish a valid empty document from a failed or incomplete listing. */
@@ -93,7 +124,11 @@ function moduleListing(modulePath: string, run: DotnetRun): ModuleListing {
     listing.tests.length === 0 && run.failed && !empty
       ? [`${fileNameOf(modulePath)} listed no test: ${run.errorMessage ?? 'no detail'}`]
       : [];
-  return { tests: listing.tests, warnings: [...listing.warnings, ...failure] };
+  return {
+    tests: listing.tests,
+    warnings: [...listing.warnings, ...failure],
+    cli: 'mtp',
+  };
 }
 
 /**
@@ -110,9 +145,12 @@ export async function relistModule(
   timeoutMs: number,
 ): Promise<MtpModuleRun> {
   const listed = await listModule(module.modulePath, cwd, timeoutMs);
-  return listed.tests.length === 0 && listed.warnings.length > 0
-    ? module
-    : { ...module, uidsById: mtpUidsById(listed.tests) };
+  if (listed.tests.length === 0 && listed.warnings.length > 0) return module;
+  return {
+    ...module,
+    uidsById: mtpUidsById(listed.tests),
+    ...(listed.cli === undefined ? {} : { cli: listed.cli }),
+  };
 }
 
 /** The tree root and the run plan one module contributes. */
@@ -140,7 +178,12 @@ async function scanModule(modulePath: string, sweep: SweepContext): Promise<Modu
       path: modulePath,
       names: mtpIds(listed.tests),
     },
-    run: { modulePath, buildTarget: sweep.target, uidsById: mtpUidsById(listed.tests) },
+    run: {
+      modulePath,
+      buildTarget: sweep.target,
+      uidsById: mtpUidsById(listed.tests),
+      ...(listed.cli === undefined ? {} : { cli: listed.cli }),
+    },
     locations: mtpLocationsById(listed.tests),
     warnings: listed.warnings,
   };
@@ -170,6 +213,31 @@ function collectLocations(
  * to list, or whose build `dotnet` refused outright, is not.
  */
 export const listMtpTests = sweepOf(scanMtpProjects);
+
+/**
+ * The MTP listing when MSBuild already names an MTP project in `target`, before
+ * any VSTest pass runs; `undefined` when it names none, so the caller runs the
+ * VSTest passes it always ran.
+ *
+ * On the .NET 10 SDK the VSTest target REFUSES an MTP project outright
+ * ("Testing with VSTest target is no longer supported"), so a target whose
+ * package graph holds Microsoft.Testing.Platform must never pay that pass:
+ * discovery goes straight to the runner that can answer (#581). Spec:
+ * [TEST-MTP-DETECT].
+ */
+export async function mtpBeforeVstest(
+  target: string,
+  cwd: string,
+  timeoutMs: number,
+  noBuild: boolean,
+): Promise<TestListing | undefined> {
+  const found = await evaluatedMtpProjects(target, timeoutMs);
+  if (found.projects.length === 0) return undefined;
+  const scan = noBuild
+    ? await builtMtpProjects(target, timeoutMs)
+    : await probeScan(found, target, cwd, timeoutMs);
+  return await listScanned(scan, { target, cwd, timeoutMs });
+}
 
 /**
  * Enumerate every MTP test of a target the VSTest passes have just restored.

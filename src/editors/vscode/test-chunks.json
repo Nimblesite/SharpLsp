@@ -166,6 +166,7 @@
         "test-explorer-coverage.test.js",
         "test-coverage-parser.test.js",
         "test-explorer-mtp-parsers.test.js",
+        "test-mtp-native-parsers.test.js",
         "test-explorer-mtp-merges.test.js"
       ]
     },
@@ -181,11 +182,12 @@
       ]
     },
     "testexplorer-mtp": {
-      "description": "Microsoft.Testing.Platform (MTP) end to end, its own job because it builds a SECOND six-project fixture solution: `xunit.v3` 4.0.0 (MTP v2 only, no VSTest adapter at all), MSTest and NUnit on their own runners, each in C# and F#. It covers the whole MTP path — the `global.json` opt-in and the `IsTestingPlatformApplication` probe, the modules MSBuild reports, `--list-tests json` discovery with source locations, `--filter-uid` runs, `--report-trx` outcomes, the unfiltered retry an NUnit refusal earns, and the message a module missing `Microsoft.Testing.Extensions.TrxReport` produces ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN]). Kept apart from `testexplorer-frameworks` because the two together would build twelve test projects in one job and blow the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
+      "description": "Microsoft.Testing.Platform (MTP) end to end, its own job because it builds a SECOND six-project fixture solution: `xunit.v3` 4.0.0 (MTP v2 only, no VSTest adapter at all), MSTest and NUnit on their own runners, each in C# and F#. It covers the whole MTP path — the `global.json` opt-in and the `IsTestingPlatformApplication` probe, the modules MSBuild reports, `--list-tests json` discovery with source locations, `--filter-uid` runs, `--report-trx` outcomes, the unfiltered retry an NUnit refusal earns, and the message a module missing `Microsoft.Testing.Extensions.TrxReport` produces ([TEST-MTP-DETECT], [TEST-MTP-MODULES], [TEST-MTP-DISCOVERY], [TEST-MTP-RUN]). Kept apart from `testexplorer-frameworks` because the two together would build twelve test projects in one job and blow the 15-minute ceiling ([DIST-CI-WIN-VSIX]). The native-console suite (#581) builds its own two-project xunit.v3 4.0.3 solutions (F# first, then the C# repro with Test SDK + VSTest adapter) with no opt-in and no runner switch, so it stays in this job and away from the shared fixtures.",
       "files": [
         "test-explorer-mtp.test.js",
         "test-explorer-mtp-outcomes.test.js",
-        "test-explorer-mtp-modules.test.js"
+        "test-explorer-mtp-modules.test.js",
+        "test-explorer-mtp-native.test.js"
       ]
     },
     "testexplorer-mtp-runners": {

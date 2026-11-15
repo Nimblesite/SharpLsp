@@ -51,7 +51,7 @@ export function vstestArgs(
   ];
 }
 
-/** An outcome for a run that never reached VSTest. */
+/** An outcome for a run that never reached VSTest: its failure is its output ([TEST-RUN-OUTPUT]). */
 function failedBefore(failure: string): TestRunOutcome {
   return {
     results: new Map(),
@@ -60,7 +60,7 @@ function failedBefore(failure: string): TestRunOutcome {
     runInfos: [],
     retriedUnfiltered: false,
     durationMs: 0,
-    output: '',
+    output: failure,
   };
 }
 

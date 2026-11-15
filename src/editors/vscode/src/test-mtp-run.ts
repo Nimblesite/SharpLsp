@@ -24,6 +24,7 @@ import { batchByWidth, MAX_ARG_CHARS } from './test-batching.js';
 import { DOTNET_TIMEOUT_MS, type DotnetRun } from './dotnet-process.js';
 import type { MtpModuleRun, MtpRunPlan } from './test-listing-model.js';
 import { MTP_INVALID_COMMAND_LINE, rejectedMtpOption } from './test-mtp.js';
+import { rejectedXunitOption } from './test-mtp-cli.js';
 import { relistModule } from './test-mtp-discovery.js';
 import { refusedOutcome, refusesUids, runReported, startedModules } from './test-mtp-report.js';
 import { buildTarget, builtMtpProjects, dirOf, type MtpProjectScan } from './test-mtp-modules.js';
@@ -102,7 +103,7 @@ function invocationFailure(
   errorMessage: string | undefined,
   resultCount: number,
 ): string | undefined {
-  const rejected = rejectedMtpOption(output);
+  const rejected = rejectedMtpOption(output) ?? rejectedXunitOption(output);
   if (rejected === undefined) return resultCount > 0 ? undefined : (errorMessage ?? undefined);
   const extension = EXTENSION_PACKAGES.get(rejected);
   const refusal =
@@ -160,19 +161,19 @@ async function invoke(
   const before = new Set(trxFiles(resultsDirectory));
   const trxName = nextTrxName(module, context);
   const started = Date.now();
-  const run = await runReported({ ...context, modulePath: module.modulePath, uids, trxName });
+  const run = await runReported({
+    ...context,
+    modulePath: module.modulePath,
+    uids,
+    trxName,
+    cli: module.cli,
+  });
   const report = collectReport(resultsDirectory, before);
-  return outcomeOf(module.modulePath, debugged(run, options), report, Date.now() - started);
-}
-
-/**
- * A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): its report is, when
- * the module has one; a failing test exits non-zero by design, and stopping the
- * debugger ends the module however it ends. A refused option or a kill still
- * reports.
- */
-function debugged(run: DotnetRun, options: TestRunOptions): DotnetRun {
-  return options.debug === true ? { ...run, errorMessage: undefined } : run;
+  // A debug run's exit code is no verdict ([TEST-MTP-DEBUG]): a failing test
+  // exits non-zero by design, and stopping the debugger ends the module however
+  // it ends — so the report, not the exit code, is what reports.
+  const finished = options.debug === true ? { ...run, errorMessage: undefined } : run;
+  return outcomeOf(module.modulePath, finished, report, Date.now() - started);
 }
 
 /** The next report name of this run: no two of its invocations share one. */
@@ -371,23 +372,24 @@ async function rebuild(
   return currentModules(target, found, previous);
 }
 
-/** Keep known uids only for a module MSBuild still identifies as current. */
+/** Keep known uids and dialect only for a module MSBuild still identifies as current. */
 function currentModules(
   target: string,
   found: MtpProjectScan,
   previous: readonly MtpModuleRun[],
 ): Result<MtpModuleRun[]> {
   if (found.warnings.length > 0) return err(found.warnings.join('\n'));
-  const known = new Map(previous.map((module) => [module.modulePath, module.uidsById]));
-  return ok(
-    found.projects.flatMap((project) =>
-      project.modules.map((modulePath) => ({
-        modulePath,
-        buildTarget: target,
-        uidsById: known.get(modulePath) ?? new Map<string, string[]>(),
-      })),
-    ),
-  );
+  const known = new Map(previous.map((module) => [module.modulePath, module]));
+  const carried = (modulePath: string): MtpModuleRun => {
+    const before = known.get(modulePath);
+    return {
+      modulePath,
+      buildTarget: target,
+      uidsById: before?.uidsById ?? new Map<string, string[]>(),
+      ...(before?.cli === undefined ? {} : { cli: before.cli }),
+    };
+  };
+  return ok(found.projects.flatMap((project) => project.modules.map(carried)));
 }
 
 /**

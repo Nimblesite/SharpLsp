@@ -26,9 +26,9 @@ flowchart LR
     CONTROLLER --> COVERAGE["coverage — Cobertura<br/>test-coverage.ts"]
     DISCOVERY --> LISTTESTS["dotnet test --list-tests<br/>builds; announces assemblies"]
     DISCOVERY --> VSTEST["dotnet vstest<br/>--ListFullyQualifiedTests"]
-    DISCOVERY --> MTPLIST["dotnet exec module.dll<br/>--list-tests json"]
+    DISCOVERY --> MTPLIST["dotnet exec module.dll<br/>--list-tests json / -list full/json"]
     EXECUTION --> RUN["dotnet test<br/>--filter … --logger trx"]
-    EXECUTION --> MTPRUN["dotnet exec module.dll<br/>--filter-uid … --report-trx"]
+    EXECUTION --> MTPRUN["dotnet exec module.dll<br/>--filter-uid / -id … --report-trx / -result-trx"]
     RUN --> TRX["TRX report<br/>→ per-test outcome<br/>test-trx.ts"]
     MTPRUN --> TRX
 ```
@@ -285,25 +285,37 @@ uses MTP v2 by default. Such a project is invisible to every VSTest command:
 
 The runner is chosen PER TARGET, not per project. The SDK makes MTP all-or-nothing: when
 `global.json` opts in, a VSTest project in the same solution is an error. SharpLsp chooses
-in two steps:
+in three steps:
 
 1. Find the nearest `global.json` above the target. Read it with a JSON parser, never with a
    regular expression or a string search. `test.runner` equal to `Microsoft.Testing.Platform`
    (letter case ignored) selects MTP immediately, and the two doomed VSTest passes are not
    run at all.
-2. With no opt-in, run the VSTest passes first. Only if they produced no fully-qualified name
-   does SharpLsp ask MSBuild. A project whose `IsTestingPlatformApplication` property is
-   `true` is an MTP test module. `IsTestProject` MUST NOT be used for this: `xunit.v3` leaves
-   it empty.
+2. With no opt-in, read the RESTORED package graph before any VSTest pass runs: a project
+   whose `obj/project.assets.json` holds `Microsoft.Testing.Platform` or
+   `Microsoft.Testing.Platform.MSBuild` — directly or transitively, which is how `xunit.v3`
+   and TUnit carry it — is evaluated by MSBuild at once, and a target every evaluation names
+   an MTP project for goes straight to MTP (#581): the .NET 10 SDK's VSTest target refuses
+   such a project outright ("Testing with VSTest target is no longer supported"), so the
+   pass MUST NOT run for it. The graph is a JSON document and is parsed, never searched; a
+   project nothing has restored yet is left alone, and the graph never overrules MSBuild —
+   `IsTestingPlatformApplication` decides that a project IS an MTP application, so a library
+   that merely references the package stays a library and never builds as a module.
+3. Otherwise run the VSTest passes first. Only if they produced no fully-qualified name does
+   SharpLsp ask MSBuild — exhaustively, so this probe also catches a project nothing had
+   restored when step 2 ran, and one that sets `IsTestingPlatformApplication` itself with no
+   MTP package at all. A project whose `IsTestingPlatformApplication` property is `true` is
+   an MTP test module. `IsTestProject` MUST NOT be used for this: `xunit.v3` leaves it
+   empty.
 
-This order costs a VSTest solution that lists tests nothing, and keeps the MTP probe out of
-the hot path for every sweep that already worked. The probe itself runs on every sweep that
-attributed no assembly — a library solution with the Testing view open, a VSTest solution
-that fails to build — so it MUST NOT build anything unless MSBuild names an MTP project: the
-VSTest passes have already restored the target, the probe EVALUATES first, and only an MTP
-project earns a build ([TEST-MTP-MODULES]). A solution with no MTP project is built exactly
-as often as the VSTest passes build it, and a failing build is not repeated before its error
-row appears.
+This order costs a VSTest solution that lists tests one JSON read per project, and keeps the
+MTP probe out of the hot path for every sweep that already worked. The probe itself runs on
+every sweep that attributed no assembly — a library solution with the Testing view open, a
+VSTest solution that fails to build — so it MUST NOT build anything unless MSBuild names an
+MTP project: the VSTest passes have already restored the target, the probe EVALUATES first,
+and only an MTP project earns a build ([TEST-MTP-MODULES]). A solution with no MTP project
+is built exactly as often as the VSTest passes build it, and a failing build is not repeated
+before its error row appears.
 
 ## Microsoft.Testing.Platform: the test modules `[TEST-MTP-MODULES]`
 
@@ -343,6 +355,26 @@ MUST collapse to one tree root, by the same union rule as [TEST-DISCOVERY-FQN].
 Each module is asked directly: `dotnet exec <module.dll> --list-tests json --no-banner`.
 `dotnet test` cannot be used here — it does not forward the `json` argument (dotnet/sdk#49754)
 — and `dotnet exec` runs the module on every platform without an apphost or an execute bit.
+
+A module that refuses `--list-tests` in the voice of the `xunit.v3` runner —
+`error: unknown option: --list-tests`, lower-cased, unquoted, ANSI-painted — is one that
+stopped delegating to MTP's option manager (`xunit.v3` does so whenever a project sets no
+`UseMicrosoftTestingPlatformRunner`, 4.0.0 included). It is asked again, once, with the
+runner's own command:
+
+```
+dotnet exec <module.dll> -list full/json
+```
+
+The answer is one JSON array, one node per test case, and the same three-field discipline
+holds: the id is `Class` + `.` + `Method` — the `className` + `.` + `name` pair the module's
+own TRX report carries, and NEVER the display name, which `-methodDisplay method` reduces to
+the bare method name (#180); the uid is the node's `ID`, verbatim, and a theory lists ONE
+node because `xunit.v3` does not pre-enumerate by default, so rows collapse exactly as
+[TEST-DISCOVERY-FQN] requires; the node carries no location, so [TEST-GOTO-SOURCE] locates
+the test from the workspace symbols. Which command a module answers is LEARNED from the
+module itself, per sweep — never assumed from a package version — and the run plan remembers
+it for every run the tree starts ([TEST-MTP-RUN]).
 
 The module answers with a JSON document on standard output:
 
@@ -497,6 +529,28 @@ DIRECTLY into the results directory, not one level below it as `coverlet.collect
 `Microsoft.Testing.Extensions.CodeCoverage` rejects `--coverage` with exit code 5 and runs NO
 test, so Run with Coverage reports every selected test as not run with the message naming
 that package, exactly as the TRX message names its own.
+
+A module the discovery sweep learned speaks the `xunit.v3` runner's own console
+([TEST-MTP-DISCOVERY], #581) is RUN on that console, never on MTP's:
+
+```
+dotnet exec <module.dll> -noLogo -noColor     -result-trx <results-directory>/<module>.<n>.trx     -id <uid> -id <uid> …
+```
+
+`-id` takes the listing's `ID` verbatim and repeats, so the literal-value and batching rules
+of `--filter-uid` carry over unchanged; `-result-trx` takes the report's whole path — the
+runner has no `--results-directory` — and is built in, so no reporter is negotiated and no
+package is missing; the report names carry the same per-invocation uniqueness. Its TRX is the
+same document [TEST-RUN-TRX] reads, written by the runner itself: `TestMethod` carries the
+clean `className` and `name`, so theory rows collapse onto one id and the worst row wins as
+everywhere else. The runner has no coverage option at all: a Coverage request still RUNS the
+selection and says so in the extension log, rather than refusing a command line that would
+fail a run that could have run. A module no sweep classified that refuses the MTP options in
+the runner's own voice is retried ONCE on this console before its tests are reported as not
+run — the module was rebuilt since discovery, or discovery predates #581. Debug of such a
+module runs it WITHOUT `-waitForDebugger`: the runner never announces a test host pid, so a
+wait could only hang until the ceiling; the run's outcomes still report, and the module's
+tests still execute.
 
 ## Discovery targets `[TEST-DISCOVERY-TARGETS]`
 
