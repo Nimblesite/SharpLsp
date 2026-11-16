@@ -25,7 +25,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -66,6 +66,8 @@ pub struct AdvisoryServer {
     /// The bound port; `127.0.0.1:{port}/v3/index.json` is the source URL.
     pub port: u16,
     stopping: Arc<AtomicBool>,
+    /// Service-index requests answered: source data a client should cache.
+    index_hits: Arc<AtomicUsize>,
 }
 
 impl AdvisoryServer {
@@ -74,9 +76,11 @@ impl AdvisoryServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let stopping = Arc::new(AtomicBool::new(false));
+        let index_hits = Arc::new(AtomicUsize::new(0));
         let state = Arc::new((listener, fixture));
         let run = {
             let (state, stopping) = (Arc::clone(&state), Arc::clone(&stopping));
+            let hits = Arc::clone(&index_hits);
             move || {
                 while !stopping.load(Ordering::Relaxed) {
                     let Ok((stream, _)) = state.0.accept() else {
@@ -84,12 +88,22 @@ impl AdvisoryServer {
                     };
                     let fixture = state.1.clone();
                     let port = state.0.local_addr().map_or(0u16, |addr| addr.port());
-                    let _ = std::thread::spawn(move || answer(stream, &fixture, port));
+                    let hits = Arc::clone(&hits);
+                    let _ = std::thread::spawn(move || answer(stream, &fixture, port, &hits));
                 }
             }
         };
         let _ = std::thread::spawn(run);
-        Self { port, stopping }
+        Self {
+            port,
+            stopping,
+            index_hits,
+        }
+    }
+
+    /// How many times the service index has been fetched.
+    pub fn index_hits(&self) -> usize {
+        self.index_hits.load(Ordering::SeqCst)
     }
 
     /// The value to put in a `<auditSources><add value="…"/>` entry.
@@ -107,7 +121,7 @@ impl Drop for AdvisoryServer {
 }
 
 /// Answer one HTTP/1.1 GET with the routed JSON body, then close.
-fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
+fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16, index_hits: &AtomicUsize) {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     // Read the request head only (GET carries no body).
@@ -122,6 +136,9 @@ fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
         return;
     };
     let path = path.split('?').next().unwrap_or(path).to_string();
+    if path == "/v3/index.json" {
+        let _ = index_hits.fetch_add(1, Ordering::SeqCst);
+    }
     let base = request
         .lines()
         .find_map(|line| line.strip_prefix("Host: "))

@@ -170,6 +170,13 @@ impl LspClient {
     }
 
     pub fn request(&mut self, method: &str, params: Value) -> Value {
+        let _id = self.send_request(method, params);
+        self.next_response()
+    }
+
+    /// Send a request without waiting; its answer arrives through
+    /// [`Self::next_response`] in whatever order the server sends it.
+    pub fn send_request(&mut self, method: &str, params: Value) -> i32 {
         let id = next_id();
         self.send(&json!({
             "jsonrpc": "2.0",
@@ -177,6 +184,11 @@ impl LspClient {
             "method": method,
             "params": params,
         }));
+        id
+    }
+
+    /// The next response the server sends, buffering notifications.
+    pub fn next_response(&mut self) -> Value {
         loop {
             let msg = self.recv();
             if msg.get("id").is_some() {
