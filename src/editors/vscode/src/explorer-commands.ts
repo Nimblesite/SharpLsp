@@ -10,6 +10,7 @@ import {
   CMD_ADD_FSHARP_FILE,
   CMD_ADD_PROJECT_REFERENCE,
   CMD_ADD_REFERENCE_AND_IMPORT,
+  CMD_UPDATE_VULNERABLE_PACKAGE,
   CMD_BROWSE_NUGET_PACKAGES,
   CMD_CONSOLIDATE_PACKAGES,
   CMD_COPY_NAME,
@@ -30,6 +31,7 @@ import { NuGetBrowserPanel } from './nuget-browser.js';
 import * as pkgMaint from './package-maintenance.js';
 import { samePath } from './paths';
 import { addReferenceAndImport } from './reference-import-command.js';
+import { updateVulnerablePackage } from './vulnerable-update-command.js';
 import { removeFSharpSourceFile } from './remove-source-file.js';
 import { DEFAULT_SORT_POLICY } from './sort-members-policy.js';
 import { type SolutionExplorerProvider } from './tree.js';
@@ -91,6 +93,8 @@ export function registerExplorerCommands(
     ...Object.entries(handlers).map(([id, handler]) => commands.registerCommand(id, handler)),
     // Invoked by the import quick fix with its own argument, never a tree row.
     commands.registerCommand(CMD_ADD_REFERENCE_AND_IMPORT, addReferenceAndImport),
+    // Invoked by the vulnerable-package update quick fix ([PKG-VULN-FIX], #578).
+    commands.registerCommand(CMD_UPDATE_VULNERABLE_PACKAGE, updateVulnerablePackage),
   );
 }
 
