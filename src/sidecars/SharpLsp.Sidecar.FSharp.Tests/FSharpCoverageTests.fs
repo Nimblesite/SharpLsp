@@ -112,12 +112,19 @@ let ``project usages resolve through a request path with different drive casing`
             cleanup dir
 }
 
-// ── FSharpFileOrder tests ────────────────────────────────────────
+// ── Compile order tests ──────────────────────────────────────────
+
+/// The project's evaluated Compile items in order; none when MSBuild cannot evaluate it.
+let private compileOrder state (fsproj: string) = task {
+    match! FSharpWorkspace.compileSources state fsproj Threading.CancellationToken.None with
+    | Ok files -> return files
+    | Error _ -> return [||]
+}
 
 [<Fact>]
 let ``getCompileOrder returns empty for missing fsproj`` () = task {
     let state = FSharpWorkspace.create ()
-    let! result = FSharpFileOrder.getCompileOrder state "/definitely/not/a/real/path.fsproj"
+    let! result = compileOrder state "/definitely/not/a/real/path.fsproj"
     Assert.Empty(result)
 }
 
@@ -130,111 +137,11 @@ let ``getCompileOrder returns files in declared order`` () = task {
               "C.fs", "module C\nlet c = 3\n" ]
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsproj
+        let! order = compileOrder state fsproj
         Assert.Equal(3, order.Length)
         Assert.EndsWith("A.fs", order[0])
         Assert.EndsWith("B.fs", order[1])
         Assert.EndsWith("C.fs", order[2])
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty when not loaded`` () = task {
-    let state = FSharpWorkspace.create ()
-    let! issues = FSharpFileOrder.analyzeFileOrder state "/nonexistent.fsproj"
-    Assert.Empty(issues)
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty for single file project`` () = task {
-    let! (state, dir, fsproj, _) =
-        loadWorkspace [ "Only.fs", "module Only\nlet x = 1\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty for well-ordered project`` () = task {
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
-              "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // Correctly ordered — no issues expected.
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``generateReorderEdit returns None when files already in correct order`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "First.fs", "module First\nlet a = 1\n"
-              "Second.fs", "module Second\nlet b = 2\n" ]
-    try
-        // First.fs is already before Second.fs — no reorder needed.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[0] paths[1]
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit produces edit when dependency is out of order`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Uses.fs", "module Uses\nlet x = 1\n"
-              "Defs.fs", "module Defs\nlet y = 2\n" ]
-    try
-        // Defs.fs comes after Uses.fs but should come before.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[1] paths[0]
-        Assert.True(result.IsSome)
-        let edit = result.Value
-        Assert.Equal(fsproj, edit.FilePath)
-        Assert.Contains("Defs.fs", edit.NewText)
-        Assert.Contains("Uses.fs", edit.NewText)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit returns None when files not in fsproj`` () =
-    let (dir, fsproj, _) =
-        makeProject [ "Only.fs", "module Only\nlet a = 1\n" ]
-    try
-        let result =
-            FSharpFileOrder.generateReorderEdit fsproj
-                (NativePaths.Resolve(dir, "Ghost.fs"))
-                (NativePaths.Resolve(dir, "Phantom.fs"))
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit returns None for malformed fsproj path`` () =
-    let result =
-        FSharpFileOrder.generateReorderEdit
-            "/not/real/path.fsproj" "/a.fs" "/b.fs"
-    Assert.True(result.IsNone)
-
-[<Fact>]
-let ``analyzeFileOrder detects misordered dependency`` () = task {
-    // Reversed: file using a symbol declared in a later file.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Uses.fs", "module Uses\nlet result = Defs.theThing\n"
-              "Defs.fs", "module Defs\nlet theThing = 42\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // The analyzer may or may not detect it depending on FCS check
-        // flow; either way we exercise the code paths.
-        for issue in issues do
-            Assert.NotNull(issue.FilePath)
-            Assert.NotNull(issue.Message)
     finally
         cleanup dir
 }
@@ -1750,7 +1657,7 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () = tas
     File.WriteAllText(fsprojPath, fsproj)
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Equal(2, order.Length)
         // Paths are absolute (rooted) and point inside the project dir.
         Assert.True(NativePaths.IsRooted(order[0]))
@@ -1778,7 +1685,7 @@ let ``FEAT getCompileOrder skips Compile items without Include`` () = task {
     File.WriteAllText(fsprojPath, fsproj)
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Single(order) |> ignore
         Assert.EndsWith("Real.fs", order[0])
     finally
@@ -1794,67 +1701,13 @@ let ``FEAT getCompileOrder returns empty for malformed xml`` () = task {
     File.WriteAllText(fsprojPath, "<Project><ItemGroup><Compile Include=\"X.fs\"></Project>")
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Empty(order)
     finally
         cleanup dir
 }
 
 // ── FEAT FSharpFileOrder: generateReorderEdit branches ───────────
-
-[<Fact>]
-let ``FEAT generateReorderEdit moves dependency above a three-file project`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Top.fs", "module Top\nlet t = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n"
-              "Defs.fs", "module Defs\nlet d = 3\n" ]
-    try
-        // Defs.fs (index 2) should move before Uses.fs (index 1).
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[2] paths[1]
-        Assert.True(result.IsSome)
-        let edit = result.Value
-        Assert.Equal(fsproj, edit.FilePath)
-        Assert.Equal(0, edit.StartLine)
-        Assert.Equal(0, edit.StartCharacter)
-        // In the rewritten fsproj, Defs.fs precedes Uses.fs.
-        let defIdx = edit.NewText.IndexOf("Defs.fs", StringComparison.Ordinal)
-        let usesIdx = edit.NewText.IndexOf("Uses.fs", StringComparison.Ordinal)
-        Assert.True(defIdx >= 0 && usesIdx >= 0)
-        Assert.True(defIdx < usesIdx)
-        // The end position covers the whole original document.
-        Assert.True(edit.EndLine > 0)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT generateReorderEdit returns None when dependency already precedes`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Defs.fs", "module Defs\nlet d = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n" ]
-    try
-        // Defs.fs already comes before Uses.fs → depLineIdx < beforeLineIdx,
-        // so no reorder edit is produced.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[0] paths[1]
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT generateReorderEdit returns None when before file missing`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Defs.fs", "module Defs\nlet d = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n" ]
-    try
-        // The "before" target is not in the fsproj → beforeLineIdx stays -1.
-        let result =
-            FSharpFileOrder.generateReorderEdit fsproj paths[1]
-                (NativePaths.Resolve(dir, "Absent.fs"))
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
 
 // ── FEAT FSharpReferences: getReferences ─────────────────────────
 
@@ -2163,77 +2016,6 @@ let ``ACT2 record stubs return None when cursor is not on a record`` () = task {
     finally
         cleanup dir
 }
-
-[<Fact>]
-let ``ACT2 union stubs return None when match subject is not a union`` () = task {
-    // A match over an int has no FSharpUnionCase patterns, so resolveMatchType
-    // returns None and tryGenerateUnionStubs takes its None branch.
-    let src =
-        "module M\n" +
-        "let f (n: int) =\n" +
-        "    match n with\n" +
-        "    | 0 -> \"zero\"\n" +
-        "    | _ -> \"other\"\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
-    try
-        let! data = parseAndCheck state paths[0]
-        match data with
-        | Some (parse, check, source) ->
-            let result =
-                FSharpCodeActions.tryGenerateUnionStubs check parse source paths[0] 2 4
-            Assert.True(result.IsNone)
-        | None -> Assert.Fail("Check failed")
-    finally
-        cleanup dir
-}
-
-// ----- ORD2 -----
-// ══ ORD2: FSharpFileOrder.analyzeFileOrder detection path ══════════
-// A two-file project where the earlier file references a symbol defined in the
-// later file drives collectDefinitions, collectUndefinedErrors, and the
-// issue-construction branch (defIdx > currentIdx).
-
-[<Fact>]
-let ``ORD2 analyzeFileOrder reports a cross-file out-of-order dependency`` () = task {
-    // 'Uses.fs' (compiled first) references Defs.theValue, which is defined in
-    // 'Defs.fs' (compiled second). In F# this is an FS0039 because the symbol
-    // is not yet in scope — exactly the mis-order the analyzer detects.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Uses.fs", "module Uses\nlet consumer = Defs.theValue + 1\n"
-              "Defs.fs", "module Defs\nlet theValue = 41\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // Every returned issue is well-formed and points back at the offending
-        // file with a human-readable reorder message.
-        for issue in issues do
-            Assert.EndsWith("Uses.fs", issue.FilePath)
-            Assert.EndsWith("Defs.fs", issue.DependencyFile)
-            Assert.Contains("compile order", issue.Message)
-            Assert.True(issue.Line >= 0)
-            Assert.True(issue.Character >= 0)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``ORD2 analyzeFileOrder returns no issues for a correctly ordered project`` () = task {
-    // Defs precedes Uses → no undefined-symbol errors → no issues. Drives the
-    // happy path through collectDefinitions / collectUndefinedErrors with an
-    // empty error list.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Defs.fs", "module Defs\nlet theValue = 41\n"
-              "Uses.fs", "module Uses\nlet consumer = Defs.theValue + 1\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-// ----- FEAT2 -----
-// ══ FEAT2: FSharpFeatures pipeline hints and idempotent formatting ══
 
 [<Fact>]
 let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
@@ -2645,45 +2427,6 @@ let ``loadProjectWithCancellation reports an error for an invalid path`` () = ta
 }
 
 // ── File-order edges ─────────────────────────────────────────────
-
-[<Fact>]
-let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
-    let dir = NativePaths.Temp($"slsp-ghost-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    let fsproj = NativePaths.Resolve(dir, "Order.fsproj")
-    File.WriteAllText(
-        fsproj,
-        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
-        + "<TargetFramework>net10.0</TargetFramework>"
-        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
-        + "</PropertyGroup><ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"Ghost.fs\" /></ItemGroup></Project>")
-    File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module A\nlet x = 1\n")
-    // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
-    try
-        let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspaceLoading.loadProject ws dir
-        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
-        Assert.NotNull(issues :> obj)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder swallows a missing-options inconsistency`` () = task {
-    // IsLoaded forced true but ProjectOptions left None → the loop dereferences
-    // ProjectOptions.Value and throws → the analyzer's catch returns [].
-    let (dir, fsproj, _) =
-        makeProject
-            [ "A.fs", "module A\nlet x = 1\n"
-              "B.fs", "module B\nlet y = 2\n" ]
-    try
-        let ws = FSharpWorkspace.create ()
-        ws.IsLoaded <- true
-        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
 
 // ── Feature extractors: generic params, active patterns, no-op format ──
 

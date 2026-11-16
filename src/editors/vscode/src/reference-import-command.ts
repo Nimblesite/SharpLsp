@@ -1,6 +1,7 @@
 // `sharplsp.addReferenceAndImport` — the command a reference quick fix carries
 // ([REFACTOR-IMPORT-REFERENCE]). The action's own edit has already added the
-// using or open; this adds the project or package reference it needs. The
+// using or open; this adds the project or package reference it needs, or moves
+// an F# file earlier in compile order ([REFACTOR-FSHARP-FILE-ORDER]). The
 // client's command feature is off ([PROFILER-SHARED-LIBRARY-VSCODE]), so the
 // extension registers the command and sends it to the server as
 // `workspace/executeCommand`. Success says what changed; a failure says why,
@@ -24,8 +25,15 @@ export interface ReferenceImportArgument {
   };
 }
 
-/** Why the import alone does not fix the code, appended to every failure. */
+/** Why the import alone does not fix the code, appended to a failed reference. */
 const IMPORT_KEPT = 'the import is already in place, and Undo removes it';
+
+/** What a failed compile-order move left behind: it has no edit of its own. */
+const PROJECT_UNCHANGED = 'the project file is unchanged';
+
+/** What the failed command left in place, by the kind of its reference. */
+const leftBehind = (kind: string): string =>
+  kind === 'compileOrder' ? PROJECT_UNCHANGED : IMPORT_KEPT;
 
 /** The `sharplsp.addReferenceAndImport` command handler. */
 export async function addReferenceAndImport(argument: ReferenceImportArgument): Promise<void> {
@@ -34,6 +42,9 @@ export async function addReferenceAndImport(argument: ReferenceImportArgument): 
     info(`${argument.title}: ${added.message}`);
     void vscode.window.showInformationMessage(`SharpLsp: ${added.message}.`);
   } catch (error: unknown) {
-    await reportCodeActionFailure(argument.title, `${getErrorMessage(error)}; ${IMPORT_KEPT}`);
+    await reportCodeActionFailure(
+      argument.title,
+      `${getErrorMessage(error)}; ${leftBehind(argument.reference.kind)}`,
+    );
   }
 }

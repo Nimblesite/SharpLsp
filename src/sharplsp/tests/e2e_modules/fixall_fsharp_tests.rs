@@ -31,7 +31,12 @@ fn fsproj(files: &[&str], references: &[&str]) -> String {
     )
 }
 
-fn write_project(root: &Path, name: &str, files: &[(&str, String)], references: &[&str]) {
+pub(super) fn write_project(
+    root: &Path,
+    name: &str,
+    files: &[(&str, String)],
+    references: &[&str],
+) {
     let dir = root.join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let names: Vec<&str> = files.iter().map(|(file, _)| *file).collect();

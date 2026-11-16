@@ -1,9 +1,10 @@
-//! `sharplsp.addReferenceAndImport`: the command behind a quick fix that brings
-//! a name in from outside its project's references — another project of the
-//! solution, or a package. The action's own edit adds the import; the client
-//! then runs this command, and the host adds the reference through the
-//! `MSBuild` DOM. A reference that cannot be added fails the command with the reason,
-//! never silently. [REFACTOR-IMPORT-REFERENCE] [REFACTOR-NEVER-SILENT]
+//! `sharplsp.addReferenceAndImport`: the command behind a quick fix that needs
+//! a project-file change. It brings a name in from outside its project's
+//! references — another project of the solution, or a package — after the
+//! action's own edit added the import, or it moves an F# file earlier in
+//! compile order ([REFACTOR-FSHARP-FILE-ORDER]). The host makes the change
+//! through the `MSBuild` DOM; one that cannot be made fails the command with the
+//! reason, never silently. [REFACTOR-IMPORT-REFERENCE] [REFACTOR-NEVER-SILENT]
 
 use std::sync::Arc;
 
@@ -25,6 +26,8 @@ pub const COMMAND: &str = "sharplsp.addReferenceAndImport";
 const PROJECT: &str = "project";
 /// The reference kind for a `NuGet` package.
 const PACKAGE: &str = "package";
+/// The kind for a Compile item moved above another one.
+pub const COMPILE_ORDER: &str = "compileOrder";
 
 /// The reference a sidecar's command action adds after its import. Positional
 /// `MessagePack` from the sidecars' `ReferenceImport` `[Key(0..3)]`; camel-cased
@@ -32,13 +35,15 @@ const PACKAGE: &str = "package";
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SidecarReferenceImport {
-    /// `project` or `package`.
+    /// `project`, `package` or `compileOrder`.
     pub kind: String,
-    /// Absolute path of the project file that gains the reference.
+    /// Absolute path of the project file the host edits.
     pub project_path: String,
-    /// The referenced project's absolute path, or the package id.
+    /// The referenced project's absolute path, the package id, or the include
+    /// of the Compile item to move.
     pub reference: String,
-    /// The package version; empty for a project or the latest stable package.
+    /// The package version (empty for the latest stable one); empty for a
+    /// project; for `compileOrder`, the include the moved item lands above.
     pub version: String,
 }
 
@@ -109,7 +114,10 @@ fn add_reference(
     match reference.kind.as_str() {
         PROJECT => add_project(sidecar, runtime, reference),
         PACKAGE => add_package(sidecar, runtime, sender, reference),
-        other => bail!("unknown reference kind {other:?}: expected project or package"),
+        COMPILE_ORDER => move_compile_item(sidecar, runtime, reference),
+        other => {
+            bail!("unknown reference kind {other:?}: expected project, package or compileOrder")
+        }
     }
 }
 
@@ -124,6 +132,24 @@ fn add_project(
         runtime,
         &reference.project_path,
         &reference.reference,
+    )?;
+    Ok(outcome.message)
+}
+
+/// Move the Compile item above the one that needs it. [REFACTOR-FSHARP-FILE-ORDER]
+fn move_compile_item(
+    sidecar: &Arc<SidecarManager>,
+    runtime: &Runtime,
+    reference: &SidecarReferenceImport,
+) -> Result<String> {
+    let outcome = edit::compile_item_edit(
+        sidecar,
+        runtime,
+        edit::CompileEdit::Reorder,
+        &reference.project_path,
+        &reference.reference,
+        &reference.version,
+        edit::CompilePosition::Before,
     )?;
     Ok(outcome.message)
 }

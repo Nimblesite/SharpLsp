@@ -649,12 +649,22 @@ When the name is declared somewhere the file's project cannot reach yet, the fix
 2. **A package another project of the solution already uses.** Another project's references include an assembly that declares a public type `N.T`. That assembly belongs to a NuGet package, matched through the other project's `obj/project.assets.json` (the package whose `compile` items include the assembly). The fix adds that package at the same version, so the solution keeps one version.
 3. **A well-known package.** A curated table, `SharpLsp.Sidecar.Common/References/WellKnownPackages.json`, maps the full names of commonly used types to the package that ships them, for packages no project of the solution references yet. The fix installs the latest stable version from nuget.org. Both sidecars read the one table.
 
-Each of these three is an edit action that also carries a command. It resolves to the import edit, like any other action. It also carries the LSP command `sharplsp.addReferenceAndImport` with the arguments `{ title, reference: { kind: "project" | "package", projectPath, reference, version } }`. An LSP client applies an action's edit and then runs its command, so the import is in place first. The host then adds the reference through the MSBuild DOM:
+Each of these three is an edit action that also carries a command. It resolves to the import edit, like any other action. It also carries the LSP command `sharplsp.addReferenceAndImport` with the arguments `{ title, reference: { kind: "project" | "package" | "compileOrder", projectPath, reference, version } }` (`compileOrder` is [REFACTOR-FSHARP-FILE-ORDER]). An LSP client applies an action's edit and then runs its command, so the import is in place first. The host then adds the reference through the MSBuild DOM:
 
 1. A project reference goes through the C# sidecar's `project/addProjectReference`. It adds `<ProjectReference Include="relative/path/P.csproj" />`, or changes nothing if the project already references P.
 2. A package goes through the `sharplsp/nuget/install` pipeline, which is aware of Central Package Management and restores in the background ([NUGET-XML-DOM]). An empty `version` resolves to the latest stable version on nuget.org.
 
 If the reference cannot be added, the command fails with the reason ([REFACTOR-NEVER-SILENT]). The failure message says that the import is already in place and that Undo removes it. The host reloads the compilers when a project file changes on disk, so the diagnostic clears once the reference resolves. The command does not apply the import itself through `workspace/applyEdit`, because a client may answer that request `{ applied: false }` without telling the user.
+
+#### [REFACTOR-FSHARP-FILE-ORDER] A Name a Later File Declares
+
+F# compiles a project's files in order, so a name declared by a file further down the `Compile` list is not in scope: FCS reports FS0039, and no import can fix it. On FS0039 the F# sidecar parses each file the project compiles after the current one (through the overlay, so unsaved declarations count) and looks for the flagged name among the top-level declarations and their direct members; `module P.B` declares `B`. For each later file that declares it, the fix is offered, in compile order:
+
+`Move B.fs above A.fs in App.fsproj — B.fs declares 'B' but compiles after A.fs`
+
+When any later file declares the name, nothing outside the project is searched: the rows of [REFACTOR-IMPORT-REFERENCE] are not offered for it.
+
+The action is its command alone. It carries the LSP command `sharplsp.addReferenceAndImport` with `reference: { kind: "compileOrder", projectPath, reference, version }`, where `reference` is the project-relative include of the file to move and `version` the include of the file it lands directly above. It also carries a present, empty `edit` and no `data`, so a client has nothing to resolve; the sidecars would refuse an edit with no changes ([REFACTOR-NEVER-SILENT]). The host moves the `Compile` item through the MSBuild DOM ([SE-REORDER-FILE-REQUEST]) and answers `Moved B.fs`, or `B.fs is already in place` when it already sits there. The host reloads the compilers when the project file changes on disk, so the diagnostic clears. A move that cannot be made fails the command with the reason; the VS Code message then says that the project file is unchanged.
 
 #### [REFACTOR-NEVER-SILENT] Code Actions Never Fail Silently
 

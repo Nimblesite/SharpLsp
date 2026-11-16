@@ -68,6 +68,7 @@ pub mod fixall_tests;
 pub mod folding;
 pub mod formatting_contract;
 pub mod fsharp;
+pub mod fsharp_file_order;
 pub mod full_stack;
 pub mod full_stack_features;
 pub mod full_stack_hierarchy;

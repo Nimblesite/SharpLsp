@@ -222,8 +222,16 @@ fn refused(
 /// Convert a sidecar code action item into an LSP `CodeAction`: an edit the
 /// client resolves by `data` and, when it also needs a reference, the command
 /// the client runs after applying that edit. [REFACTOR-IMPORT-REFERENCE]
+///
+/// A compile-order move is its command alone: it carries a present, empty edit
+/// and no `data`, so no client asks to resolve an edit the sidecars would
+/// refuse as changing nothing. [REFACTOR-FSHARP-FILE-ORDER] [REFACTOR-NEVER-SILENT]
 fn map_code_action(item: &SidecarCodeActionItem, doc_uri: &Uri) -> CodeAction {
     let data = serde_json::json!({"id": item.id, "uri": doc_uri.as_str()});
+    let command_only = item
+        .reference
+        .as_ref()
+        .is_some_and(|reference| reference.kind == crate::import_command::COMPILE_ORDER);
     CodeAction {
         title: item.title.clone(),
         kind: Some(map_action_kind(&item.kind)),
@@ -232,7 +240,8 @@ fn map_code_action(item: &SidecarCodeActionItem, doc_uri: &Uri) -> CodeAction {
             .reference
             .as_ref()
             .map(|reference| crate::import_command::command(&item.title, &data, reference)),
-        data: Some(data),
+        edit: command_only.then(WorkspaceEdit::default),
+        data: (!command_only).then_some(data),
         ..CodeAction::default()
     }
 }

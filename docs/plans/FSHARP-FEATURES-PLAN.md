@@ -154,7 +154,11 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 
 - [ ] Ionide.ProjInfo integration for project cracking (currently manual `.fsproj`
       XML parse in [FSharpWorkspace.fs:41](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs#L41))
-- [ ] File ordering awareness + reorder suggestions (F# compilation order matters)
+- [x] File ordering awareness + reorder suggestions (F# compilation order matters) —
+      `[REFACTOR-FSHARP-FILE-ORDER]`: FS0039 on a name a later file declares offers
+      "Move B.fs above A.fs" ([FSharpFileOrder.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpFileOrder.fs)),
+      moved through the MSBuild DOM by `[SE-REORDER-FILE-REQUEST]`; e2e in
+      `fsharp_file_order.rs`
 - [ ] Type provider navigation support
 - [x] Convert pipe to/from nested function calls (refactoring) — `[REFACTOR-FSHARP-PIPE]`
       ([FSharpPipeRefactoring.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpPipeRefactoring.fs))

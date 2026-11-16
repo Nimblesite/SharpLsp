@@ -383,3 +383,70 @@ let ``Task Delay against FSharp Core with a Task module offers the tasks namespa
         finally
             cleanup root
     }
+
+let private orderProject (dir: string) (order: string list) =
+    let items = order |> List.map (fun file -> $"<Compile Include=\"{file}\" />") |> String.concat ""
+    File.WriteAllText(
+        NativePaths.Resolve(dir, "Order.fsproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework>"
+        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference></PropertyGroup>"
+        + $"<ItemGroup>{items}</ItemGroup></Project>")
+
+let private loadOrdered (dir: string) =
+    task {
+        let state = FSharpWorkspace.create ()
+        let! _ = FSharpWorkspaceLoading.loadProject state dir
+        return state
+    }
+
+/// [REFACTOR-FSHARP-FILE-ORDER] A name a LATER file of the project declares is a
+/// compile-order problem: the fix is one command action per declaring file, with
+/// no edit and nothing searched outside the project; once the file is above, FCS
+/// has no FS0039 left and no move is offered.
+[<Fact>]
+let ``a name declared by a later file offers moving that file above, and nothing outside the project`` () =
+    task {
+        let dir = NativePaths.Temp($"sharplsp-order-{Guid.NewGuid():N}")
+        Directory.CreateDirectory(dir) |> ignore
+        try
+            let aPath, bPath = NativePaths.Resolve(dir, "A.fs"), NativePaths.Resolve(dir, "B.fs")
+            File.WriteAllText(aPath, source [ "module P.A"; ""; "let useB = B.value"; "let typo = Missing.value" ])
+            File.WriteAllText(NativePaths.Resolve(dir, "Mid.fs"), source [ "module P.Mid"; ""; "let unrelated = 1" ])
+            File.WriteAllText(bPath, source [ "module P.B"; ""; "let value = 42" ])
+            orderProject dir [ "A.fs"; "Mid.fs"; "B.fs" ]
+            let! state = loadOrdered dir
+            let! _, before, _ = checkedFixture state aPath
+            Assert.Equal<int array>([| 2; 3 |], linesWith 39 before)
+            // Interaction 1: the forward dependency offers exactly the move.
+            let title = "Move B.fs above A.fs in Order.fsproj — B.fs declares 'B' but compiles after A.fs"
+            let! fixes, actions = actionsAt state aPath 2 11
+            let move = actionNamed title actions
+            Assert.Equal("quickfix", move.Kind)
+            Assert.False(move.IsPreferred)
+            let reference = referenceOf move
+            Assert.Equal(ReferenceImport.CompileOrderKind, reference.Kind)
+            Assert.Equal(NativePaths.Resolve(dir, "Order.fsproj"), reference.ProjectPath)
+            Assert.Equal("B.fs", reference.Reference)
+            Assert.Equal("A.fs", reference.Version)
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Mid.fs"))
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Install package"))
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Reference project"))
+            // The move is the command alone: its action carries no text edit.
+            let edit = FSharpCodeFixes.resolveCodeAction fixes move.Id |> Option.defaultWith (fun () -> failwith "move did not resolve")
+            Assert.Empty(edit.DocumentChanges)
+            // Interaction 2: a name no later file declares offers no move.
+            let! _, typoActions = actionsAt state aPath 3 11
+            Assert.DoesNotContain(typoActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+            // Interaction 3: nothing compiles after B.fs, so B.fs never offers one.
+            let! _, lastActions = actionsAt state bPath 2 4
+            Assert.DoesNotContain(lastActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+            // Interaction 4: with B.fs above A.fs (what the host's move writes) the name resolves.
+            orderProject dir [ "B.fs"; "A.fs"; "Mid.fs" ]
+            let! moved = loadOrdered dir
+            let! _, after, _ = checkedFixture moved aPath
+            Assert.Equal<int array>([| 3 |], linesWith 39 after)
+            let! _, afterActions = actionsAt moved aPath 2 11
+            Assert.DoesNotContain(afterActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+        finally
+            cleanup dir
+    }

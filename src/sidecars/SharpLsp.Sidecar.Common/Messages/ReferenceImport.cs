@@ -3,10 +3,11 @@ using MessagePack;
 namespace SharpLsp.Sidecar.Common.Messages;
 
 /// <summary>
-/// The reference a quick fix adds before its import: another project of the solution, or a
-/// package. A code action carrying one is a command action; the host adds the reference, then
-/// resolves the action for the import edit. Positional keys mirror the Rust host.
-/// Implements [REFACTOR-IMPORT-REFERENCE].
+/// The project-file change a quick fix needs besides its text edit: a reference to another
+/// project of the solution or to a package, added after the import, or a Compile item moved
+/// earlier in F# compile order. A code action carrying one is a command action; the host makes
+/// the change through the MSBuild DOM. Positional keys mirror the Rust host.
+/// Implements [REFACTOR-IMPORT-REFERENCE] and [REFACTOR-FSHARP-FILE-ORDER].
 /// </summary>
 [MessagePackObject]
 public sealed class ReferenceImport
@@ -17,19 +18,25 @@ public sealed class ReferenceImport
     /// <summary>The kind of a NuGet package reference.</summary>
     public const string PackageKind = "package";
 
-    /// <summary><see cref="ProjectKind"/> or <see cref="PackageKind"/>.</summary>
+    /// <summary>The kind of a Compile item moved above another one.</summary>
+    public const string CompileOrderKind = "compileOrder";
+
+    /// <summary><see cref="ProjectKind"/>, <see cref="PackageKind"/> or <see cref="CompileOrderKind"/>.</summary>
     [Key(0)]
     public string Kind { get; set; } = "";
 
-    /// <summary>Absolute path of the project file that gains the reference.</summary>
+    /// <summary>Absolute path of the project file the host edits.</summary>
     [Key(1)]
     public string ProjectPath { get; set; } = "";
 
-    /// <summary>The referenced project's absolute path, or the package id.</summary>
+    /// <summary>The referenced project's absolute path, the package id, or the include of the Compile item to move.</summary>
     [Key(2)]
     public string Reference { get; set; } = "";
 
-    /// <summary>The package version; empty for a project, or for the latest stable package.</summary>
+    /// <summary>
+    /// The package version (empty for the latest stable one); empty for a project; for a
+    /// compile-order move, the include of the Compile item the moved one lands above.
+    /// </summary>
     [Key(3)]
     public string Version { get; set; } = "";
 
@@ -53,6 +60,18 @@ public sealed class ReferenceImport
             ProjectPath = projectPath,
             Reference = id,
             Version = version,
+        };
+    }
+
+    /// <summary>Compile item <paramref name="include"/> moved directly above <paramref name="above"/>.</summary>
+    public static ReferenceImport ToCompileOrder(string projectPath, string include, string above)
+    {
+        return new ReferenceImport
+        {
+            Kind = CompileOrderKind,
+            ProjectPath = projectPath,
+            Reference = include,
+            Version = above,
         };
     }
 }

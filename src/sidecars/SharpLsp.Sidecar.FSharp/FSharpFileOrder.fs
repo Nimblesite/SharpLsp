@@ -1,147 +1,79 @@
-/// F# file ordering analysis: detects dependency violations and suggests reordering.
-/// In F#, files must appear in dependency order in the .fsproj — a file cannot
-/// reference symbols defined in a file that comes after it in the compile list.
+/// F# compile-order awareness: a name FS0039 cannot find that a LATER file of
+/// the same project declares is a file-order problem, not a missing import. The
+/// quick fix moves the declaring file above the current one; the host makes the
+/// move through the MSBuild DOM. Implements [REFACTOR-FSHARP-FILE-ORDER].
 module SharpLsp.Sidecar.FSharp.FSharpFileOrder
 
-open System.IO
-open System.Threading.Tasks
-open FSharp.Compiler.CodeAnalysis
+open System
+open System.Threading
+open FSharp.Compiler.Text
 open Serilog
+open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Messages
+open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
-/// A detected file ordering issue.
-type FileOrderIssue =
-    { /// File that has the unresolved reference.
-      FilePath: string
-      /// 0-based line of the error.
-      Line: int
-      /// 0-based column of the error.
-      Character: int
-      /// The file that defines the missing symbol (comes later in order).
-      DependencyFile: string
-      /// Human-readable description.
-      Message: string }
+/// Whether a declared name is `name` or ends in it: `module P.B` declares `B`.
+let private names (name: string) (declared: string) =
+    declared = name || declared.EndsWith("." + name, StringComparison.Ordinal)
 
-/// Evaluate .fsproj Compile entries with MSBuild and return full paths in order.
-let getCompileOrder (state: FSharpWorkspace.FSharpWorkspaceState) (fsprojPath: string) : Task<string array> =
+/// Whether the file declares `name` at its top level or one level in. Parse-only,
+/// through the overlay so unsaved declarations count. [HOVER-FSHARP-OVERLAY]
+let private declares (state: FSharpWorkspace.FSharpWorkspaceState) options (name: string) (filePath: string) =
     task {
-        match! FSharpWorkspace.compileSources state fsprojPath System.Threading.CancellationToken.None with
-        | Ok files -> return files
-        | Error reason ->
-            Log.Debug("[F# FileOrder] failed to evaluate .fsproj: {Reason}", reason)
-            return [||]
+        let source = FSharpWorkspace.readSource state filePath |> SourceText.ofString
+        let! parsed = state.Checker.ParseFile(filePath, source, options)
+        return
+            parsed.GetNavigationItems().Declarations
+            |> Array.exists (fun top ->
+                names name top.Declaration.LogicalName
+                || top.Nested |> Array.exists (fun nested -> names name nested.LogicalName))
     }
 
-/// Build a map of symbol name → defining file path from check results.
-/// Sources come through the overlay so unsaved edits participate in the
-/// ordering analysis. [HOVER-FSHARP-OVERLAY]
-let private collectDefinitions
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (options: FSharpProjectOptions)
-    (files: string array)
-    =
+/// The files compiled after `filePath`; none when the project does not list it.
+let private laterFiles (files: string array) (filePath: string) =
+    files
+    |> Array.tryFindIndex (fun file -> NativePaths.AreEqual(file, filePath))
+    |> Option.map (fun index -> files[index + 1 ..])
+    |> Option.defaultValue [||]
+
+/// The action moving `later` directly above `filePath`. It has no text edit: the
+/// command the host builds from its reference is the whole fix.
+let private moveAction (project: string) (filePath: string) (name: string) (later: string) =
+    let directory = NativePaths.DirectoryOf project
+    let moved, above = NativePaths.NameOf later, NativePaths.NameOf filePath
+    let title =
+        $"Move {moved} above {above} in {NativePaths.NameOf project} — {moved} declares '{name}' but compiles after {above}"
+    let reference =
+        ReferenceImport.ToCompileOrder(
+            project,
+            NativePaths.RelativeTo(directory, later),
+            NativePaths.RelativeTo(directory, filePath)
+        )
+    { Title = title; Kind = "quickfix"; IsPreferred = false; Edits = [] }, reference
+
+let rec private declaring state options name (files: string list) =
     task {
-        let definitions = System.Collections.Generic.Dictionary<string, string>()
-        for filePath in files do
-            try
-                if File.Exists(filePath) then
-                    // Canonical overlay-aware check funnel. [HOVER-FSHARP-OVERLAY]
-                    let! _parse, checkAnswer, _source =
-                        FSharpWorkspace.parseAndCheckOnce state filePath options
-                    match checkAnswer with
-                    | FSharpCheckFileAnswer.Succeeded check ->
-                        for su in check.GetAllUsesOfAllSymbolsInFile() do
-                            if su.IsFromDefinition then
-                                definitions[su.Symbol.DisplayName] <- filePath
-                    | FSharpCheckFileAnswer.Aborted -> ()
-            with _ -> ()
-        return definitions
+        match files with
+        | [] -> return []
+        | file :: rest ->
+            let! declared = declares state options name file
+            let! more = declaring state options name rest
+            return if declared then file :: more else more
     }
 
-/// Collect undefined symbol errors from FCS check results for a file.
-/// Overlay-aware: checks the live buffer text. [HOVER-FSHARP-OVERLAY]
-let private collectUndefinedErrors
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (options: FSharpProjectOptions)
-    (filePath: string)
-    =
+/// One move action per later file of the project that declares `name`, in
+/// compile order.
+let actions (state: FSharpWorkspace.FSharpWorkspaceState) (filePath: string) (name: string) =
     task {
-        try
-            if not (File.Exists(filePath)) then
+        match FSharpWorkspace.optionsFor state filePath with
+        | None -> return []
+        | Some own ->
+            match! FSharpWorkspace.compileSources state own.ProjectFileName CancellationToken.None with
+            | Error reason ->
+                Log.Warning("F# compile order of {Project} unavailable: {Reason}", own.ProjectFileName, reason)
                 return []
-            else
-                // Canonical overlay-aware check funnel. [HOVER-FSHARP-OVERLAY]
-                let! _parseResults, checkAnswer, _source =
-                    FSharpWorkspace.parseAndCheckOnce state filePath options
-                match checkAnswer with
-                | FSharpCheckFileAnswer.Succeeded check ->
-                    // FS0039 (value/constructor not defined) and FS0001 are
-                    // type-CHECK diagnostics — they live on the check results,
-                    // not parseResults.Diagnostics (parse-only), so a forward
-                    // dependency was never detected before this fix.
-                    let errors =
-                        check.Diagnostics
-                        |> Array.filter (fun d ->
-                            d.ErrorNumber = 39 || d.ErrorNumber = 1)
-                        |> Array.map (fun d ->
-                            let r = d.Range
-                            (r.StartLine - 1, r.StartColumn, d.Message))
-                        |> Array.toList
-                    return errors
-                | FSharpCheckFileAnswer.Aborted -> return []
-        with _ -> return []
-    }
-
-/// Analyze file ordering and return detected issues.
-let analyzeFileOrder
-    (state: FSharpWorkspace.FSharpWorkspaceState)
-    (fsprojPath: string)
-    =
-    task {
-        try
-            if not state.IsLoaded then
-                return []
-            else
-                let! files = getCompileOrder state fsprojPath
-                if files.Length < 2 then return []
-                else
-                    // The analyzed project's options, not the workspace's first project's:
-                    // a loaded workspace always answers, with its own at worst.
-                    let options = (FSharpWorkspace.optionsFor state files[0]).Value
-                    let! definitions = collectDefinitions state options files
-                    let fileIndex =
-                        files
-                        |> Array.mapi (fun i f -> f, i)
-                        |> dict
-                    let mutable issues = []
-                    for filePath in files do
-                        let! errors = collectUndefinedErrors state options filePath
-                        // filePath comes straight from `files`, and fileIndex is
-                        // built from exactly that array, so the key is always present.
-                        let currentIdx = fileIndex[filePath]
-                        for (line, char, msg) in errors do
-                            // Extract symbol name from error message.
-                            let symbolName =
-                                msg.Split([| '\'' |])
-                                |> Array.tryItem 1
-                                |> Option.defaultValue ""
-                            match definitions.TryGetValue(symbolName) with
-                            | true, defFile when defFile <> filePath ->
-                                // defFile is a value from `definitions`, which only
-                                // ever stores paths drawn from `files`, so it is
-                                // always a key of fileIndex.
-                                let defIdx = fileIndex[defFile]
-                                if defIdx > currentIdx then
-                                    let issue =
-                                        { FilePath = filePath
-                                          Line = line
-                                          Character = char
-                                          DependencyFile = defFile
-                                          Message =
-                                            $"'{symbolName}' is defined in '{SharpLsp.Sidecar.Common.NativePaths.NameOf defFile}' which comes after '{SharpLsp.Sidecar.Common.NativePaths.NameOf filePath}' in the compile order. Move '{SharpLsp.Sidecar.Common.NativePaths.NameOf defFile}' before '{SharpLsp.Sidecar.Common.NativePaths.NameOf filePath}' in the .fsproj." }
-                                    issues <- issue :: issues
-                            | _ -> ()
-                    return issues |> List.rev
-        with ex ->
-            Log.Debug(ex, "[F# FileOrder] failed")
-            return []
+            | Ok files ->
+                let parsing = fst (state.Checker.GetParsingOptionsFromProjectOptions own)
+                let! found = declaring state parsing name (laterFiles files filePath |> List.ofArray)
+                return found |> List.map (moveAction own.ProjectFileName filePath name)
     }
