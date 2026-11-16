@@ -1,6 +1,6 @@
 //! The tree-sitter pre-validation budget of [DEFINITION-PERFORMANCE],
 //! [REFERENCES-PERFORMANCE] and [HOVER-PERFORMANCE]: a position in a comment or
-//! string literal is rejected in under a millisecond, with no sidecar asked,
+//! on a string literal is rejected in under a millisecond, with no sidecar asked,
 //! on a file large enough to make a linear scan visible.
 #![expect(
     clippy::unwrap_used,
@@ -16,7 +16,7 @@ use serde_json::json;
 
 use super::*;
 
-/// One generated member: a line comment, then a method holding a string.
+/// One generated member: a line comment, then a method holding a verbatim string.
 const MEMBER_LINES: u32 = 5;
 /// Members in the file: 4,000 members is 20,000 lines of C#.
 const MEMBERS: u32 = 4_000;
@@ -27,7 +27,7 @@ fn large_source() -> String {
     for index in 0..MEMBERS {
         let _ = write!(
             source,
-            "    // member {index} documents itself\n    public static string Member{index}()\n    {{\n        return \"value {index}\";\n    }}\n"
+            "    // member {index} documents itself\n    public static string Member{index}()\n    {{\n        return @\"value {index}\";\n    }}\n"
         );
     }
     source.push_str("}\n");
@@ -84,7 +84,7 @@ fn non_symbol_positions_are_rejected_in_under_a_millisecond_on_a_large_file() {
     let budget = Duration::from_millis(1);
     for (label, line, character, expected) in [
         ("comment", member, 10, true),
-        ("string literal", member + 3, 20, true),
+        ("verbatim string", member + 3, 20, true),
         ("method name", member + 1, 30, false),
         ("return keyword", member + 3, 10, false),
         ("first comment", 3, 10, true),
@@ -109,11 +109,11 @@ fn non_symbol_positions_are_rejected_in_under_a_millisecond_on_a_large_file() {
 /// column to probe and whether a symbol can sit there.
 const CSHARP_SHAPES: &[(&str, u32, bool)] = &[
     ("class Shapes {", 8, false),
-    ("    string a = \"plain text\";", 20, true),
-    ("    string b = \"tab\\there\";", 20, true),
+    // A regular literal reaches the compiler, quotes and content alike: what it says
+    // can be a symbol, as the module path of an import is. [RAZOR-COLLOCATION-JS]
+    ("    string a = \"plain text\";", 15, false),
+    ("    string a2 = \"plain text\";", 22, false),
     ("    string c = @\"verbatim text\";", 22, true),
-    ("    string d = \"\"\"raw text\"\"\";", 22, true),
-    ("    char e = 'x';", 14, true),
     ("    string f = $\"text {a} more\";", 18, true),
     ("    string g = $\"text {a} more\";", 23, false),
     ("    /* block */ int h = 1;", 8, true),

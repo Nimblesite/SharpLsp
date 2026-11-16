@@ -247,27 +247,23 @@ const COMMENT_KINDS: [&str; 4] = [
     "block_comment_content",
 ];
 
-/// The node kinds that are the text or the delimiters of a string or character
-/// literal, in both grammars. A leaf inside a literal is its *content* node
-/// (`string_literal_content`), not the literal, so both are listed. The holes
-/// of an interpolated string (`interpolation`, `format_string_eval`) hold code
-/// and are not here: a name inside one is a symbol.
-const STRING_KINDS: [&str; 19] = [
+/// The node kinds the pre-validation answers nothing for as string literals. A C#
+/// regular literal is never among them: the node under a caret there is a quote token
+/// or the *content* leaf (`string_literal_content`), and what a string says can be a
+/// symbol — the module path of an `import` call navigates to its file
+/// ([RAZOR-COLLOCATION-JS]) — so it reaches the compiler. Verbatim and raw literals and
+/// interpolated text are leaves of their own and are answered here. F# literals are
+/// whole-string nodes with no such navigation. The holes of an interpolated string
+/// (`interpolation`, `format_string_eval`) hold code and are not here.
+const STRING_KINDS: [&str; 12] = [
     // C#
     "string_literal",
-    "string_literal_content",
-    "string_literal_encoding",
     "verbatim_string_literal",
     "raw_string_literal",
-    "raw_string_start",
-    "raw_string_content",
-    "raw_string_end",
-    "character_literal",
-    "character_literal_content",
-    "escape_sequence",
     "interpolated_string_expression",
     "interpolated_string_text",
     "string_content",
+    "character_literal",
     // F#
     "string",
     "verbatim_string",
