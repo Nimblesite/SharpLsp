@@ -11,6 +11,7 @@ open SharpLsp.Sidecar.Common
 let private gate = new SemaphoreSlim(1, 1)
 
 /// A source inherits the closest configuration, independent of process working directory.
+[<TailCall>]
 let rec private configuration directory =
     if System.String.IsNullOrEmpty directory then
         Configuration FSharpLint.Framework.Configuration.defaultConfiguration

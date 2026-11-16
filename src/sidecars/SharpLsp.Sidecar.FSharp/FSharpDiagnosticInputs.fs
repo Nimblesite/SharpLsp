@@ -14,6 +14,7 @@ let private ownError (state: FSharpWorkspace.FSharpWorkspaceState) (options: FSh
         else None)
 
 /// Walk the existing acyclic compiler graph; independent projects remain available.
+[<TailCall>]
 let rec failure state (options: FSharpProjectOptions) =
     ownError state options
     |> Option.orElseWith (fun () ->

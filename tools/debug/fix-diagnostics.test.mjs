@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import {
     applyFixes,
+    applyLineFixes,
     applyTextEdits,
     camelCase,
     editsByFile,
@@ -15,6 +16,7 @@ import {
     overFollowingDot,
     parenthesiseSoleElement,
     rangesByFile,
+    withTailCall,
 } from "./fix-diagnostics.mjs";
 
 const range = (line, start, end, endLine = line) => ({
@@ -141,4 +143,15 @@ test("a range needs its rename only while it still holds a name the rename would
     assert.equal(needsRename("kindSource"), false, "already renamed by an earlier report on the same name");
     assert.equal(needsRename("kind Source"), false, "the range no longer covers one identifier");
     assert.equal(needsRename(""), false);
+});
+
+test("a recursive binding gains [<TailCall>] above a let rec and inline after an and, once per line", () => {
+    assert.equal(withTailCall("let rec loop acc = loop (acc + 1)"), "[<TailCall>]\nlet rec loop acc = loop (acc + 1)");
+    assert.equal(withTailCall("    let rec private walk xs ="), "    [<TailCall>]\n    let rec private walk xs =");
+    assert.equal(withTailCall("and other n = loop n"), "and [<TailCall>] other n = loop n");
+    assert.equal(withTailCall("    and private inner n ="), "    and [<TailCall>] private inner n =");
+
+    const text = "let rec even n =\n    odd (n - 1)\nand odd n =\n    even (n - 1)\nlet plain = 1\n";
+    const fixed = applyLineFixes(text, [range(0, 8, 12), range(0, 8, 12), range(2, 4, 7)], withTailCall);
+    assert.equal(fixed, "[<TailCall>]\nlet rec even n =\n    odd (n - 1)\nand [<TailCall>] odd n =\n    even (n - 1)\nlet plain = 1\n");
 });

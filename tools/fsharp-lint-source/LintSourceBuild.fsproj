@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- FS3569: a [<TailCall>] function whose recursive call is not in tail position fails the build. -->
+    <WarnOn>$(WarnOn);3569</WarnOn>
     <RootNamespace>LintSourceBuild</RootNamespace>
     <AssemblyName>lint-source-build</AssemblyName>
     <Nullable>enable</Nullable>

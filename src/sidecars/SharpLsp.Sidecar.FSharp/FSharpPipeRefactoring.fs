@@ -68,6 +68,7 @@ let rec private pipelineOf (e: SynExpr) : SynExpr * SynExpr list =
     | None -> e, []
 
 /// The head of an application spine: the `f` of `f a b`.
+[<TailCall>]
 let rec private spineHead (e: SynExpr) : SynExpr =
     match e with
     | SynExpr.App(isInfix = false; funcExpr = f) -> spineHead f
@@ -112,6 +113,7 @@ type private PipelineText =
       Stages: string list }
 
 /// A string literal, parenthesised or not.
+[<TailCall>]
 let rec private isStringLiteral (e: SynExpr) : bool =
     match e with
     | SynExpr.Const(constant = SynConst.String _)

@@ -61,6 +61,7 @@ let private sameRoot (known: string option) (entryName: string) : Result<string,
     | Some k when k = seg -> Ok k
     | Some k -> Error(err "multi-root" (sprintf "archive has more than one top-level directory (%s vs %s)" k seg))
 
+[<TailCall>]
 let rec private readAll (reader: TarReader) (destRoot: string) (count: int) (root: string option) : Result<int * string, PrepError> =
     match reader.GetNextEntry() with
     | null ->

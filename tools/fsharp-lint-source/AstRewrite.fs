@@ -96,7 +96,7 @@ let private wrapClauses (clauses: SynMatchClause list) : Result<SynMatchClause l
     | [ AsyncStringClause; NamedWithStartsWithGuard; WildClause ] ->
         Ok [ wrapClause clauses.[0]; wrapClause clauses.[1]; clauses.[2] ]
     | shapes ->
-        let described = shapes |> List.map (fun s -> string s) |> String.concat "; "
+        let described = shapes |> List.map string |> String.concat "; "
         Error(err "unexpected-match-shape" ("target match clause shape changed: " + described))
 
 // --- generic guarded AST traversal ------------------------------------------
@@ -144,7 +144,7 @@ and private walkUnion hook state t (x: obj) : objnull =
     let case, fields = FSharpValue.GetUnionFields(x, t, true)
     FSharpValue.MakeUnion(case, fields |> Array.map (walk hook state), true)
 
-and private walk hook state (x: objnull) : objnull =
+and [<TailCall>] private walk hook state (x: objnull) : objnull =
     // Fantomas.FCS union values expose their per-case nested class through
     // GetType(), so SynExpr nodes must be detected with a type test, not
     // type equality.
@@ -211,6 +211,8 @@ let private verifyHook (state: WalkState) (e: SynExpr) : SynExpr option =
 
 let private parse (source: string) : Result<ParsedInput, PrepError> =
     try
+        // The source builder is a console program: it parses one file and exits.
+        // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
         match CodeFormatter.ParseAsync(false, source) |> Async.RunSynchronously with
         | [||] -> Error(err "parse-failed" "parser returned no input")
         | results -> Ok(fst results.[0])
@@ -219,6 +221,8 @@ let private parse (source: string) : Result<ParsedInput, PrepError> =
 
 let private format (ast: ParsedInput) (source: string) : Result<string, PrepError> =
     try
+        // The source builder is a console program: it formats one file and exits.
+        // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
         Ok(CodeFormatter.FormatASTAsync(ast, source) |> Async.RunSynchronously)
     with e ->
         Error(err "format-failed" ("AST formatting failed: " + e.Message))

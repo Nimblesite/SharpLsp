@@ -8,6 +8,7 @@
 //   --code FS3886      parenthesise the reported single-tuple list element
 //   --code IDE0001     remove the qualifier or type arguments Roslyn marks unnecessary
 //   --code IDE0002     the same, for member access
+//   --code FL0085      put [<TailCall>] on each reported recursive binding
 //   --fix-all <code>   apply the server's own "Fix all in solution" for the first
 //                      diagnostic with that code (SLSPF0102, SLSPF0103, IDE0001…)
 //   --rename <code>    rename every identifier a naming rule reports (FL0067,
@@ -44,6 +45,30 @@ const FIXES = {
     IDE0001: () => "",
     IDE0002: () => "",
 };
+
+/**
+ * `[<TailCall>]` for the recursive binding on `line` (FL0085): on its own line above a
+ * `let rec`, inline after an `and`. The compiler then proves or refutes the claim (FS3569).
+ */
+export function withTailCall(line) {
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    const body = line.trimStart();
+    return body.startsWith("and ") ? `${indent}and [<TailCall>] ${body.slice(4)}` : `${indent}[<TailCall>]\n${line}`;
+}
+
+/** Fixes that rewrite the whole line a diagnostic starts on. */
+const LINE_FIXES = {
+    FL0085: withTailCall,
+};
+
+/** `text` with `fix` applied to each distinct line the ranges start on. */
+export function applyLineFixes(text, ranges, fix) {
+    const lines = text.split("\n");
+    for (const line of new Set(ranges.map((range) => range.start.line))) {
+        lines[line] = fix(lines[line]);
+    }
+    return lines.join("\n");
+}
 
 /** Codes whose range is a qualifier: the dot that follows it goes with it. */
 const QUALIFIER_CODES = ["IDE0001", "IDE0002"];
@@ -239,7 +264,7 @@ async function main() {
     const code = take("--code") ?? fixAllCode ?? renameCode;
     const under = take("--under") ?? "/";
     const dryRun = argv.includes("--dry-run") && argv.splice(argv.indexOf("--dry-run"), 1).length > 0;
-    const fix = FIXES[code];
+    const fix = FIXES[code] ?? LINE_FIXES[code];
     if (fix === undefined && fixAllCode === undefined && renameCode === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
     const options = parseArguments(argv);
 
@@ -283,7 +308,8 @@ async function main() {
         const sample = text.slice(offsetOf(text, first.start), offsetOf(text, first.end)).replaceAll("\n", "⏎").slice(0, 80);
         console.log(`${file}: ${ranges.length}  e.g. ${sample}`);
         const spans = QUALIFIER_CODES.includes(code) ? ranges.map((range) => overFollowingDot(text, range)) : ranges;
-        if (!dryRun) writeFileSync(file, applyFixes(text, spans, fix));
+        const fixed = code in LINE_FIXES ? applyLineFixes(text, ranges, fix) : applyFixes(text, spans, fix);
+        if (!dryRun) writeFileSync(file, fixed);
     }
     console.log(`${dryRun ? "would fix" : "fixed"} ${count} ${code} in ${files.size} files`);
     process.exit(0);

@@ -183,13 +183,14 @@ let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line ch
 
 /// The entity `entity` stands for, through any abbreviation: `string` is `System.String`,
 /// and an abbreviation FSharp.Core declares has no source of its own to land in. [DEFINITION-CROSSLANG]
+[<TailCall>]
 let rec private definingEntity (entity: FSharpEntity) : FSharpEntity option =
     if entity.IsFSharpAbbreviation then
         getTypeEntity entity.AbbreviatedType
     else
         Some entity
 
-and private getTypeEntity (valueType: FSharpType) : FSharpEntity option =
+and [<TailCall>] private getTypeEntity (valueType: FSharpType) : FSharpEntity option =
     if valueType.HasTypeDefinition then
         definingEntity valueType.TypeDefinition
     else
@@ -243,6 +244,7 @@ let private declarationResultLocation result =
     | FindDeclResult.ExternalDecl _ -> None
 
 /// Every entity in a signature and its nested entities, from FCS's symbol tree.
+[<TailCall>]
 let rec allNested (entities: seq<FSharpEntity>) =
     seq {
         for entity in entities do

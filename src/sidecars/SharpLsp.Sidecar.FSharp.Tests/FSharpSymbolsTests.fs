@@ -63,6 +63,7 @@ let private documented =
           "" ]
 
 /// Every symbol in a tree, top level and nested.
+[<TailCall>]
 let rec private allSymbols (items: FSharpSymbols.SymbolItem list) =
     items |> List.collect (fun item -> item :: allSymbols item.Children)
 

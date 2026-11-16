@@ -205,6 +205,7 @@ let internal allSourceFiles (state: FSharpWorkspaceState) : string array =
     projectOptions state |> Seq.collect _.SourceFiles |> distinctFiles
 
 /// True when `options` read `project` in memory, directly or through another project.
+[<TailCall>]
 let rec private readsInMemory (project: string) (options: FSharpProjectOptions) =
     options.ReferencedProjects
     |> Array.exists (function
