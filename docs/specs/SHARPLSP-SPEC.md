@@ -45,7 +45,7 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs) (start-up and
 
 - Long-running .NET process hosting [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) v43.12+
 - [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) for parsing, checking, and semantic queries
-- [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
+- MSBuild's design-time build for project cracking: the F# compiler task reports each framework's exact options ([NETFX-PROJECTS-FSHARP])
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as the C# sidecar
 
@@ -135,7 +135,7 @@ Every host-to-sidecar request carries a response budget: 600s for `workspace/ope
 Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, multi-targeting, [Directory.Build.props](https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-by-directory), [Directory.Packages.props](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management), [global.json](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json), conditional symbols, and NuGet resolution.
 
 - **C# projects:** [MSBuildWorkspace](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.msbuild.msbuildworkspace) ([Microsoft.CodeAnalysis.Workspaces.MSBuild](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Workspaces.MSBuild) + [Microsoft.Build.Locator](https://github.com/microsoft/MSBuildLocator)) performs design-time builds to extract source files, references, and compiler options.
-- **F# projects:** [Ionide.ProjInfo](https://github.com/ionide/proj-info) performs MSBuild evaluation with F#-specific handling (file ordering, which is semantically significant in F#).
+- **F# projects:** MSBuild's design-time build reports the F# compiler's own command line per target framework — defines, references and sources in compile order, which is semantically significant in F# ([NETFX-PROJECTS-FSHARP]). No third-party project cracker is involved.
 - **Mixed solutions:** Both sidecars load their respective projects from the same `.sln` or `.slnx` solution file. Cross-language project references are resolved via binary reference (compiled DLL), not source-level.
 - **Solution files:** SharpLsp treats legacy `.sln` and XML `.slnx` as first-class solution inputs. Shared sidecar code reads both formats through `Microsoft.VisualStudio.SolutionPersistence` and exposes a neutral `solution/read` DTO so host/editor code does not parse solution text.
 - **File watching:** The Rust host watches .csproj, .fsproj, .sln, .slnx, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
@@ -410,7 +410,6 @@ The Rust binary MUST have a test that proves:
 | Package | Version | Purpose |
 |---|---|---|
 | [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) | 43.12.201 | F# compiler services (parsing, type checking, IDE features) |
-| [Ionide.ProjInfo](https://github.com/ionide/proj-info) | latest | F# project cracking (MSBuild evaluation) |
 | [FSharpLint.Core](https://github.com/fsprojects/FSharpLint) | latest | F# linting diagnostics |
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
@@ -736,7 +735,7 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|
-| Solution/project loading | Custom: `sharplsp/openSolution` | MSBuildWorkspace + Ionide.ProjInfo | P0 |
+| Solution/project loading | Custom: `sharplsp/openSolution` | MSBuildWorkspace + MSBuild design-time build ([NETFX-PROJECTS-FSHARP]) | P0 |
 | Project dependency graph | Custom: `sharplsp/projectGraph` | MSBuild project reference analysis | P1 |
 | NuGet package search | Custom: `sharplsp/nuget/search` | HTTP GET nuget.org v3 API, cross-ref installed | P2 |
 | NuGet package versions | Custom: `sharplsp/nuget/versions` | HTTP GET nuget.org flat container API | P2 |
@@ -809,7 +808,7 @@ source text (GitHub #389).
 **Schedule:** Months 4–8.
 
 - C# sidecar with MSBuildWorkspace, full project loading, design-time build evaluation
-- F# sidecar with FSharpChecker, Ionide.ProjInfo, project cracking
+- F# sidecar with FSharpChecker and MSBuild design-time project cracking
 - IPC protocol implementation (MessagePack over named pipes/UDS) with health monitoring
 - Completions, hover, signature help for both C# and F#
 - Go to definition, declaration, type definition, implementation for both languages
@@ -884,7 +883,6 @@ SharpLsp is MIT-licensed. All dependencies are compatible:
 | [.NET Runtime](https://github.com/dotnet/runtime) | MIT + Patent Promise | Patent promise covers applications running on .NET Runtime. |
 | [Fantomas](https://github.com/fsprojects/fantomas) | Apache-2.0 | None. |
 | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | MIT | None. |
-| [Ionide.ProjInfo](https://github.com/ionide/proj-info) | MIT | None. |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) / grammars | MIT | None. |
 | [salsa](https://github.com/salsa-rs/salsa) | Apache-2.0 / MIT | Dual-licensed. |
 | SharpLsp itself | MIT | Open source. No proprietary components. |

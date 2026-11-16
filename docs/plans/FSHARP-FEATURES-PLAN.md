@@ -152,8 +152,10 @@ rule offers. Private/internal dead code is reported even outside monorepo mode.
 
 ## Pre-existing backlog (unchanged)
 
-- [ ] Ionide.ProjInfo integration for project cracking (currently manual `.fsproj`
-      XML parse in [FSharpWorkspace.fs:41](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs#L41))
+- [x] Real project cracking in place of the manual `.fsproj` XML parse — MSBuild's design-time
+      build reports the F# compiler's own per-framework options ([NETFX-PROJECTS-FSHARP],
+      [FSharpDesignTime.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpDesignTime.fs)); the same
+      mechanism Ionide.ProjInfo wraps, so that dependency is not taken
 - [x] File ordering awareness + reorder suggestions (F# compilation order matters) —
       `[REFACTOR-FSHARP-FILE-ORDER]`: FS0039 on a name a later file declares offers
       "Move B.fs above A.fs" ([FSharpFileOrder.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpFileOrder.fs)),
