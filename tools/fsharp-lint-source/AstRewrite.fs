@@ -19,11 +19,11 @@ open Fantomas.FCS.Syntax
 open Fantomas.FCS.Text
 open LintSourceBuild.SourcePaths
 
-let private AsyncName = "Microsoft.FSharp.Control.FSharpAsync`1"
-let private TaskPrefix = "System.Threading.Tasks.Task"
-let private ScrutineeVar = "fSharpType"
-let private ScrutineeProp = "BasicQualifiedName"
-let private GuardMethod = "StartsWith"
+let private asyncName = "Microsoft.FSharp.Control.FSharpAsync`1"
+let private taskPrefix = "System.Threading.Tasks.Task"
+let private scrutineeVar = "fSharpType"
+let private scrutineeProp = "BasicQualifiedName"
+let private guardMethod = "StartsWith"
 
 // --- shape recognizers ------------------------------------------------------
 
@@ -48,13 +48,13 @@ let private isMemberAccess receiver memberName (e: SynExpr) =
     | _ -> false
 
 let private (|TargetScrutinee|_|) expression =
-    if isMemberAccess ScrutineeVar ScrutineeProp expression then Some () else None
+    if isMemberAccess scrutineeVar scrutineeProp expression then Some () else None
 
 /// `name.StartsWith "System.Threading.Tasks.Task..."` guard expression.
 let private (|StartsWithGuard|_|) (patName: string) (e: SynExpr) =
     match e with
     | SynExpr.App(_, _, funcExpr, SynExpr.Const(SynConst.String(s, _, _), _), _) when
-        isMemberAccess patName GuardMethod funcExpr && s.StartsWith(TaskPrefix, StringComparison.Ordinal) ->
+        isMemberAccess patName guardMethod funcExpr && s.StartsWith(taskPrefix, StringComparison.Ordinal) ->
         Some()
     | _ -> None
 
@@ -71,7 +71,7 @@ let private isStartsWithGuardOn (patName: string) (g: SynExpr) : bool =
 
 let private classifyClause (c: SynMatchClause) : ClauseKind =
     match c with
-    | SynMatchClause(SynPat.Const(SynConst.String(s, _, _), _), None, _, _, _, _) when s = AsyncName ->
+    | SynMatchClause(SynPat.Const(SynConst.String(s, _, _), _), None, _, _, _, _) when s = asyncName ->
         AsyncStringClause
     | SynMatchClause(SynPat.Named(SynIdent(id, _), false, None, _), Some g, _, _, _, _) when
         isStartsWithGuardOn id.idText g ->

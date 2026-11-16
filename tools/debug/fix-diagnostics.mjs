@@ -192,23 +192,31 @@ async function renameOne(session, { uri, item }, opened) {
     return edits.size;
 }
 
-/** Rename every identifier `code` reports under `under`, one settled pull at a time. */
+/** Whether `text` still holds an identifier the rename would change. */
+export function needsRename(text) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(text) && camelCase(text) !== text;
+}
+
+/**
+ * Rename every identifier `code` reports under `under`, from one settled pull. A
+ * rename changes no line count, so later reports keep their place; one whose range
+ * no longer holds a name to change — the second report on a name already renamed —
+ * is passed over.
+ */
 async function renameAll(session, code, under) {
     const opened = new Map();
-    const refused = new Set();
-    let renamed = 0;
-    for (;;) {
-        const reports = await settledReports(session);
-        const pending = reports.flatMap((report) =>
-            (report.items ?? [])
-                .filter((item) => String(item.code) === code)
-                .map((item) => ({ uri: report.uri, item, key: `${report.uri}:${item.range.start.line}:${item.range.start.character}` })),
-        );
-        const target = pending.find((found) => !refused.has(found.key) && fileURLToPath(found.uri).replaceAll("\\", "/").includes(under));
-        if (target === undefined) return { renamed, refused: refused.size };
-        if ((await renameOne(session, target, opened)) === 0) refused.add(target.key);
-        else renamed += 1;
+    const outcome = { renamed: 0, refused: 0 };
+    const reports = await settledReports(session);
+    for (const report of reports) {
+        if (!fileURLToPath(report.uri).replaceAll("\\", "/").includes(under)) continue;
+        for (const item of (report.items ?? []).filter((found) => String(found.code) === code)) {
+            const text = readFileSync(fileURLToPath(report.uri), "utf8");
+            if (!needsRename(text.slice(offsetOf(text, item.range.start), offsetOf(text, item.range.end)))) continue;
+            if ((await renameOne(session, { uri: report.uri, item }, opened)) === 0) outcome.refused += 1;
+            else outcome.renamed += 1;
+        }
     }
+    return outcome;
 }
 
 async function pull(session) {

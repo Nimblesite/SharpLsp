@@ -10,6 +10,7 @@ import {
     camelCase,
     editsByFile,
     firstDiagnostic,
+    needsRename,
     offsetOf,
     overFollowingDot,
     parenthesiseSoleElement,
@@ -132,4 +133,12 @@ test("every reported spelling becomes camelCase", () => {
     ]) {
         assert.equal(camelCase(name), expected, name);
     }
+});
+
+test("a range needs its rename only while it still holds a name the rename would change", () => {
+    assert.equal(needsRename("KIND_SOURCE"), true);
+    assert.equal(needsRename("TaskPrefix"), true);
+    assert.equal(needsRename("kindSource"), false, "already renamed by an earlier report on the same name");
+    assert.equal(needsRename("kind Source"), false, "the range no longer covers one identifier");
+    assert.equal(needsRename(""), false);
 });
