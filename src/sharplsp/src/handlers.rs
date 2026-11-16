@@ -133,8 +133,8 @@ pub fn is_non_symbol_position(req: &Request, trees: &HashMap<Uri, Tree>) -> bool
 // ── Helpers ──────────────────────────────────────────────────────
 
 /// The document's source and its tree (cached or parsed fresh), or `None` for
-/// a synced document that is not C#/F# source — a project or props file has no
-/// syntax answer, so the request answers nothing rather than failing (#578).
+/// a synced project or props file: it has no syntax answer, so the request
+/// answers nothing rather than failing (#578). Any other file type is an error.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
@@ -146,11 +146,21 @@ fn parsed(
     trees: &HashMap<Uri, Tree>,
 ) -> Result<Option<(String, Tree)>> {
     let Some(lang) = LangId::from_uri(uri) else {
-        return Ok(None);
+        return is_msbuild_document(uri)
+            .then_some(None)
+            .context("unsupported file type");
     };
     let source = vfs.get_content(uri).context("document not found in VFS")?;
     let tree = parsers.parse(lang, &source, trees.get(uri))?;
     Ok(Some((source, tree)))
+}
+
+/// Whether `uri` is a synced `MSBuild` project or props document.
+fn is_msbuild_document(uri: &Uri) -> bool {
+    crate::paths::uri_to_path(uri.as_str()).is_ok_and(|path| {
+        crate::nuget::vulnerability::owns_document(&path)
+            || crate::nuget::vulnerability::appends_to_sidecar(&path)
+    })
 }
 
 /// Extract `(uri, position)` from any params with `text_document_position_params`.
