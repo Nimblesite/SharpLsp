@@ -64,11 +64,13 @@ async function goToMember(direction: 'next' | 'previous'): Promise<void> {
   });
   if (position === null) return;
   const target = new vscode.Position(position.line, position.character);
-  editor.selection = new vscode.Selection(target, target);
-  editor.revealRange(
-    new vscode.Range(target, target),
-    vscode.TextEditorRevealType.InCenterIfOutsideViewport,
-  );
+  // Awaited, so the caret has moved before the next step reads it: assigning
+  // `editor.selection` returns before the editor applies it, and a second key
+  // press could start from where the first one began.
+  await vscode.window.showTextDocument(editor.document, {
+    ...(editor.viewColumn === undefined ? {} : { viewColumn: editor.viewColumn }),
+    selection: new vscode.Range(target, target),
+  });
 }
 
 /** Register the editor navigation commands. */

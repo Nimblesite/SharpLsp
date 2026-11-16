@@ -16,6 +16,7 @@ mod cross_language;
 mod diagnostic_publish;
 mod diagnostics;
 mod dispatch;
+mod document_kind;
 mod document_symbols;
 mod folding;
 // Formatting module is sequestered — not wired into the LSP server.

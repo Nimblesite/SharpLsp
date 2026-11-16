@@ -14,6 +14,7 @@ use tracing::{info, warn};
 use tree_sitter::Tree;
 
 use crate::diagnostic_publish::{sidecar_for_uri, trigger_diagnostics};
+use crate::document_kind::{DocumentKind, Engine};
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
@@ -199,17 +200,18 @@ fn opened_document_path(notif: &Notification) -> Option<String> {
     paths::uri_to_path(params.text_document.uri.as_str()).ok()
 }
 
-/// Map a document to the sidecar that owns its language. Implements [SCRIPT-DETECT].
-///
-/// `.fsi` is deliberately absent: a signature file with no owning project has no meaningful
-/// semantic closure and is served syntax-only by the host. Implements [SCRIPT-FSX-FSI].
+/// The sidecar that opens a workspace for a document, from its kind: a
+/// document no compiler reads, and a signature file no project owns, has none.
+/// No workspace root was supplied here, so the cone walk has no such boundary.
+/// Implements [SCRIPT-DETECT], [SCRIPT-CONE] and [SCRIPT-FSX-FSI].
 fn sidecar_for_path<'a>(
     file_path: &str,
     [csharp, fsharp]: [Option<&'a Arc<SidecarManager>>; 2],
 ) -> Option<&'a Arc<SidecarManager>> {
-    match paths::extension_key(file_path).as_deref() {
-        Some("CS" | "CSX") => csharp,
-        Some("FS" | "FSX" | "FSSCRIPT") => fsharp,
-        _ => None,
+    let kind = DocumentKind::of(std::path::Path::new(file_path), None);
+    info!(?kind, "Document classified");
+    match kind.engine()? {
+        Engine::CSharp => csharp,
+        Engine::FSharp => fsharp,
     }
 }

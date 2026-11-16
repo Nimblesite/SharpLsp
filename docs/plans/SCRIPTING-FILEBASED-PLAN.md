@@ -57,11 +57,12 @@ remaining gaps are explicit rather than implied.
 - [x] Remove trailing whitespace introduced in `src/sharplsp/src/main.rs` (failed `cargo fmt --check`)
 - [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
       `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
-- [ ] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
-      `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpSignature`
-      lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
-- [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
-      filesystem root) — [SCRIPT-CONE]
+- [x] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
+      `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpLooseSource` /
+      `FSharpSignature` lattice, consumed by the lazy open — [SCRIPT-DETECT]: `document_kind_tests.rs`,
+      `lazy_routing.rs` `a_signature_file_starts_fcs_only_inside_a_project_cone`
+- [x] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
+      filesystem root) — [SCRIPT-CONE]: `paths/cone.rs`, `the_cone_walk_stops_at_each_of_its_four_boundaries`
 - [x] Start the second language's sidecar on demand when a document of that language is first opened
       — [SCRIPT-ROUTE-LAZY]: the latch only gates the first lazy `workspace/open`; the second language's
       document is forwarded to its own sidecar, which starts and loads it — `lazy_routing.rs`

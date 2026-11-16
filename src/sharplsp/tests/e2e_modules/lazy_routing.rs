@@ -162,3 +162,69 @@ fn the_second_language_starts_on_its_first_document_without_a_restart() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+/// A signature and its implementation: `add` is declared on the second line of each.
+const SIGNATURE: &str = "module Lib\nval add: a: int -> b: int -> int\n";
+/// The implementation of [`SIGNATURE`].
+const IMPLEMENTATION: &str = "module Lib\nlet add a b = a + b\n";
+
+/// A signature file is a project's when a project owns its cone, and then FCS
+/// loads that project; one no project owns stays syntax-only: no workspace is
+/// opened for it and it has no semantics. [SCRIPT-DETECT] [SCRIPT-CONE]
+/// [SCRIPT-FSX-FSI]
+#[test]
+fn a_signature_file_starts_fcs_only_inside_a_project_cone() {
+    require_dotnet();
+    let dir = tempfile::tempdir().expect("a repository with one F# project");
+    let root = std::fs::canonicalize(dir.path()).expect("canonical folder");
+    std::fs::create_dir_all(root.join(".git")).expect("a repository root");
+    let files = [
+        ("Lib.fsi", SIGNATURE.to_owned()),
+        ("Lib.fs", IMPLEMENTATION.to_owned()),
+    ];
+    super::fixall_fsharp_tests::write_project(&root, "Lib", &files, &[]);
+
+    // 1. Outside the project's cone: document symbols answer from the host's
+    //    own parser and hover has nothing.
+    let mut loose = rootless(&root);
+    let stray = open_loose(&mut loose, &root, "Stray.fsi", SIGNATURE);
+    let symbols = loose.request(
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": stray } }),
+    );
+    assert_rpc_ok(&symbols, "syntax answers without a compiler");
+    let stray_hover = hover(&mut loose, &stray, 1, 5);
+    assert!(
+        stray_hover["result"].is_null(),
+        "no semantics: {stray_hover}"
+    );
+    assert_eq!(running(&loose, "SHARPLSP_CSHARP_SIDECAR_PATH"), 0);
+    loose.shutdown_and_exit();
+    loose.wait_with_timeout();
+
+    // 2. Inside it: the same signature opened first loads its project, and
+    //    FCS answers for the signature and then for its implementation.
+    let project = root.join("Lib");
+    let mut client = rootless(&project);
+    let signature = path_to_file_uri(&project.join("Lib.fsi"));
+    client.open_document(&signature, SIGNATURE);
+    let declared = hover_answered(&mut client, &signature, 1, 5);
+    assert!(declared.contains("add"), "the signature's val: {declared}");
+    assert!(declared.contains("int"), "with its type: {declared}");
+    let implementation = path_to_file_uri(&project.join("Lib.fs"));
+    client.open_document(&implementation, IMPLEMENTATION);
+    let defined = hover_answered(&mut client, &implementation, 1, 5);
+    assert!(defined.contains("add"), "the implementation: {defined}");
+    assert_eq!(
+        running(&client, "SHARPLSP_FSHARP_SIDECAR_PATH"),
+        1,
+        "FCS serves the project's signature"
+    );
+    assert_eq!(
+        running(&client, "SHARPLSP_CSHARP_SIDECAR_PATH"),
+        0,
+        "no Roslyn for an F# project"
+    );
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

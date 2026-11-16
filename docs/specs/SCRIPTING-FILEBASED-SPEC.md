@@ -37,12 +37,13 @@ Every opened document resolves to exactly one `DocumentKind` before any workspac
 | `CSharpFileBasedApp` | `.cs`, no owning project |
 | `CSharpScript` | `.csx` |
 | `FSharpScript` | `.fsx`, `.fsscript` |
+| `FSharpLooseSource` | `.fs`, no owning project — checked in its own context, like a script |
 | `FSharpSignature` | `.fsi`, no owning project — syntax-only per [SCRIPT-FSX-FSI] |
 | `Unsupported` | Any other extension |
 
 Classification uses extension plus cone search, never content sniffing. `Unsupported` documents MUST NOT initialize or latch a sidecar workspace; a later supported document must still initialize it.
 
-Implementations: [main.rs](../../src/sharplsp/src/main.rs), [SolutionLoader.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
+Implementations: [document_kind.rs](../../src/sharplsp/src/document_kind.rs), [SolutionLoader.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
 
 ### Project cone precedence `[SCRIPT-CONE]`
 
@@ -57,6 +58,8 @@ The walk stops at the first of:
 The project wins inside a project cone, matching `dotnet run` when a project exists in the working directory.
 
 A `.csx` or `.fsx` file is never `ProjectOwned`; MSBuild does not compile scripts by default.
+
+The host walks the cone in [cone.rs](../../src/sharplsp/src/paths/cone.rs), one directory listing per level. A project-owned document opened with no workspace root is sent to its language's compiler by file path, and that compiler loads the project that compiles it: Roslyn when the document arrives, FCS as part of `workspace/open`, so a signature file opened first loads its project too.
 
 ### Compilation closure `[SCRIPT-CLOSURE]`
 
