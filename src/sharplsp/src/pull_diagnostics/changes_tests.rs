@@ -439,8 +439,14 @@ mod contract {
             apply_over(&runtime, compilers, &vfs, &rescan())?;
             Ok(fsharp.opened(mark)?.len())
         };
+        // A real edit lands well after the open it follows; Linux stamps files from
+        // a coarse clock, so writing within its tick would predate the open.
+        let write_later = |relative: &str, text: &str| -> Result<()> {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            Ok(std::fs::write(path(relative), text)?)
+        };
 
-        std::fs::write(path("target/build-output.bin"), "churn")?;
+        write_later("target/build-output.bin", "churn")?;
         assert_eq!(
             reopens_after_rescan()?,
             0,
@@ -452,7 +458,7 @@ mod contract {
             "nor does a rescan with nothing changed"
         );
 
-        std::fs::write(path("App/Program.fs"), "module Program\nlet edited = 1")?;
+        write_later("App/Program.fs", "module Program\nlet edited = 1")?;
         assert_eq!(
             reopens_after_rescan()?,
             1,
@@ -464,14 +470,14 @@ mod contract {
             "that reload's open consumed the edit"
         );
 
-        std::fs::write(path("App/Added.fs"), "module Added")?;
+        write_later("App/Added.fs", "module Added")?;
         assert_eq!(
             reopens_after_rescan()?,
             2,
             "a file added beside its sources reloads"
         );
 
-        std::fs::write(path("Directory.Build.props"), "<Project/>")?;
+        write_later("Directory.Build.props", "<Project/>")?;
         assert_eq!(
             reopens_after_rescan()?,
             3,
