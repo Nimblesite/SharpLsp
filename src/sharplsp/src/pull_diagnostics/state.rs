@@ -173,7 +173,8 @@ pub fn load_started() {
 /// revision moves first, so a refusal computed during the load can never reply
 /// as settled in the gap before the load's own invalidation. [DIAG-TRUTH-GUARANTEES]
 pub async fn load_finished() {
-    match tokio::task::spawn_blocking(invalidate).await {
+    // The previous solution's documents are released, not just invalidated. (#566)
+    match tokio::task::spawn_blocking(release).await {
         Ok(Err(error)) => warn!(%error, "Diagnostic inputs not invalidated after a solution load"),
         Err(error) => warn!(%error, "Diagnostic load completion task failed"),
         Ok(Ok(())) => {}
@@ -244,9 +245,14 @@ pub fn begin_change() {
 /// otherwise every document ever pulled stays resident for the host's life.
 /// [LSPKIT-MEM-ADOPT] (#566)
 pub fn release_closed() {
-    if let Err(error) = change_store(|store| Ok(store.clear()?)) {
+    if let Err(error) = release() {
         warn!(%error, "Closed document diagnostic memos could not be released");
     }
+}
+
+/// Drop every Salsa input and memo; the next pulls recompute what is still live.
+fn release() -> Result<()> {
+    change_store(|store| Ok(store.clear()?))
 }
 
 /// Apply one store change and retain the standard debounced refresh.
