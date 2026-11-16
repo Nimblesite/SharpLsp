@@ -12,8 +12,8 @@
 //          [--allow <path-part>]... [--fail-on error|warning|information|hint]
 //          [--timeout <seconds>] [--list]
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Session } from "./lsp-session.mjs";
+import { fileURLToPath } from "node:url";
+import { closeSession, openSession, settledReports } from "./lsp-session.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -26,9 +26,6 @@ const DEMO_FIXTURES = ["/diagnostic-lint", "/diagnostic-tags", "/diagnostic-canc
 
 /** LSP severities, most severe first; the index + 1 is the wire value. */
 const SEVERITIES = ["error", "warning", "information", "hint"];
-
-/** The standard "superseded, ask again" error of a diagnostic pull. */
-const SUPERSEDED = -32802;
 
 /** Options from the command line, with their defaults. */
 export function parseArguments(argv) {
@@ -50,34 +47,6 @@ export function parseArguments(argv) {
     }
     if (!SEVERITIES.includes(options.failOn)) throw new Error(`--fail-on must be one of ${SEVERITIES.join(", ")}`);
     return { ...options, root: resolve(options.root), timeout: Number(options.timeout) };
-}
-
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-
-/** Pull the whole workspace, asking again while the compilers supersede the pull. */
-async function pull(session, deadline) {
-    for (;;) {
-        const response = await session.request("workspace/diagnostic", { previousResultIds: [] });
-        if (response.error === undefined) return response.result.items;
-        if (response.error.code !== SUPERSEDED || Date.now() > deadline) {
-            throw new Error(`workspace/diagnostic failed: ${JSON.stringify(response.error)}`);
-        }
-        await sleep(500);
-    }
-}
-
-/** Pull until two pulls in a row agree and the server asked for no refresh between them. */
-async function settledReports(session, deadline) {
-    let previous;
-    for (;;) {
-        const refreshes = session.refreshes;
-        const items = await pull(session, deadline);
-        const snapshot = JSON.stringify(items);
-        if (snapshot === previous && refreshes === session.refreshes) return items;
-        if (Date.now() > deadline) throw new Error("workspace diagnostics never settled");
-        previous = snapshot;
-        await sleep(2000);
-    }
 }
 
 /** Every diagnostic of every report, flattened to one row each. */
@@ -116,15 +85,9 @@ export function summary(rows) {
 async function main() {
     const options = parseArguments(process.argv.slice(2));
     const deadline = Date.now() + options.timeout * 1000;
-    const session = new Session(options.server, options.root);
-    const capabilities = { textDocument: { diagnostic: {} }, workspace: { diagnostics: { refreshSupport: true } } };
-    await session.request("initialize", { processId: process.pid, rootUri: pathToFileURL(options.root).href, capabilities });
-    session.send({ method: "initialized", params: {} });
-    await Promise.race([session.loaded, sleep(options.timeout * 1000)]);
+    const session = await openSession(options.server, options.root, options.timeout);
     const rows = rowsOf(await settledReports(session, deadline));
-    await session.request("shutdown", null);
-    session.send({ method: "exit" });
-    await Promise.race([session.exited, sleep(10_000)]);
+    await closeSession(session);
 
     const failing = violations(rows, options.allow, options.failOn);
     console.log(`${rows.length} diagnostics under ${options.root}; ${failing.length} outside the allow-list:`);

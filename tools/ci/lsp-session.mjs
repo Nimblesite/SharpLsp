@@ -2,6 +2,12 @@
 // JSON-RPC, answers the server's requests with nothing, and notes the two
 // signals a diagnostics run waits on. [DIAG-HYGIENE-GUARD]
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+/** The standard "superseded, ask again" error of a request the compilers retired. */
+export const SUPERSEDED = -32802;
+
+export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /** Split complete `Content-Length` framed messages off the front of `buffer`. */
 export function takeMessages(buffer) {
@@ -55,5 +61,48 @@ export class Session {
             this.pending.set(id, done);
             this.send({ id, method, params });
         });
+    }
+}
+
+/** Start the server on `root`, initialize as an editor does, and wait for every project to load. */
+export async function openSession(server, root, timeoutSeconds) {
+    const session = new Session(server, root);
+    const capabilities = { textDocument: { diagnostic: {} }, workspace: { diagnostics: { refreshSupport: true } } };
+    await session.request("initialize", { processId: process.pid, rootUri: pathToFileURL(root).href, capabilities });
+    session.send({ method: "initialized", params: {} });
+    await Promise.race([session.loaded, sleep(timeoutSeconds * 1000)]);
+    return session;
+}
+
+/** Shut the server down and wait for it to exit. */
+export async function closeSession(session) {
+    await session.request("shutdown", null);
+    session.send({ method: "exit" });
+    await Promise.race([session.exited, sleep(10_000)]);
+}
+
+/** Pull the whole workspace, asking again while the compilers supersede the pull. */
+async function pull(session, deadline) {
+    for (;;) {
+        const response = await session.request("workspace/diagnostic", { previousResultIds: [] });
+        if (response.error === undefined) return response.result.items;
+        if (response.error.code !== SUPERSEDED || Date.now() > deadline) {
+            throw new Error(`workspace/diagnostic failed: ${JSON.stringify(response.error)}`);
+        }
+        await sleep(500);
+    }
+}
+
+/** Pull until two pulls in a row agree and the server asked for no refresh between them. */
+export async function settledReports(session, deadline) {
+    let previous;
+    for (;;) {
+        const refreshes = session.refreshes;
+        const items = await pull(session, deadline);
+        const snapshot = JSON.stringify(items);
+        if (snapshot === previous && refreshes === session.refreshes) return items;
+        if (Date.now() > deadline) throw new Error("workspace diagnostics never settled");
+        previous = snapshot;
+        await sleep(2000);
     }
 }

@@ -18,7 +18,7 @@
 //          [--root <dir>] [--server <path>] [--under <path-part>] [--dry-run]
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Session } from "../ci/lsp-session.mjs";
+import { SUPERSEDED, closeSession, openSession, settledReports as settled, sleep } from "../ci/lsp-session.mjs";
 import { parseArguments } from "../ci/workspace-diagnostics.mjs";
 
 /**
@@ -79,8 +79,6 @@ export function overFollowingDot(text, range) {
     return text[end] === "." ? { start: range.start, end: { line: range.end.line, character: range.end.character + 1 } } : range;
 }
 
-const SUPERSEDED = -32802;
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /** The UTF-16 offset of an LSP position in `text`. */
 export function offsetOf(text, position) {
@@ -171,18 +169,6 @@ export function camelCase(name) {
         .join("");
 }
 
-/** The settled workspace reports: two pulls in a row that agree. */
-async function settledReports(session) {
-    let previous;
-    let reports = await pull(session);
-    while (JSON.stringify(reports) !== previous) {
-        previous = JSON.stringify(reports);
-        await sleep(3000);
-        reports = await pull(session);
-    }
-    return reports;
-}
-
 /** Rename one reported identifier; the files the server's edit changed, or nothing when it refused. */
 async function renameOne(session, { uri, item }, opened) {
     const file = fileURLToPath(uri);
@@ -228,10 +214,10 @@ export function needsRename(text) {
  * no longer holds a name to change — the second report on a name already renamed —
  * is passed over.
  */
-async function renameAll(session, code, under) {
+async function renameAll(settledReports, session, code, under) {
     const opened = new Map();
     const outcome = { renamed: 0, refused: 0 };
-    const reports = await settledReports(session);
+    const reports = await settledReports();
     for (const report of reports) {
         if (!fileURLToPath(report.uri).replaceAll("\\", "/").includes(under)) continue;
         for (const item of (report.items ?? []).filter((found) => String(found.code) === code)) {
@@ -242,15 +228,6 @@ async function renameAll(session, code, under) {
         }
     }
     return outcome;
-}
-
-async function pull(session) {
-    for (;;) {
-        const response = await session.request("workspace/diagnostic", { previousResultIds: [] });
-        if (response.error === undefined) return response.result.items;
-        if (response.error.code !== SUPERSEDED) throw new Error(JSON.stringify(response.error));
-        await sleep(500);
-    }
 }
 
 async function main() {
@@ -268,25 +245,21 @@ async function main() {
     if (fix === undefined && fixAllCode === undefined && renameCode === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
     const options = parseArguments(argv);
 
-    const session = new Session(options.server, options.root);
-    const capabilities = { textDocument: { diagnostic: {} }, workspace: { diagnostics: { refreshSupport: true } } };
-    await session.request("initialize", { processId: process.pid, rootUri: pathToFileURL(options.root).href, capabilities });
-    session.send({ method: "initialized", params: {} });
-    await Promise.race([session.loaded, sleep(options.timeout * 1000)]);
+    const session = await openSession(options.server, options.root, options.timeout);
+    const deadline = Date.now() + options.timeout * 1000;
+    const settledReports = () => settled(session, deadline);
     if (renameCode !== undefined) {
-        const outcome = await renameAll(session, renameCode, under);
-        await session.request("shutdown", null);
-        session.send({ method: "exit" });
+        const outcome = await renameAll(settledReports, session, renameCode, under);
+        await closeSession(session);
         console.log(`renamed ${outcome.renamed} identifiers; ${outcome.refused} refused`);
         process.exit(0);
     }
-    const reports = await settledReports(session);
+    const reports = await settledReports();
     if (fixAllCode !== undefined) {
         const target = firstDiagnostic(reports, fixAllCode, under);
         if (target === undefined) throw new Error(`no ${fixAllCode} diagnostic under ${under}`);
         const edits = editsByFile(await solutionFix(session, target));
-        await session.request("shutdown", null);
-        session.send({ method: "exit" });
+        await closeSession(session);
         let total = 0;
         for (const [file, fileEdits] of edits) {
             total += fileEdits.length;
@@ -296,8 +269,7 @@ async function main() {
         console.log(`${dryRun ? "would apply" : "applied"} ${total} edits in ${edits.size} files`);
         process.exit(0);
     }
-    await session.request("shutdown", null);
-    session.send({ method: "exit" });
+    await closeSession(session);
 
     const files = rangesByFile(reports, code, under);
     let count = 0;
