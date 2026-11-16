@@ -9,7 +9,8 @@
 //!   `PackageBaseAddress/3.0.0` and `VulnerabilityInfo/6.7.0`.
 //! - `/v3-vulnerabilities/index.json` — the paged advisory index.
 //! - `/v3-vulnerabilities/data.json` — one page of advisory ranges, keyed by
-//!   package id. Each advisory carries a URL, a severity number
+//!   package id. Both advisory resources are gzip-encoded whatever the client
+//!   accepts, exactly as nuget.org serves them (#578). Each advisory carries a URL, a severity number
 //!   (0 = low … 3 = critical) and an affected range string such as
 //!   "[1.0.0, 1.2.0]".
 //! - `/v3-flatcontainer/{id}/index.json` — the published version list.
@@ -24,7 +25,7 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -65,6 +66,8 @@ pub struct AdvisoryServer {
     /// The bound port; `127.0.0.1:{port}/v3/index.json` is the source URL.
     pub port: u16,
     stopping: Arc<AtomicBool>,
+    /// Service-index requests answered: source data a client should cache.
+    index_hits: Arc<AtomicUsize>,
 }
 
 impl AdvisoryServer {
@@ -73,9 +76,11 @@ impl AdvisoryServer {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let stopping = Arc::new(AtomicBool::new(false));
+        let index_hits = Arc::new(AtomicUsize::new(0));
         let state = Arc::new((listener, fixture));
         let run = {
             let (state, stopping) = (Arc::clone(&state), Arc::clone(&stopping));
+            let hits = Arc::clone(&index_hits);
             move || {
                 while !stopping.load(Ordering::Relaxed) {
                     let Ok((stream, _)) = state.0.accept() else {
@@ -83,12 +88,22 @@ impl AdvisoryServer {
                     };
                     let fixture = state.1.clone();
                     let port = state.0.local_addr().map_or(0u16, |addr| addr.port());
-                    let _ = std::thread::spawn(move || answer(stream, &fixture, port));
+                    let hits = Arc::clone(&hits);
+                    let _ = std::thread::spawn(move || answer(stream, &fixture, port, &hits));
                 }
             }
         };
         let _ = std::thread::spawn(run);
-        Self { port, stopping }
+        Self {
+            port,
+            stopping,
+            index_hits,
+        }
+    }
+
+    /// How many times the service index has been fetched.
+    pub fn index_hits(&self) -> usize {
+        self.index_hits.load(Ordering::SeqCst)
     }
 
     /// The value to put in a `<auditSources><add value="…"/>` entry.
@@ -106,7 +121,7 @@ impl Drop for AdvisoryServer {
 }
 
 /// Answer one HTTP/1.1 GET with the routed JSON body, then close.
-fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
+fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16, index_hits: &AtomicUsize) {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     // Read the request head only (GET carries no body).
@@ -121,6 +136,9 @@ fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
         return;
     };
     let path = path.split('?').next().unwrap_or(path).to_string();
+    if path == "/v3/index.json" {
+        let _ = index_hits.fetch_add(1, Ordering::SeqCst);
+    }
     let base = request
         .lines()
         .find_map(|line| line.strip_prefix("Host: "))
@@ -129,10 +147,21 @@ fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
             |host| format!("http://{host}"),
         );
     let Some(body) = route(&path, &base, fixture) else {
-        let _ = write_response(&mut stream, 404, "{\"error\":404}");
+        let _ = write_response(&mut stream, 404, b"{\"error\":404}", None);
         return;
     };
-    let _ = write_response(&mut stream, 200, &body);
+    let _ = if path.starts_with("/v3-vulnerabilities/") {
+        write_response(&mut stream, 200, &gzip(&body), Some("gzip"))
+    } else {
+        write_response(&mut stream, 200, body.as_bytes(), None)
+    };
+}
+
+/// `body` gzip-compressed, as nuget.org stores its advisory blobs.
+fn gzip(body: &str) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(body.as_bytes()).unwrap();
+    encoder.finish().unwrap()
 }
 
 /// The JSON body for one request path.
@@ -183,24 +212,23 @@ fn service_index(base: &str) -> String {
 }
 
 /// One page of advisory ranges keyed by package id, exactly as
-/// `VulnerabilityInfoResourceV3` expects.
+/// `VulnerabilityInfoResourceV3` expects: a package with several advisories or
+/// ranges lists one entry per range, as nuget.org does.
 fn vulnerability_page(fixture: &Fixture) -> Value {
-    Value::Object(
-        fixture
-            .advisories
-            .iter()
-            .map(|advisory| {
-                (
-                    advisory.package.clone(),
-                    json!([{
-                        "url": advisory.url,
-                        "severity": advisory.severity,
-                        "versions": advisory.range,
-                    }]),
-                )
-            })
-            .collect::<serde_json::Map<String, Value>>(),
-    )
+    let mut page = serde_json::Map::new();
+    for advisory in &fixture.advisories {
+        let entries = page
+            .entry(advisory.package.clone())
+            .or_insert_with(|| json!([]));
+        if let Value::Array(entries) = entries {
+            entries.push(json!({
+                "url": advisory.url,
+                "severity": advisory.severity,
+                "versions": advisory.range,
+            }));
+        }
+    }
+    Value::Object(page)
 }
 
 /// One inline registration page; `lower`/`upper` are required by
@@ -236,13 +264,19 @@ fn registration(base: &str, id: &str, versions: &[String]) -> Value {
 }
 
 /// Write a minimal HTTP/1.1 response and half-close.
-fn write_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &[u8],
+    encoding: Option<&str>,
+) -> std::io::Result<()> {
     let head = format!(
-        "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n",
         if status == 200 { "OK" } else { "Not Found" },
+        encoding.map_or_else(String::new, |encoding| format!("Content-Encoding: {encoding}\r\n")),
         body.len()
     );
     stream.write_all(head.as_bytes())?;
-    stream.write_all(body.as_bytes())?;
+    stream.write_all(body)?;
     stream.flush()
 }

@@ -59,7 +59,7 @@ pub(super) fn spawn_restore(
             ),
         };
         if matches!(phase, types::RestorePhase::Succeeded) {
-            refresh_after_restore(&project);
+            super::vulnerability::invalidate_restored(&project);
             crate::diagnostics::publish_after_restore(
                 &handle,
                 &sender_for_refresh,
@@ -69,15 +69,6 @@ pub(super) fn spawn_restore(
         }
         send_restore_progress(&sender, &target_id, phase, Some(message));
     }));
-}
-
-/// Drop the restored project's vulnerable-package scan so the next publication
-/// re-runs the audit. [PKG-VULN-DIAG]
-fn refresh_after_restore(project: &str) {
-    super::vulnerability::invalidate(project);
-    if let Some(props) = super::targets::find_packages_props(std::path::Path::new(project)) {
-        super::vulnerability::invalidate(&props.to_string_lossy());
-    }
 }
 
 /// Run `dotnet restore` in `dir` and classify its outcome as a final phase.

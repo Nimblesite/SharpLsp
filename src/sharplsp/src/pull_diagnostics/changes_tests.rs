@@ -408,6 +408,89 @@ mod contract {
         Ok(())
     }
 
+    /// Native watcher loss (a rescan) says events may be missing, not that inputs
+    /// changed: a compiler reloads only when a source or project it loaded, the
+    /// directory holding one, or inherited configuration above it changed after its
+    /// last open. Build churn elsewhere (`target/`) never reloads and re-restores
+    /// the workspace. [DIAG-LSP-REFRESH] [SIDECAR-PROCESS-MEMORY] (#566)
+    #[test]
+    fn a_rescan_reloads_only_a_compiler_whose_inputs_changed_since_its_open() -> Result<()> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        let dir = tempfile::tempdir()?;
+        let path = |relative: &str| dir.path().join(relative).to_string_lossy().into_owned();
+        for directory in ["App/obj", "target"] {
+            std::fs::create_dir_all(dir.path().join(directory))?;
+        }
+        for (relative, text) in [
+            ("App/App.fsproj", "<Project/>"),
+            ("App/Program.fs", "module Program"),
+            ("App/obj/project.assets.json", "{}"),
+        ] {
+            std::fs::write(path(relative), text)?;
+        }
+        let loaded = graph(&[(&path("App/Program.fs"), &path("App/App.fsproj"))]);
+        let fsharp = Fake::connect_as(&runtime, LangId::FSharp, answering(loaded));
+        let compilers = [None, Some(&fsharp.manager)];
+        pull_session_over(&runtime, compilers)?;
+        select_and_open(&runtime, &fsharp, &path("App/App.fsproj"))?;
+        let mark = fsharp.mark()?;
+        let vfs = Arc::new(Vfs::new());
+        let reopens_after_rescan = || -> Result<usize> {
+            apply_over(&runtime, compilers, &vfs, &rescan())?;
+            Ok(fsharp.opened(mark)?.len())
+        };
+        // A real edit lands well after the open it follows; Linux stamps files from
+        // a coarse clock, so writing within its tick would predate the open.
+        let write_later = |relative: &str, text: &str| -> Result<()> {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            Ok(std::fs::write(path(relative), text)?)
+        };
+
+        write_later("target/build-output.bin", "churn")?;
+        assert_eq!(
+            reopens_after_rescan()?,
+            0,
+            "build churn outside its inputs reloads nothing"
+        );
+        assert_eq!(
+            reopens_after_rescan()?,
+            0,
+            "nor does a rescan with nothing changed"
+        );
+
+        write_later("App/Program.fs", "module Program\nlet edited = 1")?;
+        assert_eq!(
+            reopens_after_rescan()?,
+            1,
+            "a source edited after the open reloads"
+        );
+        assert_eq!(
+            reopens_after_rescan()?,
+            1,
+            "that reload's open consumed the edit"
+        );
+
+        write_later("App/Added.fs", "module Added")?;
+        assert_eq!(
+            reopens_after_rescan()?,
+            2,
+            "a file added beside its sources reloads"
+        );
+
+        write_later("Directory.Build.props", "<Project/>")?;
+        assert_eq!(
+            reopens_after_rescan()?,
+            3,
+            "new inherited configuration reloads"
+        );
+        assert_eq!(
+            reopens_after_rescan()?,
+            3,
+            "and each change reloads exactly once"
+        );
+        Ok(())
+    }
+
     /// A batch of `changes`, with the restore requirement the watcher computes.
     fn batch_of(changes: &[FileEvent]) -> Result<ReloadBatch> {
         Ok(ReloadBatch {

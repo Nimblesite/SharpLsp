@@ -52,7 +52,6 @@ let private compilerAcceptsName (checker: FSharpChecker) (token: SourceToken) (n
 let isValidNewName parseResults checker (symbol: FSharpSymbol) (token: SourceToken) (newName: string) =
     not (String.IsNullOrWhiteSpace(newName))
     && newName <> "_"
-    && newName <> token.Text
     && validGenericPrefix parseResults symbol newName
     && compilerAcceptsName checker token newName
     && allowsSymbolName symbol newName

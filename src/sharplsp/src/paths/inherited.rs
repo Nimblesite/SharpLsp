@@ -45,17 +45,28 @@ pub fn diagnostic_input_in_scope(path: &Path, recursive: bool) -> bool {
     if recursive {
         return is_diagnostic_input(path);
     }
-    [
-        ".editorconfig",
-        "fsharplint.json",
-        "global.json",
-        "Directory.Build.props",
-        "Directory.Build.targets",
-        "Directory.Packages.props",
-        "nuget.config",
-    ]
-    .into_iter()
-    .any(|name| has_file_name(path, name))
+    INHERITED.into_iter().any(|name| has_file_name(path, name))
+}
+
+/// Configuration a project inherits from the directories above it.
+const INHERITED: [&str; 7] = [
+    ".editorconfig",
+    "fsharplint.json",
+    "global.json",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props",
+    "nuget.config",
+];
+
+/// Every file outside its own sources that can change what a project in
+/// `project_directory` compiles: configuration inherited from it and each
+/// ancestor, and its restore assets. Most do not exist. [DIAG-LSP-REFRESH]
+pub fn project_ambient_inputs(project_directory: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    project_directory
+        .ancestors()
+        .flat_map(|directory| INHERITED.map(|name| directory.join(name)))
+        .chain([project_directory.join("obj").join("project.assets.json")])
 }
 
 #[cfg(test)]

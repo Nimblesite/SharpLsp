@@ -86,12 +86,12 @@ internal static class SolutionLoader
     }
 
     /// <summary>
-    /// One recursive walk of a directory. A solution sitting in the directory itself wins
-    /// (the best-named of several, as before); otherwise a sole nested solution is the
-    /// target, several compete and none is guessed, and with no solution the first
-    /// project is. Whatever it picks, every project file the walk met is reported:
-    /// a solution does not own the tree, so the standalone projects beside it load too
-    /// (#575). Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// One recursive walk of a directory. What sits in the directory itself wins: a
+    /// solution there (the best-named of several), else a project there, whatever is
+    /// nested beneath. Otherwise a sole nested solution is the target, several compete
+    /// and none is guessed, and with no solution the first project is. Whatever it picks,
+    /// every project file the walk met is reported, so the standalone projects beside the
+    /// target can load too (#575). Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
     /// </summary>
     private static Discovery FindFromWalk(string workspacePath)
     {
@@ -103,43 +103,54 @@ internal static class SolutionLoader
         var found = NativePaths.WorkspaceFiles(workspacePath, ProjectOrSolutionExtensions);
         var solutionFiles = Array.FindAll(found, IsSolution);
         var projectFiles = Array.FindAll(found, path => !IsSolution(path));
-        var rootSolutions = Array.FindAll(
-            solutionFiles,
-            solution => SitsInRoot(workspacePath, solution)
-        );
-        return new Discovery(
-            WalkTarget(workspacePath, rootSolutions, solutionFiles, projectFiles),
-            WalkCompeting(rootSolutions, solutionFiles)
-        )
-        {
-            Projects = projectFiles,
-        };
-    }
-
-    /// <summary>The solution a walk opens: a root-level one named best, a sole nested
-    /// one, or — with no solution — the first project.</summary>
-    private static string? WalkTarget(
-        string workspacePath,
-        string[] rootSolutions,
-        string[] solutionFiles,
-        string[] projectFiles
-    )
-    {
-        return rootSolutions.Length > 0
-            ? PickBestSolution(rootSolutions, workspacePath)
-            : solutionFiles.Length switch
+        var target =
+            RootTarget(workspacePath, solutionFiles, projectFiles)
+            ?? solutionFiles.Length switch
             {
                 1 => solutionFiles[0],
                 > 1 => null,
                 _ => projectFiles.FirstOrDefault(),
             };
+        return new Discovery(target, target is null ? solutionFiles : [])
+        {
+            Projects = projectFiles,
+        };
     }
 
-    /// <summary>Several nested solutions compete; a root-level solution settles the
-    /// choice, so nothing competes then.</summary>
-    private static string[] WalkCompeting(string[] rootSolutions, string[] solutionFiles)
+    /// <summary>What sits in the opened directory itself: its best-named solution, else
+    /// its project. Nothing nested competes with it.</summary>
+    private static string? RootTarget(
+        string workspacePath,
+        string[] solutionFiles,
+        string[] projectFiles
+    )
     {
-        return rootSolutions.Length == 0 && solutionFiles.Length > 1 ? solutionFiles : [];
+        var rootSolutions = Array.FindAll(solutionFiles, s => SitsInRoot(workspacePath, s));
+        return rootSolutions.Length > 0
+            ? PickBestSolution(rootSolutions, workspacePath)
+            : Array.Find(projectFiles, project => SitsInRoot(workspacePath, project));
+    }
+
+    /// <summary>
+    /// The <paramref name="walked"/> projects that load beside a solution listing
+    /// <paramref name="listed"/>: its unlisted siblings. A project nested inside a listed
+    /// project's own directory is that project's fixture or sample, not a sibling the
+    /// solution hid, so it waits for one of its files to be opened
+    /// ([SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]).
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    internal static List<string> Siblings(
+        IReadOnlyList<string> walked,
+        IReadOnlyList<string> listed
+    )
+    {
+        var owned = listed.Select(NativePaths.DirectoryOf).ToList();
+        return
+        [
+            .. walked
+                .Except(listed, NativePaths.Comparer)
+                .Where(project => !owned.Exists(dir => NativePaths.IsWithin(dir, project))),
+        ];
     }
 
     /// <summary>Whether <paramref name="file"/> sits directly in <paramref name="root"/>.</summary>

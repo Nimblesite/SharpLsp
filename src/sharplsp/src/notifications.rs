@@ -17,7 +17,9 @@ use crate::diagnostic_publish::{sidecar_for_uri, trigger_diagnostics};
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
-use crate::{diagnostics, nav_cache, paths, pull_diagnostics, semantic, workspace_open};
+use crate::{
+    diagnostics, nav_cache, paths, pull_diagnostics, semantic, semantic_tokens, workspace_open,
+};
 
 /// Everything a document notification touches: the host's own document state
 /// and the channels that carry its consequences to the sidecars and the client.
@@ -123,6 +125,7 @@ fn closed(uri: Uri, ctx: &mut DocumentContext<'_>) {
     pull_diagnostics::state::begin_change();
     ctx.vfs.close(&uri);
     let _ = ctx.trees.remove(&uri);
+    semantic_tokens::forget(uri.as_str());
     ctx.nav_cache.clear();
     if pull_diagnostics::state::is_pull() {
         if let Err(error) = pull_diagnostics::changes::closed(&uri, ctx.runtime, ctx.sidecars) {

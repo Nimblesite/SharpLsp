@@ -33,8 +33,9 @@ pub fn handle_document_symbols(
 ) -> Result<serde_json::Value> {
     let params: DocumentSymbolParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
+    let Some((source, tree)) = parsed(uri, vfs, parsers, trees)? else {
+        return Ok(serde_json::Value::Null);
+    };
     let symbols = syntax::document_symbols(&tree, &source);
     let response = DocumentSymbolResponse::Nested(symbols);
     Ok(serde_json::to_value(response)?)
@@ -53,8 +54,9 @@ pub fn handle_folding_ranges(
 ) -> Result<serde_json::Value> {
     let params: FoldingRangeParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
+    let Some((source, tree)) = parsed(uri, vfs, parsers, trees)? else {
+        return Ok(serde_json::Value::Null);
+    };
     let ranges = folding::folding_ranges(&tree, &source);
     Ok(serde_json::to_value(ranges)?)
 }
@@ -72,8 +74,9 @@ pub fn handle_selection_ranges(
 ) -> Result<serde_json::Value> {
     let params: SelectionRangeParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document.uri;
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
+    let Some((source, tree)) = parsed(uri, vfs, parsers, trees)? else {
+        return Ok(serde_json::Value::Null);
+    };
     let ranges = syntax::selection_ranges(&tree, &source, &params.positions);
     Ok(serde_json::to_value(ranges)?)
 }
@@ -91,8 +94,9 @@ pub fn handle_linked_editing_range(
 ) -> Result<serde_json::Value> {
     let params: LinkedEditingRangeParams = serde_json::from_value(req.params)?;
     let uri = &params.text_document_position_params.text_document.uri;
-    let source = vfs.get_content(uri).context("document not found in VFS")?;
-    let tree = get_or_parse_tree(uri, &source, parsers, trees)?;
+    let Some((source, tree)) = parsed(uri, vfs, parsers, trees)? else {
+        return Ok(serde_json::Value::Null);
+    };
     let position = params.text_document_position_params.position;
     let result = syntax::linked_editing_ranges(&tree, &source, position);
     Ok(serde_json::to_value(result)?)
@@ -128,20 +132,35 @@ pub fn is_non_symbol_position(req: &Request, trees: &HashMap<Uri, Tree>) -> bool
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-/// Get a cached tree or parse fresh.
+/// The document's source and its tree (cached or parsed fresh), or `None` for
+/// a synced project or props file: it has no syntax answer, so the request
+/// answers nothing rather than failing (#578). Any other file type is an error.
 #[expect(
     clippy::mutable_key_type,
     reason = "lsp_types::Uri Hash/Eq use string repr only"
 )]
-fn get_or_parse_tree(
+fn parsed(
     uri: &Uri,
-    source: &str,
+    vfs: &Vfs,
     parsers: &TsParsers,
     trees: &HashMap<Uri, Tree>,
-) -> Result<Tree> {
-    let lang = LangId::from_uri(uri).context("unsupported file type")?;
-    let old_tree = trees.get(uri);
-    parsers.parse(lang, source, old_tree)
+) -> Result<Option<(String, Tree)>> {
+    let Some(lang) = LangId::from_uri(uri) else {
+        return is_msbuild_document(uri)
+            .then_some(None)
+            .context("unsupported file type");
+    };
+    let source = vfs.get_content(uri).context("document not found in VFS")?;
+    let tree = parsers.parse(lang, &source, trees.get(uri))?;
+    Ok(Some((source, tree)))
+}
+
+/// Whether `uri` is a synced `MSBuild` project or props document.
+fn is_msbuild_document(uri: &Uri) -> bool {
+    crate::paths::uri_to_path(uri.as_str()).is_ok_and(|path| {
+        crate::nuget::vulnerability::owns_document(&path)
+            || crate::nuget::vulnerability::appends_to_sidecar(&path)
+    })
 }
 
 /// Extract `(uri, position)` from any params with `text_document_position_params`.

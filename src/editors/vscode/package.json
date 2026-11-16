@@ -917,6 +917,11 @@
         "category": "SharpLsp"
       },
       {
+        "command": "sharplsp.nuget.updateVulnerable",
+        "title": "Update Vulnerable Package",
+        "category": "SharpLsp"
+      },
+      {
         "command": "sharplsp.nuget.addFromExplorer",
         "title": "%cmd.nuget.addFromExplorer%",
         "category": "%category%",
@@ -1469,6 +1474,10 @@
       "commandPalette": [
         {
           "command": "sharplsp.addReferenceAndImport",
+          "when": "false"
+        },
+        {
+          "command": "sharplsp.nuget.updateVulnerable",
           "when": "false"
         },
         {

@@ -25,8 +25,11 @@ internal sealed partial class CodeActionResolver
         "the fix-all action is no longer available: the fix was offered against a "
         + "document state that no longer exists; invoke it again";
 
-    /// <summary>The provider behind every fix key seen while listing fixes.</summary>
-    private readonly ConcurrentDictionary<string, CodeFixProvider> _fixAllProviders = new();
+    /// <summary>
+    /// The fix-all behind every fix key seen while listing fixes. Keyed by the
+    /// provider-qualified fix key: two providers may share an equivalence key.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, FixAllCapability> _fixAllProviders = new();
 
     /// <summary>
     /// Resolve a fix-all to one workspace edit over the scope, computed through
@@ -40,7 +43,7 @@ internal sealed partial class CodeActionResolver
         CancellationToken ct
     )
     {
-        if (!_fixAllProviders.TryGetValue(fixKey, out var provider))
+        if (!_fixAllProviders.TryGetValue(fixKey, out var fixAll))
         {
             return FixAllFailure(fixKey, StaleFixAllReason);
         }
@@ -49,10 +52,10 @@ internal sealed partial class CodeActionResolver
             ? FixAllFailure(fixKey, $"the scope '{scope}' is not one this fix supports")
             : await FixAllAsync(
                     anchor,
-                    provider,
-                    provider.GetFixAllProvider()!,
+                    fixAll.Provider,
+                    fixAll.Provider.GetFixAllProvider()!,
                     fixAllScope.Value,
-                    fixKey,
+                    fixAll.EquivalenceKey,
                     ct
                 )
                 .ConfigureAwait(false);
@@ -116,7 +119,12 @@ internal sealed partial class CodeActionResolver
         var scopes = SupportedFixAllScopes(provider);
         return scopes.IsEmpty || string.IsNullOrEmpty(action.EquivalenceKey)
             ? null
-            : new FixAllCapability(action.EquivalenceKey, scopes, provider);
+            : new FixAllCapability(
+                $"{provider.GetType().FullName}/{action.EquivalenceKey}",
+                action.EquivalenceKey,
+                scopes,
+                provider
+            );
     }
 
     /// <summary>The offered scopes of a provider's fix-all: document, project, solution.</summary>
@@ -232,12 +240,14 @@ internal sealed partial class CodeActionResolver
 }
 
 /// <summary>
-/// A listed fix's fix-all identity: the equivalence key, the scopes its
+/// A listed fix's fix-all identity: the provider-qualified key the editor
+/// sends back, the equivalence key Roslyn finds occurrences by, the scopes its
 /// provider supports, and the provider itself for the later resolve.
 /// [FIXALL-SCOPES]
 /// </summary>
 internal sealed record FixAllCapability(
     string FixKey,
+    string EquivalenceKey,
     ImmutableArray<string> Scopes,
     CodeFixProvider Provider
 );

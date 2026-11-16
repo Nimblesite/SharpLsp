@@ -178,7 +178,7 @@ A reopen after a failed first open starts the sidecar's health monitor, which ru
 
 Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj` search) never enters `bin`, `obj`, `node_modules`, or any dot-directory (`.git`, `.vs`, `.vscode-test`). Those hold build output, package caches and copies of solutions, never one the user opens: counting them turned a repository root into hundreds of "competing" solutions, and walking them cost seconds per pass. A directory reparse point (junction or symlink) is not followed, so a link cycle cannot loop the walk.
 
-The C# sidecar walks the tree **once** per `workspace/open`: the same walk yields the target, or the competing solutions when it refuses to guess. The walk is `NativePaths.WorkspaceFiles`, in the tier's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
+The C# sidecar walks the tree **once** per `workspace/open`: the same walk yields the target, or the competing solutions when it refuses to guess. What sits in the opened folder itself is the target — its solution (the one named after the folder, of several), else its project — and nothing nested beneath competes with it. Only when the folder holds neither does a sole nested solution become the target, and several nested solutions compete. The walk is `NativePaths.WorkspaceFiles`, in the tier's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
 
 Without a solution, all discovered C# projects load into the same workspace, including
 nested siblings of a root project. They are restored before loading; an explicit
@@ -187,7 +187,9 @@ fall back to loose-file analysis (#575).
 
 A solution the walk picks does not own the tree: the standalone projects the same walk
 met load beside the solution's own projects, deduplicated, so a monorepo solution that
-lists one project no longer hides its siblings (#575). Only the solution's own projects
+lists one project no longer hides its siblings (#575). A project nested inside a listed
+project's own directory is that project's fixture or sample, not a sibling: it does not load
+on open and is adopted when one of its files is opened. Only the solution's own projects
 are restored on open; the projects beside it load as they stand, because the tree may hold
 projects mid-build or mid-delete, and restoring one of those stalled the whole open. The solution loads
 first, in one batch where the rule below allows; its unlisted siblings load after it,

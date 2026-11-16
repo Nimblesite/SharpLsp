@@ -68,6 +68,10 @@ async fn run_list(project_path: &str, extra: &[&str]) -> Result<DotNetListOutput
     )?)
 }
 
+/// How long one `dotnet list` may run before it is abandoned (and killed):
+/// an unreachable feed must not hold a project's lane forever.
+const LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
+
 /// Run `dotnet list <project> package` with `--format json` and options, and
 /// return the parsed `JSON` document. Shared by the direct listing and the
 /// vulnerable-package audit. [PKG-VULN-DIAG]
@@ -77,7 +81,11 @@ async fn run_list_json(project_path: &str, extra: &[&str]) -> Result<serde_json:
     let _ = command.args(["list", project_path, "package", "--format", "json"]);
     let _ = command.args(extra);
     crate::utils::hide_console_window_tokio(&mut command);
-    let output = command.output().await.context("spawn dotnet list")?;
+    let _ = command.kill_on_drop(true);
+    let output = tokio::time::timeout(LIST_TIMEOUT, command.output())
+        .await
+        .with_context(|| format!("dotnet list timed out after {LIST_TIMEOUT:?}"))?
+        .context("spawn dotnet list")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

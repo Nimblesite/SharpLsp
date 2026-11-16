@@ -14,6 +14,7 @@ use serde::Deserialize;
 use tracing::{info, warn};
 
 use super::version_range::{parse_range, VersionRangeSpec};
+use crate::paths::SourceLocation;
 
 /// How long fetched source data (service indexes, advisory pages, version
 /// lists) stays fresh — the advisory feed's cache expiry that refreshes
@@ -31,20 +32,12 @@ pub struct AdvisoryRange {
     pub range: VersionRangeSpec,
 }
 
-/// Every advisory for one package across the project's audit sources
-/// (`<auditSources>`, falling back to `HTTP` package sources — `NuGetAudit`'s
-/// own rule).
+/// Every advisory for one package across the project's audit sources.
 pub async fn advisories(project: &str, package_id: &str) -> Vec<AdvisoryRange> {
-    let sources = resolve(Path::new(project));
-    let audit = if sources.audit.is_empty() {
-        sources.http
-    } else {
-        sources.audit
-    };
     let mut found = Vec::new();
-    for source in audit {
+    for source in resolve(Path::new(project)).audit_sources() {
         match raw_advisories(&source).await {
-            Ok(raw) => found.extend(raw.into_iter().filter_map(|advisory| {
+            Ok(raw) => found.extend(raw.iter().filter_map(|advisory| {
                 advisory
                     .id
                     .eq_ignore_ascii_case(package_id)
@@ -63,8 +56,8 @@ pub async fn advisories(project: &str, package_id: &str) -> Vec<AdvisoryRange> {
 pub async fn candidate_versions(project: &str, package_id: &str) -> Vec<String> {
     let sources = resolve(Path::new(project));
     let mut versions = Vec::new();
-    for source in sources.http {
-        match flat_container_versions(&source, package_id).await {
+    for source in &sources.http {
+        match flat_container_versions(source, package_id).await {
             Ok(listed) => versions.extend(listed),
             Err(error) => warn!(source = %source, %error, "Version list unavailable"),
         }
@@ -86,115 +79,198 @@ pub struct Sources {
     pub audit: Vec<String>,
 }
 
-/// Resolve the sources from the nearest `NuGet.Config` at or above the
-/// project's directory. A missing file yields the default nuget.org source.
+impl Sources {
+    /// The sources audited for advisories: `<auditSources>`, falling back to
+    /// the `HTTP` package sources — `NuGetAudit`'s own rule.
+    pub fn audit_sources(self) -> Vec<String> {
+        if self.audit.is_empty() {
+            self.http
+        } else {
+            self.audit
+        }
+    }
+}
+
+/// Resolve the sources `NuGet` merges for `project` across its whole config
+/// chain ([`crate::paths::nuget_config_chain`]).
 pub fn resolve(project: &Path) -> Sources {
-    let Some(config) = nearest_config(project) else {
-        return Sources {
-            http: vec![DEFAULT_SOURCE.to_string()],
+    resolve_chain(&crate::paths::nuget_config_chain(project))
+}
+
+/// Merge `chain`, lowest priority first: nearer files add to and override
+/// farther ones by key, `<clear />` drops everything inherited, and
+/// `<disabledPackageSources>` hides a source by key. With no
+/// `<packageSources>` anywhere, `NuGet` restores from nuget.org.
+fn resolve_chain(chain: &[PathBuf]) -> Sources {
+    let mut merged = Merged::default();
+    for config in chain {
+        let text = std::fs::read_to_string(config).unwrap_or_default();
+        let directory = crate::paths::directory_of(config).unwrap_or_default();
+        if let Err(error) = merge_config(&text, &directory, &mut merged) {
+            warn!(config = %config.display(), %error, "Unreadable NuGet.Config");
+        }
+    }
+    merged.into_sources()
+}
+
+/// One keyed source entry.
+type Entry = (String, String);
+
+/// The merge state across a config chain.
+#[derive(Default)]
+struct Merged {
+    /// Package sources by key; `None` until some config declares the section.
+    packages: Option<Vec<(String, SourceLocation)>>,
+    /// Audit sources by key.
+    audit: Vec<Entry>,
+    /// Keys of disabled package sources.
+    disabled: Vec<String>,
+}
+
+impl Merged {
+    /// The enabled sources, nuget.org when none was ever configured.
+    fn into_sources(self) -> Sources {
+        let packages = self.packages.unwrap_or_else(|| {
+            vec![(
+                "nuget.org".to_string(),
+                SourceLocation::Http(DEFAULT_SOURCE.to_string()),
+            )]
+        });
+        let mut sources = Sources {
+            audit: self.audit.into_iter().map(|(_, url)| url).collect(),
             ..Sources::default()
         };
-    };
-    let text = std::fs::read_to_string(&config).unwrap_or_default();
-    parse_sources(&text).unwrap_or_else(|error| {
-        warn!(config = %config.display(), %error, "Unreadable NuGet.Config");
-        Sources::default()
-    })
-}
-
-/// The nearest `NuGet.Config` walking up from `start`'s directory.
-fn nearest_config(start: &Path) -> Option<PathBuf> {
-    crate::paths::directory_of(start).and_then(|dir| ancestors_config(&dir))
-}
-
-/// First `NuGet.Config` in `dir` or any ancestor.
-fn ancestors_config(dir: &Path) -> Option<PathBuf> {
-    let candidate = dir.join("NuGet.Config");
-    if candidate.is_file() {
-        return Some(candidate);
+        for (key, location) in packages {
+            if self
+                .disabled
+                .iter()
+                .any(|off| off.eq_ignore_ascii_case(&key))
+            {
+                continue;
+            }
+            match location {
+                SourceLocation::Http(url) => sources.http.push(url),
+                SourceLocation::Folder(folder) => sources.folders.push(folder),
+            }
+        }
+        sources
     }
-    dir.parent().and_then(ancestors_config)
 }
 
-/// Which source list the parser is inside.
+/// Insert or replace `value` under `key`: a nearer config's entry wins.
+fn upsert<T>(entries: &mut Vec<(String, T)>, key: &str, value: T) {
+    entries.retain(|(existing, _)| !existing.eq_ignore_ascii_case(key));
+    entries.push((key.to_string(), value));
+}
+
+/// Which keyed list the parser is inside.
 #[derive(PartialEq, Clone, Copy)]
 enum Section {
-    /// Outside any source list.
+    /// Outside any list this resolution reads.
     None,
     /// Inside `<packageSources>`.
     Packages,
     /// Inside `<auditSources>`.
     Audit,
+    /// Inside `<disabledPackageSources>`.
+    Disabled,
 }
 
-/// Read `<packageSources>` and `<auditSources>` through the XML parser.
-fn parse_sources(text: &str) -> Result<Sources> {
+impl Section {
+    /// The section an element name opens, if it is one.
+    fn named(name: &[u8]) -> Option<Self> {
+        match name {
+            b"packageSources" => Some(Self::Packages),
+            b"auditSources" => Some(Self::Audit),
+            b"disabledPackageSources" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
+}
+
+/// Merge one config's `<packageSources>`, `<auditSources>` and
+/// `<disabledPackageSources>` into `merged`, through the XML parser.
+fn merge_config(text: &str, directory: &Path, merged: &mut Merged) -> Result<()> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(text);
     reader.config_mut().trim_text(true);
-    let mut sources = Sources::default();
     let mut section = Section::None;
     loop {
         match reader.read_event()? {
-            Event::Start(element) | Event::Empty(element) => {
+            Event::Start(element) => {
                 let name = element.name();
-                let name = name.as_ref();
-                if let Some(next) = match name {
-                    b"packageSources" => Some(Section::Packages),
-                    b"auditSources" => Some(Section::Audit),
-                    b"disabled" | b"activePackageSource" => Some(Section::None),
-                    _ => None,
-                } {
-                    section = next;
-                } else if section != Section::None {
-                    apply_source_entry(name, &element, &mut sources, section)?;
+                match Section::named(name.as_ref()) {
+                    Some(opened) => section = opened,
+                    None => apply_entry(&element, section, directory, merged)?,
                 }
             }
-            Event::End(element) => {
-                if matches!(element.name().as_ref(), b"packageSources" | b"auditSources") {
-                    section = Section::None;
+            Event::Empty(element) => {
+                let name = element.name();
+                match Section::named(name.as_ref()) {
+                    Some(Section::Packages) => {
+                        let _ = merged.packages.get_or_insert_with(Vec::new);
+                    }
+                    Some(_) => {}
+                    None => apply_entry(&element, section, directory, merged)?,
                 }
             }
-            Event::Eof => return Ok(sources),
+            Event::End(element) if Section::named(element.name().as_ref()).is_some() => {
+                section = Section::None;
+            }
+            Event::Eof => return Ok(()),
             _ => {}
         }
     }
 }
 
-/// Apply one `<add>` / `<clear>` entry inside a source list. `<clear>` drops
-/// everything collected so far in the section (lower config levels' sources);
-/// `<add>` entries after it in the same file still apply, as `NuGet` behaves.
-fn apply_source_entry(
-    name: &[u8],
+/// Apply one `<add>` / `<clear>` entry inside a keyed list. `<clear>` drops
+/// everything inherited from farther configs; `<add>` entries after it in the
+/// same file still apply, as `NuGet` behaves.
+fn apply_entry(
     element: &quick_xml::events::BytesStart<'_>,
-    sources: &mut Sources,
     section: Section,
+    directory: &Path,
+    merged: &mut Merged,
 ) -> Result<()> {
-    if name == b"clear" {
-        match section {
-            Section::Packages => {
-                sources.http.clear();
-                sources.folders.clear();
+    match (element.name().as_ref(), section) {
+        (_, Section::None) => {}
+        (b"clear", Section::Packages) => merged.packages = Some(Vec::new()),
+        (b"clear", Section::Audit) => merged.audit.clear(),
+        (b"clear", Section::Disabled) => merged.disabled.clear(),
+        (b"add", _) => {
+            let (Some(key), Some(value)) =
+                (attribute(element, "key")?, attribute(element, "value")?)
+            else {
+                return Ok(());
+            };
+            match section {
+                Section::Packages => upsert(
+                    merged.packages.get_or_insert_with(Vec::new),
+                    &key,
+                    crate::paths::source_location(directory, &value),
+                ),
+                Section::Audit => upsert(&mut merged.audit, &key, value),
+                Section::Disabled => {
+                    merged
+                        .disabled
+                        .retain(|off| !off.eq_ignore_ascii_case(&key));
+                    if value.eq_ignore_ascii_case("true") {
+                        merged.disabled.push(key);
+                    }
+                }
+                Section::None => {}
             }
-            Section::Audit => sources.audit.clear(),
-            Section::None => {}
         }
-        return Ok(());
-    }
-    if name != b"add" {
-        return Ok(());
-    }
-    let Some(value) = element.try_get_attribute("value")? else {
-        return Ok(());
-    };
-    let url = String::from_utf8_lossy(&value.value).into_owned();
-    match section {
-        Section::Packages if url.starts_with("http") => sources.http.push(url),
-        Section::Packages => sources.folders.push(PathBuf::from(url)),
-        Section::Audit => sources.audit.push(url),
-        Section::None => {}
+        _ => {}
     }
     Ok(())
+}
+
+/// One attribute's unescaped value.
+fn attribute(element: &quick_xml::events::BytesStart<'_>, name: &str) -> Result<Option<String>> {
+    Ok(element
+        .try_get_attribute(name)?
+        .map(|attribute| String::from_utf8_lossy(&attribute.value).into_owned()))
 }
 
 // ── HTTP resources ─────────────────────────────────────────────────────
@@ -253,17 +329,43 @@ struct FlatVersions {
     versions: Vec<String>,
 }
 
-/// TTL cache entry for one source's advisory list.
-struct Cached {
-    /// When the value expires.
-    expires: Instant,
-    /// The fetched advisories.
-    value: Arc<Vec<RawAdvisory>>,
-}
+/// Fetched source data with its expiry, keyed by the URL it came from.
+type Ttl<V> = Mutex<HashMap<String, (Instant, Arc<V>)>>;
 
-/// TTL cache for fetched advisory lists, keyed by source URL.
-static CACHE: LazyLock<Mutex<HashMap<String, Cached>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Parsed advisory lists, keyed by audit source.
+static ADVISORIES: LazyLock<Ttl<Vec<RawAdvisory>>> = LazyLock::new(Ttl::default);
+
+/// Service indexes and flat-container version lists, keyed by URL: a code
+/// action on every cursor move must not refetch them. [PKG-VULN-FIX]
+static DOCUMENTS: LazyLock<Ttl<serde_json::Value>> = LazyLock::new(Ttl::default);
+
+/// `key`'s value from `cache` while fresh, else `fetch`ed and cached until
+/// [`CACHE_TTL`]. A failed fetch caches nothing; caching drops every expired
+/// entry, since most URLs are never fetched again to replace their own.
+async fn memo<V, F>(cache: &Ttl<V>, key: &str, fetch: F) -> Result<Arc<V>>
+where
+    F: std::future::Future<Output = Result<V>>,
+{
+    let fresh = cache.lock().ok().and_then(|entries| {
+        entries
+            .get(key)
+            .filter(|(expires, _)| *expires > Instant::now())
+            .map(|(_, value)| Arc::clone(value))
+    });
+    if let Some(value) = fresh {
+        return Ok(value);
+    }
+    let value = Arc::new(fetch.await?);
+    if let Ok(mut entries) = cache.lock() {
+        let now = Instant::now();
+        entries.retain(|_, (expires, _)| *expires > now);
+        let _ = entries.insert(
+            key.to_string(),
+            (Instant::now() + CACHE_TTL, Arc::clone(&value)),
+        );
+    }
+    Ok(value)
+}
 
 /// Fetch `url` and parse it as `T`.
 async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
@@ -278,10 +380,16 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
     Ok(serde_json::from_str(&body)?)
 }
 
+/// `url`'s JSON document, cached until [`CACHE_TTL`], parsed as `T`.
+async fn cached_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
+    let document = memo(&DOCUMENTS, url, fetch_json::<serde_json::Value>(url)).await?;
+    Ok(T::deserialize(document.as_ref())?)
+}
+
 /// The resource URL of kind `kind` from a source's service index; a bare type
 /// matches its versioned form (`VulnerabilityInfo/6.7.0`).
 async fn service_resource(source: &str, kind: &str) -> Result<Option<String>> {
-    let index: ServiceIndex = fetch_json(source).await?;
+    let index: ServiceIndex = cached_json(source).await?;
     Ok(index
         .resources
         .into_iter()
@@ -290,10 +398,12 @@ async fn service_resource(source: &str, kind: &str) -> Result<Option<String>> {
 }
 
 /// Every raw advisory of one audit source, cached until [`CACHE_TTL`].
-async fn raw_advisories(source: &str) -> Result<Vec<RawAdvisory>> {
-    if let Some(cached) = cached_advisories(source) {
-        return Ok((*cached).clone());
-    }
+async fn raw_advisories(source: &str) -> Result<Arc<Vec<RawAdvisory>>> {
+    memo(&ADVISORIES, source, fetch_advisories(source)).await
+}
+
+/// Fetch every advisory page one audit source advertises.
+async fn fetch_advisories(source: &str) -> Result<Vec<RawAdvisory>> {
     let Some(advisory_url) = service_resource(source, "VulnerabilityInfo").await? else {
         return Ok(Vec::new());
     };
@@ -308,28 +418,7 @@ async fn raw_advisories(source: &str) -> Result<Vec<RawAdvisory>> {
             })
         }));
     }
-    store_advisories(source, &advisories);
     Ok(advisories)
-}
-
-/// A still-fresh cached advisory list for `source`.
-fn cached_advisories(source: &str) -> Option<Arc<Vec<RawAdvisory>>> {
-    let cache = CACHE.lock().ok()?;
-    let cached = cache.get(source)?;
-    (cached.expires > Instant::now()).then(|| Arc::clone(&cached.value))
-}
-
-/// Cache one source's advisory list.
-fn store_advisories(source: &str, advisories: &[RawAdvisory]) {
-    if let Ok(mut cache) = CACHE.lock() {
-        let _ = cache.insert(
-            source.to_string(),
-            Cached {
-                expires: Instant::now() + CACHE_TTL,
-                value: Arc::new(advisories.to_vec()),
-            },
-        );
-    }
 }
 
 /// The flat-container version list of one `HTTP` source.
@@ -337,7 +426,7 @@ async fn flat_container_versions(source: &str, package_id: &str) -> Result<Vec<S
     let Some(flat) = service_resource(source, "PackageBaseAddress").await? else {
         return Ok(Vec::new());
     };
-    let index: FlatVersions = fetch_json(&format!(
+    let index: FlatVersions = cached_json(&format!(
         "{flat}{}/index.json",
         package_id.to_ascii_lowercase()
     ))

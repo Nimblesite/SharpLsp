@@ -22,7 +22,10 @@ pub(crate) fn build(client: &lsp_types::ClientCapabilities) -> ServerCapabilitie
         execute_command_provider: Some(lsp_types::ExecuteCommandOptions {
             commands: [
                 profiler::host::ProfilerHost::command_names(),
-                vec![import_command::COMMAND.to_string()],
+                vec![
+                    import_command::COMMAND.to_string(),
+                    crate::nuget::vulnerability::command::COMMAND.to_string(),
+                ],
             ]
             .concat(),
             work_done_progress_options: lsp_types::WorkDoneProgressOptions::default(),

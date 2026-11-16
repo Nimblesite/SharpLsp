@@ -58,6 +58,10 @@ pub(crate) fn handle_request(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
+    // `MSBuild` code actions answer from their own task. [PKG-VULN-FIX]
+    if nuget::vulnerability::spawn_msbuild_actions(&req, runtime, &connection.sender) {
+        return Ok(());
+    }
     let id = req.id.clone();
     let method = req.method.clone();
     let document_uri = request_document_uri(&req.params);
@@ -369,6 +373,10 @@ fn handle_custom_request(
         // The reference behind an import quick fix ([REFACTOR-IMPORT-REFERENCE])
         "workspace/executeCommand" if import_command::is_import_command(&req) => {
             import_command::handle(&req, runtime, connection.sender.clone(), csharp_sidecar)
+        }
+        // The vulnerable-package update quick fix ([PKG-VULN-FIX])
+        "workspace/executeCommand" if nuget::vulnerability::command::is_update_command(&req) => {
+            nuget::vulnerability::command::handle(&req, runtime, connection.sender.clone(), engines)
         }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
         "sharplsp/project/addCompileItem" => {

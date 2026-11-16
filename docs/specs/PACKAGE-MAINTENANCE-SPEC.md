@@ -138,11 +138,27 @@ enforce_in_build = false  # true => error-mapped codes also fail `dotnet build`
   major (or `0.x` minor) boundary, the title says so (`… — major update 3 → 4`) and resolving it requires the
   explicit confirmation of [NUGET-REQUESTS-UPDATE-CONFIRM]. No known-good version → no fix, and the diagnostic
   says "no patched version published".
-- Transitive: the fix pins the package with a direct `PackageReference` (or a `PackageVersion` when CPM has
-  `CentralPackageTransitivePinningEnabled`) at the known-good version, or updates the direct parent when a parent
-  version that pulls the fixed one exists — the lower-impact choice is offered first.
+- Transitive: the parent declares no version of the vulnerable package, so the fix is
+  `Pin <Package> to <version> as a direct reference (fixes <GHSA>)` — a direct `PackageReference` (or a
+  `PackageVersion` when CPM has `CentralPackageTransitivePinningEnabled`) at the known-good version, applied with
+  no stale-declaration snapshot. Updating the direct parent when a parent version that pulls the fixed one exists
+  is offered first once implemented — the lower-impact choice.
+- **Sources** are those `NuGet` merges: the user-level config, then every `NuGet.Config` (any casing) from the
+  filesystem root down to the project, nearer keys overriding, `<clear />` dropping inherited entries,
+  `<disabledPackageSources>` hiding a key, relative folder feeds resolved against their own config file; with no
+  `<packageSources>` anywhere, nuget.org. Service indexes, version lists and advisory lists are cached for the
+  advisory TTL.
+- The action is computed off the main loop: editors ask on every cursor move, and the audit can run
+  `dotnet list` (bounded by a timeout) and fetch sources.
 - Applied via `sharplsp/nuget/install` with an exact version and [NUGET-XML-DOM], then restore; a failed restore is
   reported as failure with the attempted version ([REFACTOR-NEVER-SILENT]).
+- Editor-agnostic apply: the action carries the server command `sharplsp.nuget.updateVulnerable` (advertised in
+  `executeCommandProvider`) with the project, package, exact version and the resolved version it was offered
+  against; `codeAction/resolve` returns it unchanged, and a declaration that moved since refuses as stale. Only a
+  same-line update is `isPreferred`; a boundary-crossing one is never auto-applied — choosing its titled boundary
+  is the confirmation.
+- Editors sync `.csproj`, `.fsproj` and `.props` documents to the server so the diagnostic and its fix reach them
+  (VS Code: the client's document selector).
 - **Fix all** ([FIXALL-SCOPES]): `Update all vulnerable packages` at project and solution scope, plus
   *Fix all and enforce* (writes `enforce_in_build`).
 

@@ -213,7 +213,9 @@ The F# sidecar keeps its resident set under a budget, because FSharp.Compiler.Se
 - **Hard limit:** always twice the soft limit.
 - **Check:** every 30 s, the process entry point measures the working set.
   - Above the soft limit, the sidecar invalidates every checker cache, collects, and logs the before and after sizes. Later requests rebuild what they need.
-  - Still above the hard limit after that trim, it logs an error and exits with code `3`. The host's backoff restart ([SIDECAR-PROCESS-EXIT]) then brings up a fresh sidecar.
+  - A trim raises the soft limit to the size it trimmed at plus an eighth of the hard limit, for the life of the process. A workspace whose live set settles above the default soft limit is therefore trimmed once, not every 30 s; only growth past the raised limit trims again.
+  - Still above the hard limit after a trim, a sidecar older than ten minutes logs an error and exits with code `3`. The host's backoff restart ([SIDECAR-PROCESS-EXIT]) then brings up a fresh sidecar.
+  - A sidecar that is over the hard limit within its first ten minutes holds a workspace that large: a restart would reload straight back over the limit. It keeps serving and logs an error naming `SHARPLSP_FSHARP_MEMORY_LIMIT_MB`.
 - **Reloads:** a workspace reload releases the builds of the options it replaced.
 - **GC:** the sidecar runs with `System.GC.ConserveMemory`, so the collector compacts rather than grow the heap between collections.
 - **Tests:** in-process test hosts never start the budget.

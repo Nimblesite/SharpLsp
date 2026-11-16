@@ -37,8 +37,12 @@ impl<V: Clone> TtlCache<V> {
         }
     }
 
-    /// Insert or update a cache entry.
+    /// Insert or update a cache entry, first dropping every expired one: keys
+    /// are query texts that are rarely asked twice, so eviction on read alone
+    /// would keep each stale response resident forever.
     pub fn insert(&self, key: String, value: V) {
+        self.entries
+            .retain(|_, (_, inserted_at)| inserted_at.elapsed() < self.ttl);
         let _ = self.entries.insert(key, (value, Instant::now()));
     }
 }
@@ -104,6 +108,32 @@ mod tests {
         let cache = TtlCache::new(Duration::ZERO);
         cache.insert("k".to_string(), 7);
         assert_eq!(cache.get("k"), None);
+    }
+
+    /// Memory leak: search results are keyed by the query text, and the
+    /// package search asks once per keystroke and page, so an expired entry
+    /// was only dropped if that exact query was asked again — in practice
+    /// never, and every response body stayed resident for the host's life.
+    #[test]
+    fn inserting_sweeps_expired_entries_for_queries_never_asked_again() {
+        let cache = TtlCache::new(Duration::ZERO);
+        for query in ["N", "Ne", "New", "Newt", "Newto", "Newtonsoft"] {
+            cache.insert(
+                format!("{query}|false|20|0"),
+                serde_json::json!({ "q": query }),
+            );
+        }
+        assert!(
+            cache.entries.len() <= 1,
+            "expired search results must not accumulate, held {}",
+            cache.entries.len()
+        );
+        assert_eq!(
+            cache.get("Newtonsoft|false|20|0"),
+            None,
+            "a stale entry is never served"
+        );
+        assert_eq!(cache.entries.len(), 0, "reading a stale entry drops it");
     }
 
     #[test]

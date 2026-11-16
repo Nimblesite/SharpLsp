@@ -45,3 +45,34 @@ fn projects_in_one_directory_share_a_lane_and_take_it_in_turn() -> anyhow::Resul
     assert!(free, "the lane opens once the first restore lets go");
     Ok(())
 }
+
+/// Memory leak: every directory ever restored kept its lane for the host's
+/// life, so a long session across many projects and solution switches only
+/// ever grew the map. An idle lane is dropped; a held one survives.
+#[test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "test assertions intentionally fail while Result carries runtime errors"
+)]
+fn idle_lanes_are_dropped_and_held_ones_kept() -> anyhow::Result<()> {
+    let base = std::env::temp_dir().join("slsp-lane-retention");
+    let project = |n: usize| base.join(format!("P{n}")).join("App.csproj");
+    let held = lane(&project(0).to_string_lossy())?;
+    for n in 1..=200 {
+        drop(lane(&project(n).to_string_lossy())?);
+    }
+    let _next = lane(&base.join("Next").join("App.csproj").to_string_lossy())?;
+
+    let lanes = super::LANES.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let kept = lanes
+        .keys()
+        .filter(|key| key.contains("slsp-lane-retention") || key.contains("SLSP-LANE-RETENTION"))
+        .count();
+    assert_eq!(kept, 2, "only the held lane and the newest one stay");
+    drop(lanes);
+    assert!(
+        Arc::ptr_eq(&held, &lane(&project(0).to_string_lossy())?),
+        "a held lane is still the one its directory's next restore takes"
+    );
+    Ok(())
+}

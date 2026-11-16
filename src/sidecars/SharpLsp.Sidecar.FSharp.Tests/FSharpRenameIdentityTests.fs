@@ -25,6 +25,27 @@ let ``rename refuses a lowercase ordinary union case`` () = task {
         cleanup dir
 }
 
+/// [RENAME-ERRORS] Renaming a symbol to the name it already has is a no-op,
+/// never a refusal: the editor's rename box opens prefilled with that name.
+[<Fact>]
+let ``rename to the current name changes nothing`` () = task {
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ident.fs", IDENTITY_SOURCE ]
+    try
+        for (line, character, name) in [ 2, 16, "Case"; 1, 14, "Field"; 1, 5, "Rec" ] do
+            let! renamed =
+                FSharpRename.renameResult state paths[0] line character name System.Threading.CancellationToken.None
+            match renamed with
+            | Error message -> failwith $"same-name rename of {name} refused: {message}"
+            | Ok edits -> Assert.Empty(edits)
+        let! changed =
+            FSharpRename.renameResult state paths[0] 1 14 "Value" System.Threading.CancellationToken.None
+        match changed with
+        | Error message -> failwith $"a real rename still applies: {message}"
+        | Ok edits -> Assert.NotEmpty(edits)
+    finally
+        cleanup dir
+}
+
 /// [RENAME-FSHARP-APPLY] Qualified union cases may use lowercase names.
 [<Fact>]
 let ``rename accepts a lowercase qualified union case`` () = task {

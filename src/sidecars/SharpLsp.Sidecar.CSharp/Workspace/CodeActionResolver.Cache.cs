@@ -101,8 +101,8 @@ internal sealed partial class CodeActionResolver
         _pendingActions[id] = action;
         if (fixAll is not null)
         {
-            // The provider behind the key, so a later fix-all resolve finds it.
-            _ = _fixAllProviders.TryAdd(fixAll.FixKey, fixAll.Provider);
+            // The fix-all behind the key, so a later resolve runs its own provider.
+            _fixAllProviders[fixAll.FixKey] = fixAll;
         }
         return new CodeActionItem(
             Id: id,
