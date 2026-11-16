@@ -49,10 +49,10 @@ tracing-appender = "0.2"
 anyhow = "1"
 
 # Shared toolkit and profiler ([PROFILER-SHARED-LIBRARY]), https://lspkit.dev
-lsp-profiler = "0.4"
-lsp-profiler-dotnet = "0.4"
-lspkit = "0.4"
-lspkit-server = { version = "0.4", features = ["pull"] }
+lsp-profiler = "0.5"
+lsp-profiler-dotnet = "0.5"
+lspkit = "0.5"
+lspkit-server = { version = "0.5", features = ["pull"] }
 globset = "0.4"
 async-trait = "0.1"
 
