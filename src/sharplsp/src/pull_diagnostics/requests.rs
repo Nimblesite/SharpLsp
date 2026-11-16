@@ -180,18 +180,15 @@ impl Requests {
             // Only its own document's change ends a position request: one a
             // lost watcher event or a reload superseded is asked again.
             // [SHARPLSP-ARCHITECTURE-ROUTING]
-            for attempt in 1..=crate::semantic::requests::RETRIES {
+            let deadline = started + crate::semantic::requests::RETRY_BUDGET;
+            while std::time::Instant::now() < deadline {
                 let snapshot = (reply.clone(), store.clone(), revision);
-                let start = Start::After(crate::semantic::requests::retry_pause(attempt));
+                let start = Start::After(crate::semantic::requests::RETRY_PAUSE);
                 let again = crate::semantic::requests::asks_again(&request, &result)
                     .then(|| prepare(&dispatcher, &context, request.clone(), snapshot, start).ok())
                     .flatten();
                 let Some(next) = again else { break };
-                tracing::debug!(
-                    method = request.method,
-                    attempt,
-                    "Superseded request asked again"
-                );
+                tracing::debug!(method = request.method, "Superseded request asked again");
                 result = next.await;
             }
             crate::semantic::requests::finished(&request);

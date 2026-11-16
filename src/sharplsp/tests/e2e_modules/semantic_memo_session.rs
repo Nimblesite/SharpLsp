@@ -307,3 +307,60 @@ fn a_large_references_answer_streams_as_partial_results() {
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }
+
+/// A file watcher that keeps losing events supersedes every request each time.
+/// Hover and navigation outlast the storm and are answered; the answers are
+/// still right, and the memo serves the repeats. [SHARPLSP-ARCHITECTURE-ROUTING]
+#[test]
+fn position_requests_outlast_a_storm_of_lost_watcher_events() {
+    require_dotnet();
+    let (_tmp, root_uri, file_uri, source) = create_definition_workspace();
+    let mut client = LspClient::start_verbose();
+    let _ = client.initialize_with_root(json!(root_uri));
+    client.open_document(&file_uri, &source);
+    let first =
+        poll_definition_until_ready(&mut client, &file_uri, 14, 23, Duration::from_secs(90));
+    assert_eq!(first["range"]["start"]["line"], 8, "AnimalBase, line 8");
+
+    // 1. Three requests are in flight while sixty lost-event reports arrive,
+    //    far more often than a superseded request is asked again.
+    let asked = [
+        (991_001, "textDocument/definition"),
+        (991_002, "textDocument/hover"),
+        (991_003, "textDocument/references"),
+    ];
+    for (id, method) in asked {
+        ask(&mut client, id, method, &file_uri, (14, 23));
+    }
+    let lost_events = json!({ "changes": [], "sharplspRescan": true });
+    for _ in 0..60 {
+        client.notify("workspace/didChangeWatchedFiles", lost_events.clone());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let survived = answers(&mut client, &asked.map(|(id, _)| id));
+    for response in &survived {
+        assert!(response.get("error").is_none(), "outlasted: {response}");
+        assert!(!response["result"].is_null(), "answered: {response}");
+    }
+    assert_eq!(target_line(&survived[0]), 8, "the definition is unchanged");
+    assert!(
+        survived[1]["result"]["contents"].is_object(),
+        "the hover has contents: {}",
+        survived[1]
+    );
+    let references = survived[2]["result"].as_array().map_or(0, Vec::len);
+    assert!(references >= 2, "declaration and use, found {references}");
+
+    // 2. After the storm the same questions are answered the same.
+    let again = definition(&mut client, &file_uri, 14, 23);
+    assert_eq!(target_line(&again), 8, "still line 8 after the storm");
+    let hover_again = hover(&mut client, &file_uri, 14, 23);
+    assert_hover_ok(&hover_again);
+    assert_eq!(
+        hover_again["result"]["contents"], survived[1]["result"]["contents"],
+        "the hover is the same answer"
+    );
+
+    client.shutdown_and_exit();
+    client.wait_with_timeout();
+}

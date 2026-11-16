@@ -50,18 +50,16 @@ static DEBOUNCE_MS: AtomicU64 = AtomicU64::new(150);
 /// When a document last changed.
 static LAST_EDIT: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// How often a request superseded by something other than its own document's
-/// change is asked again before it answers `ContentModified` after all. A
-/// reload re-arms the file watcher, which reports lost events again, so the
-/// attempts are paced: together they wait out about eight seconds.
-pub const RETRIES: u32 = 20;
+/// How long a request superseded by something other than its own document's
+/// change keeps being asked again before it answers `ContentModified` after
+/// all. A reload re-arms the file watcher, and a watcher under load reports
+/// lost events many times a second; each report ends the attempt in flight at
+/// once, so the bound is time, never a number of attempts.
+pub const RETRY_BUDGET: Duration = Duration::from_secs(30);
 
-/// The pause before the `attempt`th retry.
-pub fn retry_pause(attempt: u32) -> Duration {
-    Duration::from_millis(50)
-        .saturating_mul(attempt)
-        .min(Duration::from_millis(500))
-}
+/// The pause before a request is asked again, which lets a reload begin
+/// without keeping the answer from a quiet moment between two reports.
+pub const RETRY_PAUSE: Duration = Duration::from_millis(25);
 
 /// Orders requests and document changes as the protocol reader saw them.
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -296,16 +294,6 @@ mod tests {
         );
         finished(&hover);
         finished(&lens);
-    }
-
-    #[test]
-    fn retries_are_paced_and_bounded() {
-        assert_eq!(retry_pause(1), Duration::from_millis(50));
-        assert_eq!(retry_pause(4), Duration::from_millis(200));
-        assert_eq!(retry_pause(10), Duration::from_millis(500));
-        assert_eq!(retry_pause(RETRIES), Duration::from_millis(500), "capped");
-        let total: Duration = (1..=RETRIES).map(retry_pause).sum();
-        assert!(total > Duration::from_secs(5) && total < Duration::from_secs(10));
     }
 
     #[test]
