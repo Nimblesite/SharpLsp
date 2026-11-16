@@ -14,9 +14,26 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Session } from "../ci/lsp-session.mjs";
 import { parseArguments } from "../ci/workspace-diagnostics.mjs";
 
+/**
+ * FS3886 reports the whole list or array whose one element is a tuple: the fix
+ * parenthesises that element inside the brackets. A list that spans lines has
+ * its continuation lines pushed one column right, to stay aligned under the
+ * element the parenthesis moved; one holding a triple-quoted string is left
+ * alone (returned unchanged), because its text may not be re-indented.
+ */
+export function parenthesiseSoleElement(text) {
+    const bracket = text.startsWith("[|") ? 2 : 1;
+    const inner = text.slice(bracket, text.length - bracket);
+    if (inner.includes("\n") && inner.includes('"""')) return text;
+    const lead = inner.length - inner.trimStart().length;
+    const body = inner.trim().replaceAll("\n", "\n ");
+    const trail = inner.slice(inner.trimEnd().length);
+    return `${text.slice(0, bracket)}${inner.slice(0, lead)}(${body})${trail}${text.slice(text.length - bracket)}`;
+}
+
 /** What each supported code does to the text of its reported range. */
 const FIXES = {
-    FS3886: (text) => `(${text})`,
+    FS3886: parenthesiseSoleElement,
 };
 
 const SUPERSEDED = -32802;
@@ -92,7 +109,9 @@ async function main() {
     for (const [file, ranges] of files) {
         const text = readFileSync(file, "utf8");
         count += ranges.length;
-        console.log(`${file}: ${ranges.length}`);
+        const first = ranges[0];
+        const sample = text.slice(offsetOf(text, first.start), offsetOf(text, first.end)).replaceAll("\n", "⏎").slice(0, 80);
+        console.log(`${file}: ${ranges.length}  e.g. ${sample}`);
         if (!dryRun) writeFileSync(file, applyFixes(text, ranges, fix));
     }
     console.log(`${dryRun ? "would fix" : "fixed"} ${count} ${code} in ${files.size} files`);

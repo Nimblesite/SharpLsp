@@ -191,7 +191,7 @@ let ``prepare offers the indexer member across its whole token`` () = task {
 /// the whole escaped token, backticks included. [RENAME-FSHARP-PREPARE]
 [<Fact>]
 let ``prepare offers an escaped identifier across its whole token`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Escaped.fs", ESCAPED_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Escaped.fs", ESCAPED_SOURCE) ]
     try
         for character in [ 4; 5; 6; 12; 19; 20 ] do
             let! prepare = FSharpRename.prepareRename state paths[0] 1 character
@@ -254,7 +254,7 @@ let ``renaming by an empty compiler identity produces no edits`` () = task {
 /// declaration and every qualified use of it. [RENAME-FSHARP-APPLY]
 [<Fact>]
 let ``renaming a module abbreviation rewrites its declaration and its uses`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Aliases.fs", ALIAS_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 5 8 "Brief" System.Threading.CancellationToken.None
         assertEdits
@@ -270,7 +270,7 @@ let ``renaming a module abbreviation rewrites its declaration and its uses`` () 
 /// abbreviation — `Short.value` still resolves after the target is renamed.
 [<Fact>]
 let ``renaming an abbreviated module leaves uses qualified by the abbreviation alone`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Aliases.fs", ALIAS_SOURCE) ]
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 2 12 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 2 12 "Inner" System.Threading.CancellationToken.None
@@ -287,7 +287,7 @@ let ``renaming an abbreviated module leaves uses qualified by the abbreviation a
 /// Prepare must offer the abbreviation itself, not the module it stands for.
 [<Fact>]
 let ``prepare offers a module abbreviation under its own name`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Aliases.fs", ALIAS_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Aliases.fs", ALIAS_SOURCE) ]
     try
         let! prepare = FSharpRename.prepareRename state paths[0] 5 8
         match prepare with
@@ -304,7 +304,7 @@ let ``prepare offers a module abbreviation under its own name`` () = task {
 /// rewritten in place rather than gaining a second attribute. [RENAME-FSHARP-APPLY]
 [<Fact>]
 let ``renaming an indexer rewrites existing DefaultMember metadata in place`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Explicit.fs", DEFAULT_MEMBER_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot" System.Threading.CancellationToken.None
         assertEdits
@@ -320,7 +320,7 @@ let ``renaming an indexer rewrites existing DefaultMember metadata in place`` ()
 /// member's name, and `[<DefaultMember("``My Slot``")>]` would not bind.
 [<Fact>]
 let ``renaming an indexer to an escaped name stores the logical name in metadata`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Explicit.fs", DEFAULT_MEMBER_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Explicit.fs", DEFAULT_MEMBER_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 5 14 "``My Slot``" System.Threading.CancellationToken.None
         assertEdits
@@ -337,7 +337,7 @@ let ``renaming an indexer to an escaped name stores the logical name in metadata
 /// must fail loudly instead of silently producing a half-rename.
 [<Fact>]
 let ``renaming an indexer with no DefaultMember metadata is refused`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Unmarked.fs", UNMARKED_INDEXER_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Unmarked.fs", UNMARKED_INDEXER_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 2 15 "Fetch" System.Threading.CancellationToken.None
         match renamed with
@@ -351,7 +351,7 @@ let ``renaming an indexer with no DefaultMember metadata is refused`` () = task 
 /// every use stays a single well-formed token. [RENAME-FSHARP-APPLY]
 [<Fact>]
 let ``renaming an escaped identifier replaces the backticks with it`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Escaped.fs", ESCAPED_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Escaped.fs", ESCAPED_SOURCE) ]
     try
         let! uses = FSharpReferences.getProjectUsages state paths[0] 1 6 System.Threading.CancellationToken.None
         let! renamed = FSharpRename.renameResult state paths[0] 1 6 "``other value``" System.Threading.CancellationToken.None
@@ -368,7 +368,7 @@ let ``renaming an escaped identifier replaces the backticks with it`` () = task 
 [<Fact>]
 let ``rename refuses an empty escaped identifier`` () = task {
     let! (state, dir, _fsproj, paths) =
-        loadWorkspace [ "Rename.fs", source [ "module Rename"; "let compute n = n + 1" ] ]
+        loadWorkspace [ ("Rename.fs", source [ "module Rename"; "let compute n = n + 1" ]) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 4 "````" System.Threading.CancellationToken.None
@@ -386,7 +386,7 @@ let ``rename refuses an empty escaped identifier`` () = task {
 [<Fact>]
 let ``rename refuses an unescaped identifier ending in a reserved bang`` () = task {
     let! (state, dir, _fsproj, paths) =
-        loadWorkspace [ "Rename.fs", source [ "module Rename"; "let compute n = n + 1" ] ]
+        loadWorkspace [ ("Rename.fs", source [ "module Rename"; "let compute n = n + 1" ]) ]
     try
         for reserved in [ "bad!"; "x!"; "compute!"; "a!b" ] do
             let! renamed =
@@ -410,7 +410,7 @@ let ``rename refuses an unescaped identifier ending in a reserved bang`` () = ta
 [<Fact>]
 let ``generic parameter rename refuses a reserved bang and accepts a plain name`` () = task {
     let! (state, dir, _fsproj, paths) =
-        loadWorkspace [ "Generic.fs", source [ "module Generic"; "let identity<'T> (value: 'T) = value" ] ]
+        loadWorkspace [ ("Generic.fs", source [ "module Generic"; "let identity<'T> (value: 'T) = value" ]) ]
     try
         let! invalid =
             FSharpRename.renameResult state paths[0] 1 14 "'U!" System.Threading.CancellationToken.None
@@ -430,7 +430,7 @@ let ``generic parameter rename refuses a reserved bang and accepts a plain name`
 [<Fact>]
 let ``statically resolved generic parameter prepares and renames with caret`` () = task {
     let input = source [ "module Generic"; "let inline twice (value: ^T) : ^T = value + value" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Generic.fs", input) ]
     try
         let! prepared = FSharpRename.prepareRename state paths[0] 1 25
         match prepared with
@@ -455,7 +455,7 @@ let ``statically resolved generic parameter prepares and renames with caret`` ()
 [<Fact>]
 let ``statically resolved generic parameter accepts an apostrophe rename`` () = task {
     let input = source [ "module Generic"; "let inline twice (value: ^T) : ^T = value + value" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Generic.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 25 "'U" System.Threading.CancellationToken.None
@@ -476,7 +476,7 @@ let ``rename refuses a lowercase active pattern case`` () = task {
         source [ "module Patterns"
                  "let (|Positive|_|) value = if value > 0 then Some value else None"
                  "let classify value = match value with Positive n -> n | _ -> 0" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Patterns.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Patterns.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 6 "positive" System.Threading.CancellationToken.None

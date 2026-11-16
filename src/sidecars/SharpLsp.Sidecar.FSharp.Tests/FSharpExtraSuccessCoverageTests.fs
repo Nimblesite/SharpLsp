@@ -183,11 +183,11 @@ let ``code fixes fire for incomplete match and undefined name`` () =
     task {
         let ws, dir, paths =
             loadWorkspaceWith
-                [ "M.fs",
-                  "module M\n"
-                  + "type S = A | B\n"
-                  + "let f (s: S) = match s with | A -> 1\n"
-                  + "let u = undefinedXyz\n" ]
+                [ ("M.fs",
+                   "module M\n"
+                   + "type S = A | B\n"
+                   + "let f (s: S) = match s with | A -> 1\n"
+                   + "let u = undefinedXyz\n") ]
         let cf = FSharpCodeFixes.createState ()
         let! actions = FSharpCodeFixes.getCodeActions cf ws None paths[0] 0 0 20 200 CancellationToken.None
         Assert.NotEmpty(actions)
@@ -202,7 +202,7 @@ let ``code fixes fire for a redundant match case`` () =
     task {
         let ws, dir, paths =
             loadWorkspaceWith
-                [ "R.fs", "module R\nlet f x = match x with | _ -> 0 | 1 -> 1\n" ]
+                [ ("R.fs", "module R\nlet f x = match x with | _ -> 0 | 1 -> 1\n") ]
         let cf = FSharpCodeFixes.createState ()
         let! actions = FSharpCodeFixes.getCodeActions cf ws None paths[0] 0 0 10 200 CancellationToken.None
         Assert.NotNull(actions :> obj)
@@ -336,7 +336,7 @@ let private hierarchyFixture =
 [<Fact>]
 let ``incomingCalls resolves callers across typed, paren, as and nested heads`` () =
     task {
-        let ws, dir, paths = loadWorkspaceWith [ "M.fs", hierarchyFixture ]
+        let ws, dir, paths = loadWorkspaceWith [ ("M.fs", hierarchyFixture) ]
         try
             // `add` is on line 1; callers use Typed/Paren/As/nested/do heads.
             let! prep = FSharpHierarchy.prepareCall ws paths[0] 1 4
@@ -352,7 +352,7 @@ let ``incomingCalls resolves callers across typed, paren, as and nested heads`` 
 [<Fact>]
 let ``super and sub types resolve across a class inheritance edge`` () =
     task {
-        let ws, dir, paths = loadWorkspaceWith [ "M.fs", hierarchyFixture ]
+        let ws, dir, paths = loadWorkspaceWith [ ("M.fs", hierarchyFixture) ]
         try
             // Derived : Base → supertypes(Derived) include Base; subtypes(Base)
             // include Derived (driving the BaseType Some-arm on both sides).

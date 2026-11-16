@@ -59,7 +59,7 @@ let private removalsAt analyzers state path line =
 [<Fact>]
 let ``a dead private function goes whole, with its documentation and attributes, leaving one gap`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ "Dead.fs", DEAD ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
         try
             // 1. Offered once, at the dead function, as a quick fix nobody applies by accident.
             let! fixes, actions = actionsWith ANALYZERS state paths[0] 6 0
@@ -88,7 +88,7 @@ let ``a dead private function goes whole, with its documentation and attributes,
 [<Fact>]
 let ``a dead member goes whole, and a binding sharing its names or its line is never offered`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ "Dead.fs", DEAD ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
         try
             // 1. The private member nothing calls goes alone; its type still checks.
             let! check =
@@ -115,7 +115,7 @@ let ``a dead member goes whole, and a binding sharing its names or its line is n
 [<Fact>]
 let ``the fix follows the analyzer: off, disabled or outside monorepo mode it offers nothing`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ "Dead.fs", DEAD ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
         try
             // 1. With the analyzers off, or the dead-code analyzer disabled, nothing is offered.
             let! off = removalsAt None state paths[0] 6
@@ -188,7 +188,7 @@ let private NESTED =
 [<Fact>]
 let ``dead code in a nested module or on a record goes whole, and its neighbours stay`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ "Nested.fs", NESTED ]
+        let! state, dir, _, paths = loadWorkspace [ ("Nested.fs", NESTED) ]
         try
             // 1. A nested module's dead binding goes; the module's live binding moves up.
             let! inModule =

@@ -142,7 +142,7 @@ let private errorsIn state file =
                 |> Array.filter (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error)
                 |> Array.map (fun diagnostic -> diagnostic.StartLine - 1, diagnostic.Message)
                 |> List.ofArray)
-            |> Option.defaultValue [ -1, $"{file} was never checked" ]
+            |> Option.defaultValue [ (-1, $"{file} was never checked") ]
     }
 
 /// Where a use is: its file and 0-based line.

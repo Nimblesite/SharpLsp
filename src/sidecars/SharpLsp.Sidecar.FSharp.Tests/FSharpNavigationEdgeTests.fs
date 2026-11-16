@@ -118,7 +118,7 @@ let ``definition of a BCL property lands on the member in decompiled source`` ()
 [<Fact>]
 let ``formatting a CRLF document keeps CRLF line endings`` () = task {
     let crlf = "module Crlf.Doc\r\n\r\nlet   value =    1\r\n"
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Doc.fs", "module Crlf.Doc\n\nlet value = 1\n" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Doc.fs", "module Crlf.Doc\n\nlet value = 1\n") ]
 
     try
         FSharpWorkspace.applyDidChange state paths[0] crlf

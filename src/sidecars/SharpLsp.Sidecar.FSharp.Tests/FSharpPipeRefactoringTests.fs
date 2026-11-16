@@ -132,7 +132,7 @@ let private PIPE_SOURCE =
           "let bannerParen () = printfn (\"hi\")"
           "let typed = id<int> (f v)" ]
 
-let private pipeProject () = loadWorkspace [ "PipeFix.fs", PIPE_SOURCE ]
+let private pipeProject () = loadWorkspace [ ("PipeFix.fs", PIPE_SOURCE) ]
 
 // ── Harness ─────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { applyFixes, offsetOf, rangesByFile } from "./fix-diagnostics.mjs";
+import { applyFixes, offsetOf, parenthesiseSoleElement, rangesByFile } from "./fix-diagnostics.mjs";
 
 const range = (line, start, end, endLine = line) => ({
     start: { line, character: start },
@@ -46,4 +46,20 @@ test("ranges are grouped by file for one code, under one path part", () => {
     assert.deepEqual(all.get("/repo/tests/A.fs").map((found) => found.start.line), [1, 3]);
     assert.deepEqual([...rangesByFile(reports, "FS3886", "/tests/").keys()], ["/repo/tests/A.fs"]);
     assert.equal(rangesByFile(reports, "CS0001", "/").size, 0);
+});
+
+test("the sole tuple element is parenthesised inside its brackets, whatever the spacing", () => {
+    assert.equal(parenthesiseSoleElement('[ "a", 1 ]'), '[ ("a", 1) ]');
+    assert.equal(parenthesiseSoleElement('["a", 1]'), '[("a", 1)]');
+    assert.equal(parenthesiseSoleElement('[| "a", 1 |]'), '[| ("a", 1) |]');
+    assert.equal(parenthesiseSoleElement("[ -1, $\"{file} was never checked\" ]"), "[ (-1, $\"{file} was never checked\") ]");
+    // A list over several lines keeps its continuation aligned under the moved element.
+    assert.equal(
+        parenthesiseSoleElement('[ "M.fs",\n  "module M\\n"\n  + "let x = 1\\n" ]'),
+        '[ ("M.fs",\n   "module M\\n"\n   + "let x = 1\\n") ]',
+    );
+    // A triple-quoted string across lines may not be re-indented: the list is left for a person.
+    const tripleQuoted = '[ "M.fs",\n  """module M\nlet x = 1""" ]';
+    assert.equal(parenthesiseSoleElement(tripleQuoted), tripleQuoted);
+    assert.equal(parenthesiseSoleElement('[ "M.fs", """one line""" ]'), '[ ("M.fs", """one line""") ]');
 });

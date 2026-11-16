@@ -47,7 +47,7 @@ let private ACCESSOR_SOURCE =
           "    interface IStore with"
           "        member _.Value with set value = current <- value" ]
 
-let private accessorProject () = loadWorkspace [ "Accessors.fs", ACCESSOR_SOURCE ]
+let private accessorProject () = loadWorkspace [ ("Accessors.fs", ACCESSOR_SOURCE) ]
 
 /// Text of the stub offered at an interface position, or None if none is.
 let private stubTextAt state (paths: string list) line col =

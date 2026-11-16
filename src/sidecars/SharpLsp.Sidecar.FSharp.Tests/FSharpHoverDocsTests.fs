@@ -112,7 +112,7 @@ let private membersXml =
 
 [<Fact>]
 let ``xml doc files are cached whole: edits after the first lookup never change results`` () =
-    let root, assembly = dotnetRoot [ "10.0.11", "pack" ] "10.0.14"
+    let root, assembly = dotnetRoot [ ("10.0.11", "pack") ] "10.0.14"
     try
         let xmlPath = NativePaths.Resolve(root, "packs", "Microsoft.NETCore.App.Ref", "10.0.11", "ref", "net10.0", "System.Runtime.xml")
         let lookup memberId = Hover.FSharpXmlDocFiles.tryMember assembly memberId |> Option.defaultValue ""

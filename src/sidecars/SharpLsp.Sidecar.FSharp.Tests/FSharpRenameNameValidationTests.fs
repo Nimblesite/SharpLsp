@@ -10,7 +10,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 [<Fact>]
 let ``rename refuses embedded escaped identifier delimiters`` () = task {
     let input = source [ "module Names"; "let compute value = value + 1" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Names.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Names.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 4 "``a``b``" System.Threading.CancellationToken.None
@@ -25,7 +25,7 @@ let ``rename refuses embedded escaped identifier delimiters`` () = task {
 [<Fact>]
 let ``operator rename refuses a bare escape delimiter`` () = task {
     let input = source [ "module Ops"; "let (+.) a b = a + b" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ops.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Ops.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 5 "``" System.Threading.CancellationToken.None
@@ -40,7 +40,7 @@ let ``operator rename refuses a bare escape delimiter`` () = task {
 [<Fact>]
 let ``inline generic parameter accepts a caret rename`` () = task {
     let input = source [ "module Generic"; "let inline identity<'T> (value: 'T) = value" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Generic.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 20 "^U" System.Threading.CancellationToken.None
@@ -58,7 +58,7 @@ let ``inline generic parameter accepts a caret rename`` () = task {
 [<Fact>]
 let ``non-inline generic parameter refuses a caret rename`` () = task {
     let input = source [ "module Generic"; "let identity<'T> (value: 'T) = value" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Generic.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Generic.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 13 "^U" System.Threading.CancellationToken.None

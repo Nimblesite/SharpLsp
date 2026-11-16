@@ -43,5 +43,5 @@ let shortestPath (roads: Graph) (source: int) (target: int) : float =
                 let found, pending =
                     roads |> Map.tryFind node |> Option.defaultValue [] |> List.fold relax (distances, queue)
                 visit pending found
-    let distances = visit (Set.singleton (0.0, source)) (Map.ofList [ source, 0.0 ])
+    let distances = visit (Set.singleton (0.0, source)) (Map.ofList [ (source, 0.0) ])
     distances |> Map.tryFind target |> Option.defaultValue infinity

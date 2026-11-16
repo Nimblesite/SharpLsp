@@ -39,7 +39,7 @@ let private TITLE = "Add wildcard case '| _ ->'"
 [<Fact>]
 let ``an incomplete inner match gains its wildcard after its own last case`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ "Matches.fs", NESTED ]
+        let! state, dir, _, paths = loadWorkspace [ ("Matches.fs", NESTED) ]
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 8 |], linesWith 25 before)
@@ -58,7 +58,7 @@ let ``an incomplete inner match gains its wildcard after its own last case`` () 
 let ``a match whose only clause has no bar gains a wildcard lined up with its pattern`` () =
     task {
         let first = source [ "module First"; ""; "type Inner = P | Q | R"; ""; "let first (b: Inner) ="; "    match b with"; "    P -> 1" ]
-        let! state, dir, _, paths = loadWorkspace [ "First.fs", first ]
+        let! state, dir, _, paths = loadWorkspace [ ("First.fs", first) ]
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 5 |], linesWith 25 before)

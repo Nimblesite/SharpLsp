@@ -221,7 +221,7 @@ let ``fix all unused declarations needs the analyzer and then sweeps every dead 
 let ``fix all unused values prefixes every occurrence in the document`` () =
     task {
         let! state, dir, _, paths =
-            loadWorkspace [ "M.fs", "module M\n\nlet f () =\n    let first = 42\n    let second = 43\n    ()\n" ]
+            loadWorkspace [ ("M.fs", "module M\n\nlet f () =\n    let first = 42\n    let second = 43\n    ()\n") ]
         try
             warnOn1182 state
             let! outcome = fixAll state paths[0] FSharpCodeFixes.FixAllKeys.PrefixUnusedValue "document"

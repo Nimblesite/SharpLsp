@@ -61,7 +61,7 @@ let private assertActive state path text lineIdx needle expected =
 [<Fact>]
 let ``signature help reports the parameter the caret sits on`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", SIGNATURE_SOURCE) ]
 
         try
             // Flat call: each argument position, in order.
@@ -108,7 +108,7 @@ let private NAMED_SOURCE =
 [<Fact>]
 let ``signature help resolves named arguments out of declaration order`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", NAMED_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", NAMED_SOURCE) ]
 
         try
             // Out-of-order named call: each name selects its declaration index.
@@ -133,7 +133,7 @@ let ``signature help resolves named arguments out of declaration order`` () =
 
 [<Fact>]
 let ``signature help keeps the current parameter while the closing parenthesis is missing`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", SIGNATURE_SOURCE) ]
     try
         for call, expected in
             [ "Calc.Add(", 0; "Calc.Add(1", 0; "Calc.Add(1,", 1
@@ -175,7 +175,7 @@ let private MULTILINE_SOURCE =
 
 [<Fact>]
 let ``multilineStaticSignatureHelp tracks active parameters and string punctuation`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", MULTILINE_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", MULTILINE_SOURCE) ]
     try
         // The callee's own line carries no argument text, so the caret line alone
         // cannot identify the enclosing call or the parameter the caret sits on.
@@ -213,7 +213,7 @@ let private VARIADIC_SOURCE =
 
 [<Fact>]
 let ``signature help maps every rest argument to the ParamArray parameter`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", VARIADIC_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", VARIADIC_SOURCE) ]
     try
         let labels = [ "first"; "rest" ]
 

@@ -53,7 +53,7 @@ let internal KIND_SOURCE =
           "let piped = [ 1; 2; 3 ] |> List.sum"
           "let stamp = DateTime.UtcNow" ]
 
-let internal kindProject () = loadWorkspace [ "Kinds.fs", KIND_SOURCE ]
+let internal kindProject () = loadWorkspace [ ("Kinds.fs", KIND_SOURCE) ]
 
 /// 0-based index of the fixture line containing `needle`.
 let internal kindLineOf (needle: string) =

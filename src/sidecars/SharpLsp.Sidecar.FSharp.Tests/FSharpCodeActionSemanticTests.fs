@@ -45,7 +45,7 @@ let private GENERATION_SOURCE =
           ""
           "let whole = { Alpha = 1; Beta = \"b\" }" ]
 
-let private generationProject () = loadWorkspace [ "Generation.fs", GENERATION_SOURCE ]
+let private generationProject () = loadWorkspace [ ("Generation.fs", GENERATION_SOURCE) ]
 
 /// Generated stubs must never carry trailing whitespace: the repository's own
 /// `git diff --check` gate rejects it the moment a user accepts the fix.
@@ -227,7 +227,7 @@ let private interfaceStubAt state path line col =
 /// from a bare `interface IService`. [SHARPLSP-FEATURES-REFACTORING]
 [<Fact>]
 let ``interface stubs insert correctly for a bare with keyword and an object expression`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Shapes.fs", INTERFACE_SHAPES_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Shapes.fs", INTERFACE_SHAPES_SOURCE) ]
     try
         match! interfaceStubAt state paths[0] 6 15 with
         | None -> failwith "no stub offered for the interface carrying a bare with keyword"
@@ -267,7 +267,7 @@ let ``conversion quick fix proposes the function that bridges the two types``
     (expected: string)
     =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", CONVERSION_SOURCE) ]
         try
             let! titles = conversionTitlesAt state paths[0] line
             let offered = String.concat " | " titles
@@ -284,7 +284,7 @@ let ``conversion quick fix proposes the function that bridges the two types``
 [<Fact>]
 let ``a mismatch no conversion bridges offers none`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", CONVERSION_SOURCE) ]
         try
             let! _, check, _ = checkedFixture state paths[0]
             Assert.Contains(10, linesWith 1 check)
@@ -303,7 +303,7 @@ let ``a mismatch no conversion bridges offers none`` () =
 [<InlineData(7)>]
 let ``implicitly widened numerics offer no conversion at all`` (line: int) =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", CONVERSION_SOURCE) ]
         try
             let! titles = conversionTitlesAt state paths[0] line
             Assert.Empty(titles)
@@ -328,7 +328,7 @@ let private HIERARCHY_SOURCE =
           "let caller () = helper 1"
           "let outer () = caller ()" ]
 
-let private hierarchyProject () = loadWorkspace [ "Hier.fs", HIERARCHY_SOURCE ]
+let private hierarchyProject () = loadWorkspace [ ("Hier.fs", HIERARCHY_SOURCE) ]
 
 let private names (items: FSharpHierarchy.HierItem list) = items |> List.map _.Name
 

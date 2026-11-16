@@ -14,7 +14,7 @@ let private IDENTITY_SOURCE =
 /// [RENAME-ERRORS] An ordinary union case must retain an uppercase first letter.
 [<Fact>]
 let ``rename refuses a lowercase ordinary union case`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ident.fs", IDENTITY_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Ident.fs", IDENTITY_SOURCE) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 2 16 "value" System.Threading.CancellationToken.None
@@ -29,7 +29,7 @@ let ``rename refuses a lowercase ordinary union case`` () = task {
 /// never a refusal: the editor's rename box opens prefilled with that name.
 [<Fact>]
 let ``rename to the current name changes nothing`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ident.fs", IDENTITY_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Ident.fs", IDENTITY_SOURCE) ]
     try
         for (line, character, name) in [ 2, 16, "Case"; 1, 14, "Field"; 1, 5, "Rec" ] do
             let! renamed =
@@ -55,7 +55,7 @@ let ``rename accepts a lowercase qualified union case`` () = task {
               "[<RequireQualifiedAccess>]"
               "type Union = | Case of int"
               "let value = Union.Case 1" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Qualified.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Qualified.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 2 16 "value" System.Threading.CancellationToken.None
@@ -72,7 +72,7 @@ let ``rename accepts a lowercase qualified union case`` () = task {
 [<Fact>]
 let ``rename refuses a lowercase exception label`` () = task {
     let input = source [ "module Exceptions"; "exception Failure of int"; "let useIt = Failure 1" ]
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Exceptions.fs", input ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Exceptions.fs", input) ]
     try
         let! renamed =
             FSharpRename.renameResult state paths[0] 1 10 "failure" System.Threading.CancellationToken.None
@@ -97,7 +97,7 @@ let private RW_INDEXER_SOURCE =
 /// otherwise a C# rename of either silently skips the F# side.
 [<Fact>]
 let ``record fields and union cases expose a cross-language identity`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Ident.fs", IDENTITY_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Ident.fs", IDENTITY_SOURCE) ]
     try
         let! field = FSharpRename.getRenameIdentity state paths[0] 1 14
         match field with
@@ -115,7 +115,7 @@ let ``record fields and union cases expose a cross-language identity`` () = task
 /// getter. Renaming one must still rewrite the member and record the metadata.
 [<Fact>]
 let ``a read-write indexer renames through either accessor`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "RW.fs", RW_INDEXER_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("RW.fs", RW_INDEXER_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 3 14 "Slot" System.Threading.CancellationToken.None
         match renamed with
@@ -143,7 +143,7 @@ let private LITERAL_CONST_SOURCE =
 
 [<Fact>]
 let ``renaming an indexer named by a literal constant is refused`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "LiteralConst.fs", LITERAL_CONST_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("LiteralConst.fs", LITERAL_CONST_SOURCE) ]
     try
         let! renamed = FSharpRename.renameResult state paths[0] 5 14 "Slot" System.Threading.CancellationToken.None
         match renamed with

@@ -53,7 +53,7 @@ let private assertNoErrors (checkedFile: FSharp.Compiler.CodeAnalysis.FSharpChec
 let ``namespace and fully qualified rows have exact explicit titles and clear FS0039`` () =
     task {
         let original = source [ "namespace Shapes"; ""; "module Area ="; "    let joined = Path.Combine(\"a\", \"b\")" ]
-        let! state, dir, _, paths = loadWorkspace [ "Shapes.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Shapes.fs", original) ]
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 3 |], linesWith 39 before)
@@ -217,7 +217,7 @@ let ``a solution package row and a project row coexist for one unresolved type``
             loadSolution
                 [ projectXml "App" [] [] |> fun (n, x) -> n, x, app
                   projectXml "Declares" [] [] |> fun (n, x) -> n, x, declared
-                  projectXml "Packages" [] [ "MessagePack", "3.1.12" ] |> fun (n, x) -> n, x, packages ]
+                  projectXml "Packages" [] [ ("MessagePack", "3.1.12") ] |> fun (n, x) -> n, x, packages ]
         try
             // The package project really carries the declaring assembly and a clean check.
             let packageTitle = "Add package MessagePack 3.1.12 to App.fsproj (as in Packages.fsproj) and add 'open MessagePack'"
@@ -285,7 +285,7 @@ let private editOf (action: FSharpCodeActions.GeneratedAction) =
 let ``both FS0039 shapes of an unopened type offer its namespace open`` () =
     task {
         let original = source [ "module Tasks.Library"; ""; "let value = Task.Delay(1)" ]
-        let! state, dir, _, paths = loadWorkspace [ "Tasks.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Tasks.fs", original) ]
         try
             let! parse, before, src = checkedFixture state paths[0]
             let openTitle = "Add 'open System.Threading.Tasks' — imports every type and module in namespace System.Threading.Tasks"
@@ -322,7 +322,7 @@ let ``both FS0039 shapes of an unopened type offer its namespace open`` () =
 let ``a member misspelling of a type in scope gains no namespace open`` () =
     task {
         let original = source [ "module Console.Library"; ""; "open System"; "let value = Console.ReadLnie()" ]
-        let! state, dir, _, paths = loadWorkspace [ "Console.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Console.fs", original) ]
         try
             let! parse, before, src = checkedFixture state paths[0]
             let range = Range.mkRange paths[0] (Position.mkPos 4 20) (Position.mkPos 4 28)
@@ -366,7 +366,7 @@ let ``a well known package is offered only with an explicit latest stable instal
 let ``Task Delay against FSharp Core with a Task module offers the tasks namespace open`` () =
     task {
         let app = source [ "module App.Library"; ""; "let value = Task.Delay(1)" ]
-        let! state, root = loadSolution [ projectXml "App" [] [ "FSharp.Core", "10.1.404" ] |> fun (n, x) -> n, x, app ]
+        let! state, root = loadSolution [ projectXml "App" [] [ ("FSharp.Core", "10.1.404") ] |> fun (n, x) -> n, x, app ]
         try
             let path = libraryPath root "App"
             let! _, before, _ = checkedFixture state path
