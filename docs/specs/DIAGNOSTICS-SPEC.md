@@ -176,6 +176,8 @@ The compiler-compatible FSharpLint dependency is a normal source project referen
 
 Real source-builder CLI tests run against the compiled builder and pinned archive on both operating systems. They reject incorrect arguments, paths and archive bytes before extraction; verify both AST compatibility patterns and the rule-state correction; and preserve source, license, provenance and fingerprint timestamps on a verified no-op. Corrupt source or any fingerprint identity/hash field requires fresh extraction and verification. A matching output fingerprint never bypasses hashing the current archive. CI passes these inputs across [DIST-CI-ARTIFACT-TESTS] rather than recompiling the builder in the tooling consumer.
 
+**What the report shows, a fix can act on.** Code actions resolve fixes against the same analyzer diagnostics the document report shows — the same analyzers under the same .editorconfig filter, computed once per document snapshot — so a rule promoted to a warning or error (IDE0001 *name can be simplified*, IDE0002, any other) never appears without the code fix Roslyn ships for it ([REFACTOR-NEVER-SILENT]). The four style rules offered as rewrites (IDE0007, IDE0008, IDE0160, IDE0161) are also offered at their default severity.
+
 ### [DIAG-CATEGORIES-TAGS] Unnecessary and Deprecated Tags
 
 A finding on unused or unreachable code carries LSP `DiagnosticTag.Unnecessary` (1), so the editor greys the code out. A finding on a use of an obsolete symbol carries `DiagnosticTag.Deprecated` (2), so the editor strikes it through. Every other finding carries no tag, and the host then sends no `tags`.

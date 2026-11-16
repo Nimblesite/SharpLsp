@@ -7,6 +7,7 @@ import test from "node:test";
 import {
     applyFixes,
     applyTextEdits,
+    camelCase,
     editsByFile,
     firstDiagnostic,
     offsetOf,
@@ -114,4 +115,21 @@ test("an unnecessary qualifier goes with its dot, and inferable type arguments g
     const typeArguments = overFollowingDot(text, range(1, 11, 22));
     assert.deepEqual(typeArguments.end, { line: 1, character: 22 }, "`(` follows: nothing more is taken");
     assert.equal(applyFixes(text, [qualifier, typeArguments], () => ""), "var a = Result.Ok();\nvar b = Run(x);\n");
+});
+
+test("every reported spelling becomes camelCase", () => {
+    for (const [name, expected] of [
+        ["KIND_SOURCE", "kindSource"],
+        ["NESTED", "nested"],
+        ["RW_INDEXER_SOURCE", "rwIndexerSource"],
+        ["TaskPrefix", "taskPrefix"],
+        ["ScrutineeVar", "scrutineeVar"],
+        ["module_", "module"],
+        ["snake_case_name", "snakeCaseName"],
+        ["alreadyCamel", "alreadyCamel"],
+        ["X", "x"],
+        ["HTTPClient", "hTTPClient"],
+    ]) {
+        assert.equal(camelCase(name), expected, name);
+    }
 });

@@ -27,15 +27,15 @@ Workspace-wide diagnostics must not report files no developer owns. Rider/VS nev
 - [x] Exclude `bin/`/`obj/` generated sources from workspace pulls in both engines via the tier path modules (`paths.rs`, `NativePaths`) — reuse `paths/inputs.rs` obj/bin detection, no new path code
 - [x] Exclude gitignored paths from workspace pulls (folder-workspace discovery skips projects under ignored dirs; `real-world-fixtures/` disappears)
 - [x] Spec the rule under [DIAG-CONFIG] in `docs/specs/DIAGNOSTICS-SPEC.md` with an ID and cite it in code/tests
-- [ ] If IDE0001/IDE0002 are false positives (`dotnet build` with `EnforceCodeStyleInBuild` is clean on the same lines, e.g. `CSharpSidecar.cs:172` `Outcome.Result` qualification), file a GitHub bug and fix via the bug-fix process; otherwise fix the code
+- [x] IDE0001/IDE0002 are true positives (Roslyn marks exactly the redundant qualifier or type arguments; the build cannot enforce these two rules): the 37 occurrences are removed at the reported spans. The real bug was that the error came with no quick fix — code actions ran only four style analyzers; they now act on every analyzer diagnostic the report shows (`SimplifyNameFixTests`, [DIAG-CATEGORIES-ANALYZER])
 
 ## [DIAG-HYGIENE-CODE] Our code to fix
 
-- [ ] FS3886 (~171): wrap single-tuple list elements in parentheses (`[ ("Only.fs", src) ]`) across `SharpLsp.Sidecar.FSharp.Tests`
+- [x] FS3886 (173, fixed at the compiler-reported ranges by `tools/debug/fix-diagnostics.mjs --code FS3886`): wrap single-tuple list elements in parentheses (`[ ("Only.fs", src) ]`) across `SharpLsp.Sidecar.FSharp.Tests`
 - [ ] FL0067/FL0068: rename test/tool identifiers to camelCase (`GuardMethod`, `KIND_SOURCE`, …) via SharpLsp rename, not text edits
 - [ ] FL0085/FL0083: add `[<TailCall>]` where truly tail-recursive, drop bogus `rec`
 - [ ] FL0034/FL0035/FL0014/FL0055/FL0072/FL0090: apply the lint fixes (SharpLsp code actions where offered)
-- [ ] SLSPF0102/0103 in hand-written sources: remove unused opens and redundant qualifiers
+- [x] SLSPF0102/0103 in hand-written sources: remove unused opens and redundant qualifiers — applied with SharpLsp's own "Fix all in solution" through `tools/debug/fix-diagnostics.mjs --fix-all` (25 opens, 67 qualifiers; the fixtures that demonstrate them are left as they are)
 - [ ] SLSPC0101: delete `WellKnownPackages.All` and `DiagnosticWorkspacePulls` if truly unreferenced
 - [ ] Non-demo fixtures: fix FL0065/FL0037/FS3886 in `fsharp-profiling` and `workspace/fsharp` unless a test asserts them (grep test suites first)
 

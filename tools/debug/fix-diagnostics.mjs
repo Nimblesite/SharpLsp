@@ -10,8 +10,10 @@
 //   --code IDE0002     the same, for member access
 //   --fix-all <code>   apply the server's own "Fix all in solution" for the first
 //                      diagnostic with that code (SLSPF0102, SLSPF0103, IDE0001…)
+//   --rename <code>    rename every identifier a naming rule reports (FL0067,
+//                      FL0068) to camelCase with the server's own rename
 //
-// Usage: node tools/debug/fix-diagnostics.mjs (--code FS3886 | --fix-all <code>)
+// Usage: node tools/debug/fix-diagnostics.mjs (--code FS3886 | --fix-all <code> | --rename <code>)
 //          [--root <dir>] [--server <path>] [--under <path-part>] [--dry-run]
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -131,6 +133,78 @@ async function solutionFix(session, { uri, item }) {
     throw new Error(`no "Fix all in solution" action for ${item.code} at ${uri}; offered: ${offered}`);
 }
 
+/** `SCREAMING_SNAKE`, `PascalCase` or `snake_case` as camelCase. */
+export function camelCase(name) {
+    const shouting = name === name.toUpperCase();
+    const words = name.split("_").filter((word) => word.length > 0);
+    return words
+        .map((word, index) => {
+            const body = shouting || words.length > 1 ? word.toLowerCase() : word;
+            const first = index === 0 ? body[0].toLowerCase() : body[0].toUpperCase();
+            return first + (shouting || words.length > 1 ? body.slice(1) : word.slice(1));
+        })
+        .join("");
+}
+
+/** The settled workspace reports: two pulls in a row that agree. */
+async function settledReports(session) {
+    let previous;
+    let reports = await pull(session);
+    while (JSON.stringify(reports) !== previous) {
+        previous = JSON.stringify(reports);
+        await sleep(3000);
+        reports = await pull(session);
+    }
+    return reports;
+}
+
+/** Rename one reported identifier; the files the server's edit changed, or nothing when it refused. */
+async function renameOne(session, { uri, item }, opened) {
+    const file = fileURLToPath(uri);
+    const text = readFileSync(file, "utf8");
+    const oldName = text.slice(offsetOf(text, item.range.start), offsetOf(text, item.range.end));
+    const newName = camelCase(oldName);
+    if (!opened.has(uri)) {
+        opened.set(uri, 1);
+        session.send({ method: "textDocument/didOpen", params: { textDocument: { uri, languageId: "fsharp", version: 1, text } } });
+    }
+    const response = await session.request("textDocument/rename", { textDocument: { uri }, position: item.range.start, newName });
+    const edits = response.error === undefined && response.result ? editsByFile(response.result) : new Map();
+    console.log(`${oldName} -> ${newName}: ${edits.size === 0 ? `refused ${JSON.stringify(response.error ?? null)}` : `${edits.size} files`}`);
+    for (const [changed, fileEdits] of edits) {
+        const fixed = applyTextEdits(readFileSync(changed, "utf8"), fileEdits);
+        writeFileSync(changed, fixed);
+        const changedUri = pathToFileURL(changed).href;
+        if (opened.has(changedUri)) {
+            opened.set(changedUri, opened.get(changedUri) + 1);
+            const textDocument = { uri: changedUri, version: opened.get(changedUri) };
+            session.send({ method: "textDocument/didChange", params: { textDocument, contentChanges: [{ text: fixed }] } });
+        }
+    }
+    const changes = [...edits.keys()].map((changed) => ({ uri: pathToFileURL(changed).href, type: 2 }));
+    if (changes.length > 0) session.send({ method: "workspace/didChangeWatchedFiles", params: { changes } });
+    return edits.size;
+}
+
+/** Rename every identifier `code` reports under `under`, one settled pull at a time. */
+async function renameAll(session, code, under) {
+    const opened = new Map();
+    const refused = new Set();
+    let renamed = 0;
+    for (;;) {
+        const reports = await settledReports(session);
+        const pending = reports.flatMap((report) =>
+            (report.items ?? [])
+                .filter((item) => String(item.code) === code)
+                .map((item) => ({ uri: report.uri, item, key: `${report.uri}:${item.range.start.line}:${item.range.start.character}` })),
+        );
+        const target = pending.find((found) => !refused.has(found.key) && fileURLToPath(found.uri).replaceAll("\\", "/").includes(under));
+        if (target === undefined) return { renamed, refused: refused.size };
+        if ((await renameOne(session, target, opened)) === 0) refused.add(target.key);
+        else renamed += 1;
+    }
+}
+
 async function pull(session) {
     for (;;) {
         const response = await session.request("workspace/diagnostic", { previousResultIds: [] });
@@ -147,11 +221,12 @@ async function main() {
         return index < 0 ? undefined : argv.splice(index, 2)[1];
     };
     const fixAllCode = take("--fix-all");
-    const code = take("--code") ?? fixAllCode;
+    const renameCode = take("--rename");
+    const code = take("--code") ?? fixAllCode ?? renameCode;
     const under = take("--under") ?? "/";
     const dryRun = argv.includes("--dry-run") && argv.splice(argv.indexOf("--dry-run"), 1).length > 0;
     const fix = FIXES[code];
-    if (fix === undefined && fixAllCode === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
+    if (fix === undefined && fixAllCode === undefined && renameCode === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
     const options = parseArguments(argv);
 
     const session = new Session(options.server, options.root);
@@ -159,13 +234,14 @@ async function main() {
     await session.request("initialize", { processId: process.pid, rootUri: pathToFileURL(options.root).href, capabilities });
     session.send({ method: "initialized", params: {} });
     await Promise.race([session.loaded, sleep(options.timeout * 1000)]);
-    let previous;
-    let reports = await pull(session);
-    while (JSON.stringify(reports) !== previous) {
-        previous = JSON.stringify(reports);
-        await sleep(3000);
-        reports = await pull(session);
+    if (renameCode !== undefined) {
+        const outcome = await renameAll(session, renameCode, under);
+        await session.request("shutdown", null);
+        session.send({ method: "exit" });
+        console.log(`renamed ${outcome.renamed} identifiers; ${outcome.refused} refused`);
+        process.exit(0);
     }
+    const reports = await settledReports(session);
     if (fixAllCode !== undefined) {
         const target = firstDiagnostic(reports, fixAllCode, under);
         if (target === undefined) throw new Error(`no ${fixAllCode} diagnostic under ${under}`);
