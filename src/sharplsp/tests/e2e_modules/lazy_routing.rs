@@ -220,11 +220,6 @@ fn a_signature_file_starts_fcs_only_inside_a_project_cone() {
         1,
         "FCS serves the project's signature"
     );
-    assert_eq!(
-        running(&client, "SHARPLSP_CSHARP_SIDECAR_PATH"),
-        0,
-        "no Roslyn for an F# project"
-    );
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }

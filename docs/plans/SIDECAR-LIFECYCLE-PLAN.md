@@ -68,8 +68,9 @@ native parent/child relationships by making the siblings children of #150.
 
 No existing document owns the complete cluster. Three plans contain adjacent requirements:
 
-- [SCRIPTING-FILEBASED-PLAN.md](SCRIPTING-FILEBASED-PLAN.md) requires one eager/lazy initialization
-  path and health only after `workspace/open`.
+- [SCRIPTING-FILEBASED-SPEC.md](../specs/SCRIPTING-FILEBASED-SPEC.md) requires one eager/lazy
+  initialization path and health only after `workspace/open` ([SCRIPT-ROUTE-LAZY],
+  [SCRIPT-ROUTE-HEALTH]); its plan is complete.
 - [DIAGNOSTICS-PLAN.md](DIAGNOSTICS-PLAN.md) needs sidecar generation invalidation, retries, and
   server-initiated notifications.
 - Sidecar startup performance is settled by [SHARPLSP-TECHNOLOGY-SIDECAR-PUBLISH] (portable IL, no

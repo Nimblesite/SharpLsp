@@ -341,7 +341,7 @@ let internal isLooseScript (state: FSharpWorkspaceState) (filePath: string) =
 /// Check a loose script under the options its own directives resolve. [SCRIPT-FSX-OPTIONS]
 let private checkLooseScript (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
-        let! options, _, _ = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays filePath ct
+        let! options, _, _, _ = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays filePath ct
         let! parseResults, checkAnswer, source = parseAndCheckOnceWithCancellation state filePath options ct
         return interpretAnswer parseResults checkAnswer source
     }

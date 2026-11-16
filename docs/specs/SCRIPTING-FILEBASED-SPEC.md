@@ -193,6 +193,8 @@ Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED`
 
 `#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network or local package-store access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.
 
+The package directives are read from the script's syntax tree. Until a directive set has been resolved once, the script's options are those of its text with those directives blanked, so hover, completion and navigation answer at once; the whole text resolves in the background ([FSharpScriptPackages.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpScriptPackages.fs)). While it does, the script's diagnostics are one `SLSPF0002` information notice and nothing else: what a check without the packages finds is not the truth about the script, so no phantom error is shown for a namespace a package will bring. When the resolution lands the sidecar raises `diagnostics/refresh`; a client served by `textDocument/publishDiagnostics` is re-fetched until the notice is gone. An edit that leaves the directives unchanged never resolves again.
+
 ### Signature files `[SCRIPT-FSX-FSI]`
 
 A `.fsi` signature file with no owning project has no meaningful semantic closure. It is served syntax-only (document symbols, folding, selection range) by the Rust host, and no F# sidecar workspace is opened for it.

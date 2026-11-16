@@ -48,6 +48,10 @@ const MAX_PUSH_ATTEMPTS: u32 = 120;
 /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
 const RESTORE_PENDING_CODE: &str = "SLSPC0002";
 
+/// The same state for an F# script: its `#r "nuget: …"` packages are still
+/// being restored and it was checked without them. [SCRIPT-FSX-NUGET]
+const SCRIPT_PACKAGES_PENDING_CODE: &str = "SLSPF0002";
+
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
 pub type PushTarget = (Arc<SidecarManager>, Uri, String);
 
@@ -179,7 +183,8 @@ pub(crate) fn has_restore_pending(diagnostics: &[Diagnostic]) -> bool {
 /// The explicit loading notice, independently of message wording. [DIAG-RESTORE]
 fn pending_notice(diagnostic: &Diagnostic) -> bool {
     matches!(&diagnostic.code,
-        Some(NumberOrString::String(code)) if code == RESTORE_PENDING_CODE)
+        Some(NumberOrString::String(code))
+            if code == RESTORE_PENDING_CODE || code == SCRIPT_PACKAGES_PENDING_CODE)
 }
 
 /// Fetch diagnostics and publish them under the generation gate, retrying

@@ -20,7 +20,9 @@ type Context =
 type private Snapshot =
     { Diagnostics: FSharpDiagnostic array
       CheckedFile: (FSharpParseFileResults * FSharpCheckFileResults * string) option
-      ScopeChanged: bool }
+      ScopeChanged: bool
+      /// The script was checked without its packages, which are still being restored.
+      PackagesPending: bool }
 
 /// A script closure ends with its root; ordinary projects keep their existing owner.
 let private scriptInput (state: FSharpWorkspace.FSharpWorkspaceState) filePath =
@@ -41,12 +43,12 @@ let private scopeChanged previous (current: FSharpProjectOptions) =
 /// [HOVER-FSHARP-OVERLAY]
 let private scriptOptions (state: FSharpWorkspace.FSharpWorkspaceState) (root, persist, previous) ct =
     task {
-        let! options, diagnostics, sourceLength = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays root ct
-        Serilog.Log.Debug("Script compiler inputs resolved: {SourceLength}, {DiagnosticCount}, {SourceFileCount}",
-            sourceLength, diagnostics.Length, options.SourceFiles.Length)
+        let! options, diagnostics, sourceLength, pending = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays root ct
+        Serilog.Log.Debug("Script compiler inputs resolved: {SourceLength}, {DiagnosticCount}, {SourceFileCount}, {PackagesPending}",
+            sourceLength, diagnostics.Length, options.SourceFiles.Length, pending)
         let changed = persist && scopeChanged previous options
         if persist then state.ProjectOptions <- Some options
-        return options, diagnostics, changed
+        return options, diagnostics, changed, pending
     }
 
 /// A semantic request must never observe references from the previous editor text.
@@ -56,7 +58,7 @@ let refreshInputs state filePath ct =
         match scriptInput state filePath with
         | None -> return false
         | Some input ->
-            let! _, _, changed = scriptOptions state input ct
+            let! _, _, changed, _ = scriptOptions state input ct
             return changed
     }
 
@@ -84,23 +86,23 @@ let private isError (diagnostic: FSharpDiagnostic) =
     diagnostic.Severity = FSharpDiagnosticSeverity.Error
 
 /// Use the same raw compiler check as existing semantic queries.
-let private checkedSnapshot state filePath root (options, setup, changed) ct =
+let private checkedSnapshot state filePath root (options, setup, changed, pending) ct =
     task {
         let! parsed, answer, source = FSharpWorkspace.parseAndCheckOnceWithCancellation state filePath options ct
         let checkedFile = match answer with FSharpCheckFileAnswer.Succeeded check -> Some(parsed, check, source) | FSharpCheckFileAnswer.Aborted -> None
         let diagnostics = scriptFindings filePath root options setup parsed checkedFile
         let failed = diagnostics |> Array.exists isError
         return if checkedFile.IsNone && not failed then Error "The script compiler check did not complete."
-               else Ok { Diagnostics = diagnostics; CheckedFile = checkedFile; ScopeChanged = changed }
+               else Ok { Diagnostics = diagnostics; CheckedFile = checkedFile; ScopeChanged = changed; PackagesPending = pending }
     }
 
 /// Report actual reference-resolution failures without cascading compiler guesses.
 let private scriptSnapshot state filePath ((root, _, _) as input) ct =
     task {
-        let! ((options, setup, changed) as resolved) = scriptOptions state input ct
+        let! ((options, setup, changed, pending) as resolved) = scriptOptions state input ct
         if setup |> List.exists isError then
             return Ok { Diagnostics = ownedFindings filePath root options (Array.ofList setup)
-                        CheckedFile = None; ScopeChanged = changed }
+                        CheckedFile = None; ScopeChanged = changed; PackagesPending = pending }
         else return! checkedSnapshot state filePath root resolved ct
     }
 
@@ -115,7 +117,7 @@ let private projectSnapshot state filePath ct =
             | None -> return Error "The F# compiler check did not complete."
             | Some(parsed, check, source) ->
                 return Ok { Diagnostics = check.Diagnostics |> Array.filter (fun diagnostic -> NativePaths.AreEqual(diagnostic.FileName, filePath))
-                            CheckedFile = Some(parsed, check, source); ScopeChanged = false }
+                            CheckedFile = Some(parsed, check, source); ScopeChanged = false; PackagesPending = false }
     }
 
 /// Select compiler inputs without duplicating the actual per-file FCS check.
@@ -146,7 +148,7 @@ let private projectAnalyzers context filePath ct =
         Task.FromResult []
 
 /// One mapper supplies both real source locations and root-owned setup failures.
-let private findings context filePath data ct =
+let private checkedFindings context filePath data ct =
     task {
         let compiler = data.Diagnostics |> Array.map (fun diagnostic ->
             FSharpProjectDiagnostics.compilerDiagnostic filePath (not (NativePaths.AreEqual(diagnostic.FileName, filePath))) diagnostic)
@@ -158,6 +160,15 @@ let private findings context filePath data ct =
             | _ -> Task.FromResult []
         return Array.concat [ compiler; Array.ofList local; Array.ofList project; Array.ofList lint ]
     }
+
+/// A script checked without its packages reports that alone: what the check found is
+/// not yet the truth about the script. [SCRIPT-FSX-NUGET]
+let private findings context filePath data ct =
+    if data.PackagesPending then
+        let message = "Package references are being restored; this script is checked without them until they are."
+        let notice = FSharpAnalyzers.buildDiagnostic FSharpScriptPackages.PendingCode "Info" message (FSharp.Compiler.Text.Range.mkFirstLineOfFile filePath)
+        Task.FromResult [| notice |]
+    else checkedFindings context filePath data ct
 
 /// Decode/error handling remains in the canonical IPC helper; computation has no cache.
 let get (context: Context) requestPath ct =

@@ -47,6 +47,8 @@ type FSharpSidecar() as this =
             |> Array.ofList }
 
     do
+        // A script's packages landed off the request path. [SCRIPT-FSX-NUGET]
+        FSharpScriptPackages.Resolved.Add(fun path -> this.ScriptPackagesResolvedAsync(path) |> ignore)
         // Analyzer configuration push from the host ([analyzers] in sharplsp.toml).
         base.Register("analyzers/configure", Func<byte[], CancellationToken, Task<ByteResult>>(fun payload ct ->
             try
@@ -388,6 +390,20 @@ type FSharpSidecar() as this =
                 let! result = this.NotifyDiagnosticChange(ct)
                 return not result.IsError
             else return true
+        }
+
+    /// A script's packages are resolved: its options are resolved again, now from its
+    /// whole text, and the host is told its diagnostics changed. [SCRIPT-FSX-NUGET]
+    member private this.ScriptPackagesResolvedAsync(path: string) =
+        task {
+            try
+                let! _ = FSharpDiagnosticQueries.refreshInputs workspace path CancellationToken.None
+                if refreshSupported then
+                    let! result = this.NotifyDiagnosticChange(CancellationToken.None)
+                    if result.IsError then
+                        Serilog.Log.Warning("F# diagnostic invalidation delivery failed")
+            with ex ->
+                Serilog.Log.Warning(ex, "F# script package completion was not delivered")
         }
 
     member private this.AdoptOwnerAsync(filePath: string, ct: CancellationToken) =
