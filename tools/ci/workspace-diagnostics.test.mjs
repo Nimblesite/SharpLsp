@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { parseArguments, rowsOf, summary, takeMessages, violations } from "./workspace-diagnostics.mjs";
+import { takeMessages } from "./lsp-session.mjs";
+import { parseArguments, rowsOf, summary, violations } from "./workspace-diagnostics.mjs";
 
 const frame = (body) => {
     const text = JSON.stringify(body);
