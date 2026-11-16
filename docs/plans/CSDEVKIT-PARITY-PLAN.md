@@ -248,13 +248,13 @@ These are the features users hit within the first 5 minutes. Without them, Sharp
   - [x] Auto-add using directive on completion commit
   - [x] Show unimported type completions with (import) label
 
-- [ ] **P1.6: Rename Symbol (P0 parity blocker)** — see [RENAME-SPEC.md](../specs/RENAME-SPEC.md)
-  - [ ] `textDocument/prepareRename` and `textDocument/rename`
-  - [ ] C# Roslyn `Renamer.RenameSymbolAsync`
-  - [ ] F# compiler-service rename/symbol-use pipeline
-  - [ ] WorkspaceEdit conversion and cancellation
-  - [ ] Full code-element coverage: types, enums, enum members, methods/functions, constructors, properties/indexers, fields/events, variables, parameters, namespaces/modules, generic parameters, aliases, F# record fields, F# DU cases, and F# active patterns
-  - [ ] Coarse e2e coverage for every code-element category
+- [x] **P1.6: Rename Symbol (P0 parity blocker)** — see [RENAME-SPEC.md](../specs/RENAME-SPEC.md) — complete: every row of [RENAME-COVERAGE] has real-editor coverage, operators and conversion operators included ([RENAME-CSHARP-OPERATORS])
+  - [x] `textDocument/prepareRename` and `textDocument/rename`
+  - [x] C# Roslyn `Renamer.RenameSymbolAsync`
+  - [x] F# compiler-service rename/symbol-use pipeline
+  - [x] WorkspaceEdit conversion and cancellation
+  - [x] Full code-element coverage: types, enums, enum members, methods/functions, constructors, properties/indexers, fields/events, variables, parameters, namespaces/modules, generic parameters, aliases, F# record fields, F# DU cases, and F# active patterns
+  - [x] Coarse e2e coverage for every code-element category
 
 ### Priority 2 -- Essential Features (Weeks 7-14)
 
@@ -380,7 +380,7 @@ Features where we go beyond what C# Dev Kit offers.
 - [ ] **P4.4: Advanced F# Features**
   - [x] Signature file generation (.fsi) — `sharplsp.fsi.generateSignature` (`fsi-build-output-e2e.test.ts`)
   - [x] FSI integration (send selection to F# Interactive) — `sharplsp.fsi.send`/`sendFile` (`fsi-build-output-e2e.test.ts`)
-  - [ ] File ordering awareness and reorder suggestions
+  - [x] File ordering awareness and reorder suggestions — `[REFACTOR-FSHARP-FILE-ORDER]`: FS0039 on a name a later file declares offers "Move B.fs above A.fs", applied through the MSBuild DOM
   - [x] FSharpLint integration — `FSharpLintDiagnostics.fs`, [DIAG-CATEGORIES-ANALYZER]
   - [ ] Fantomas formatting with preview
   - [x] Pipeline operator type hints — see P1.4
