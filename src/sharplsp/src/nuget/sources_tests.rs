@@ -138,3 +138,38 @@ fn folder_versions_come_from_nupkg_file_names() {
     let versions = read_dir_versions(dir.path(), "SharpLsp.Controlled").unwrap();
     assert_eq!(versions, vec!["1.0.0", "1.5.0", "2.0.0"]);
 }
+
+/// Memory leak: source documents are keyed by URL — one flat-container index
+/// per package a code action looked at — and an expired entry was only
+/// replaced if that exact URL was fetched again, so every stale document
+/// stayed resident for the host's life. [PKG-VULN-FIX]
+#[test]
+fn caching_a_document_drops_every_expired_one() {
+    let cache: Ttl<String> = Ttl::default();
+    {
+        let mut entries = cache.lock().unwrap();
+        for package in ["newtonsoft.json", "serilog", "dapper", "polly"] {
+            let url = format!("https://feed/v3-flatcontainer/{package}/index.json");
+            let _ = entries.insert(url, (Instant::now(), Arc::new(package.to_string())));
+        }
+    }
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let fresh = runtime
+        .block_on(memo(
+            &cache,
+            "https://feed/v3-flatcontainer/xunit/index.json",
+            async { Ok("xunit".to_string()) },
+        ))
+        .unwrap();
+
+    assert_eq!(*fresh, "xunit");
+    let entries = cache.lock().unwrap();
+    assert_eq!(
+        entries.keys().collect::<Vec<_>>(),
+        ["https://feed/v3-flatcontainer/xunit/index.json"],
+        "only the fresh document stays cached"
+    );
+    assert!(entries
+        .values()
+        .all(|(expires, _)| *expires > Instant::now()));
+}

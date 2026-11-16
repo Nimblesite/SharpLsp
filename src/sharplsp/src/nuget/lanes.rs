@@ -17,12 +17,15 @@ pub type Lane = Arc<tokio::sync::Mutex<()>>;
 static LANES: LazyLock<Mutex<HashMap<String, Lane>>> = LazyLock::new(Mutex::default);
 
 /// The lane serialising every host restore of the directory holding `target`.
+/// Lanes no restore holds are dropped first, so the map never outlives the
+/// restores in flight.
 pub fn lane(target: &str) -> Result<Lane> {
     let key = crate::paths::directory_key(target)
         .ok_or_else(|| anyhow!("no directory holds {target}"))?;
     let mut lanes = LANES
         .lock()
         .map_err(|poisoned| anyhow!("NuGet restore lanes poisoned: {poisoned}"))?;
+    lanes.retain(|_, held| Arc::strong_count(held) > 1);
     Ok(Arc::clone(lanes.entry(key).or_default()))
 }
 

@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use lsp_types::{DiagnosticSeverity, DiagnosticTag, Position};
 
 /// Razor diagnostics publish under their own source, whether the file is
 /// named by URI (push) or by path (pull and solution-wide).

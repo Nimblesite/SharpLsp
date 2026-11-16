@@ -340,7 +340,8 @@ static ADVISORIES: LazyLock<Ttl<Vec<RawAdvisory>>> = LazyLock::new(Ttl::default)
 static DOCUMENTS: LazyLock<Ttl<serde_json::Value>> = LazyLock::new(Ttl::default);
 
 /// `key`'s value from `cache` while fresh, else `fetch`ed and cached until
-/// [`CACHE_TTL`]. A failed fetch caches nothing.
+/// [`CACHE_TTL`]. A failed fetch caches nothing; caching drops every expired
+/// entry, since most URLs are never fetched again to replace their own.
 async fn memo<V, F>(cache: &Ttl<V>, key: &str, fetch: F) -> Result<Arc<V>>
 where
     F: std::future::Future<Output = Result<V>>,
@@ -356,6 +357,8 @@ where
     }
     let value = Arc::new(fetch.await?);
     if let Ok(mut entries) = cache.lock() {
+        let now = Instant::now();
+        entries.retain(|_, (expires, _)| *expires > now);
         let _ = entries.insert(
             key.to_string(),
             (Instant::now() + CACHE_TTL, Arc::clone(&value)),

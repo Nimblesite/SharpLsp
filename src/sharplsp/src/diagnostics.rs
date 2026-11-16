@@ -4,25 +4,30 @@
 //! analysis (on solution load). Solution-wide results are streamed
 //! incrementally — one `publishDiagnostics` notification per file.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use dashmap::DashMap;
 use lsp_server::{Message, Notification};
-use lsp_types::{
-    CodeDescription, Diagnostic, DiagnosticSeverity, DiagnosticTag, NumberOrString, Position,
-    PublishDiagnosticsParams, Range, Uri,
-};
+use lsp_types::{Diagnostic, NumberOrString, PublishDiagnosticsParams, Uri};
 use tracing::{debug, info, warn};
 
 use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
+mod convert;
+mod gate;
 mod msbuild;
 mod policy;
 mod restored;
 
+#[cfg(test)]
+use convert::map_severity;
+use convert::{to_lsp_diagnostic, SidecarDiagnostic};
+pub use gate::published_set_is_provisional;
+#[cfg(test)]
+use gate::PROVISIONAL_PUBLISHED;
+use gate::{current_generation, is_current, next_generation, PUSH_GENERATIONS};
 pub(crate) use restored::publish_after_restore;
 
 /// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
@@ -40,57 +45,6 @@ const MAX_PUSH_ATTEMPTS: u32 = 120;
 /// inside the message — so this check never parses prose.
 /// Implements [SCRIPT-FILEBASED-REFERENCES-FALLBACK].
 const RESTORE_PENDING_CODE: &str = "SLSPC0002";
-
-/// Latest push generation per document URI. Implements [DIAG-PUSH-GATE]
-/// (GitHub #160): a completed fetch older than the newest known text must not
-/// publish, and the newest generation must retry on failure until published
-/// or superseded. Entries are monotonic and never removed — reusing a counter
-/// after didClose would let an ancient in-flight fetch match a fresh
-/// generation and publish stale results.
-static PUSH_GENERATIONS: LazyLock<DashMap<String, u64>> = LazyLock::new(DashMap::new);
-
-/// URIs whose LATEST publication still carries [`RESTORE_PENDING_CODE`] — a
-/// tier-2 placeholder that a background restore is about to replace. While a
-/// document is in this set, a semantic response must not be sent to the editor
-/// before its diagnostics are re-fetched and republished
-/// ([`converge_provisional`]); otherwise completion or hover can reveal the
-/// restored tier-1 references while the placeholder's phantom `CS0246`s are
-/// still the published truth, and nothing between the reveal and the push
-/// loop's next 1s tick corrects them. Updated at the single client-publish
-/// choke point ([`publish`]). Implements
-/// [SCRIPT-FILEBASED-REFERENCES-FALLBACK] and [DIAG-PUSH-GATE].
-static PROVISIONAL_PUBLISHED: LazyLock<DashMap<String, bool>> = LazyLock::new(DashMap::new);
-
-/// Wire type matching C# `DiagnosticResult` `[Key(N)]` ordering.
-///
-/// Field order is significant — `MessagePack` uses positional keys.
-#[derive(serde::Deserialize)]
-struct SidecarDiagnostic {
-    /// Original file path (unused; kept for positional `MessagePack` alignment).
-    _file_path: String,
-    /// Zero-based start line of the diagnostic span.
-    start_line: u32,
-    /// Zero-based start column of the diagnostic span.
-    start_character: u32,
-    /// Zero-based end line of the diagnostic span.
-    end_line: u32,
-    /// Zero-based end column of the diagnostic span.
-    end_character: u32,
-    /// Human-readable diagnostic message.
-    message: String,
-    /// Roslyn severity string (`Error`, `Warning`, `Info`, or `Hidden`).
-    severity: String,
-    /// Compiler or analyzer diagnostic code (e.g. `CS0219`).
-    code: String,
-    /// The rule's documentation link (`DiagnosticDescriptor.HelpLinkUri`);
-    /// empty when the source sidecar sends none ([DIAG-CATEGORIES-ANALYZER]).
-    #[serde(default)]
-    help_link: String,
-    /// LSP `DiagnosticTag` numbers: unnecessary, deprecated; empty for every
-    /// other finding ([DIAG-CATEGORIES-TAGS]).
-    #[serde(default)]
-    tags: Vec<i32>,
-}
 
 /// A document to push diagnostics for: its owning sidecar, URI and native path.
 pub type PushTarget = (Arc<SidecarManager>, Uri, String);
@@ -165,21 +119,6 @@ async fn still_pushing(mut pushes: tokio::task::JoinSet<Option<PushTarget>>) -> 
         }
     }
     unfinished
-}
-
-/// Register a new push generation for `uri`, superseding in-flight fetches.
-/// [DIAG-PUSH-GATE]
-fn next_generation(uri: &Uri) -> u64 {
-    let mut entry = PUSH_GENERATIONS.entry(uri.to_string()).or_insert(0);
-    *entry += 1;
-    *entry
-}
-
-/// Whether `generation` is still the newest push generation for `uri`.
-fn is_current(uri: &Uri, generation: u64) -> bool {
-    PUSH_GENERATIONS
-        .get(uri.as_str())
-        .is_some_and(|current| *current == generation)
 }
 
 /// Publish only when `generation` is still the newest for the document. The
@@ -351,11 +290,11 @@ async fn publish_solution(
     Ok(())
 }
 
-/// Clear diagnostics for a closed document. Bumps the push generation so any
-/// in-flight fetch for the just-closed text cannot republish afterwards.
-/// [DIAG-PUSH-GATE]
+/// Clear diagnostics for a closed document and forget it: retiring its push
+/// generation means no in-flight fetch for the just-closed text can republish
+/// afterwards. [DIAG-PUSH-GATE]
 pub fn clear(sender: &crossbeam_channel::Sender<Message>, uri: Uri) -> Result<()> {
-    let _superseding = next_generation(&uri);
+    gate::retire(&uri);
     publish(sender, uri, vec![])
 }
 
@@ -408,14 +347,6 @@ async fn fetch_cancellable(
     msbuild::with_host_findings(file_path, compiler.await).await
 }
 
-/// Whether the latest publication for `uri` is a tier-2 placeholder that a
-/// background restore is about to replace. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-pub fn published_set_is_provisional(uri: &Uri) -> bool {
-    PROVISIONAL_PUBLISHED
-        .get(uri.as_str())
-        .is_some_and(|provisional| *provisional)
-}
-
 /// Re-fetch and republish `uri`'s diagnostics because a semantic response is
 /// about to be sent while the latest publication is still provisional.
 ///
@@ -452,20 +383,13 @@ pub async fn converge_provisional(
     }
 }
 
-/// The newest push generation registered for `uri`, if any.
-fn current_generation(uri: &Uri) -> Option<u64> {
-    PUSH_GENERATIONS
-        .get(uri.as_str())
-        .map(|generation| *generation)
-}
-
 /// Send `textDocument/publishDiagnostics` notification to the editor.
 fn publish(
     sender: &crossbeam_channel::Sender<Message>,
     uri: Uri,
     diagnostics: Vec<Diagnostic>,
 ) -> Result<()> {
-    let _ = PROVISIONAL_PUBLISHED.insert(uri.to_string(), has_restore_pending(&diagnostics));
+    gate::mark_published(&uri, has_restore_pending(&diagnostics));
     let diagnostics = policy::configured(diagnostics)?;
     let params = PublishDiagnosticsParams {
         uri,
@@ -492,65 +416,10 @@ fn publish(
     Ok(())
 }
 
-/// Map a sidecar diagnostic to an LSP `Diagnostic`.
-fn to_lsp_diagnostic(result: SidecarDiagnostic, source_tag: &str) -> Diagnostic {
-    Diagnostic {
-        range: Range::new(
-            Position::new(result.start_line, result.start_character),
-            Position::new(result.end_line, result.end_character),
-        ),
-        severity: Some(map_severity(&result.severity)),
-        code: Some(NumberOrString::String(result.code)),
-        code_description: code_description(&result.help_link),
-        tags: lsp_tags(&result.tags),
-        source: Some(source_tag.to_string()),
-        message: result.message,
-        ..Diagnostic::default()
-    }
-}
-
-/// The rule's documentation page as LSP `codeDescription.href`, so the
-/// editor links each finding to its rule exactly as the official C# extension
-/// does ([DIAG-CATEGORIES-ANALYZER]). Absent when the sidecar sent no link; a
-/// link that is not a valid URI is dropped with a trace, never a panic.
-fn code_description(help_link: &str) -> Option<CodeDescription> {
-    if help_link.is_empty() {
-        return None;
-    }
-    match help_link.parse::<Uri>() {
-        Ok(href) => Some(CodeDescription { href }),
-        Err(error) => {
-            debug!(help_link, %error, "Dropping malformed diagnostic help link");
-            None
-        }
-    }
-}
-
-/// The finding's LSP tags, so the editor greys out unnecessary code and strikes
-/// through a use of an obsolete symbol; none when the sidecar sent none, and an
-/// unknown number is dropped ([DIAG-CATEGORIES-TAGS]).
-fn lsp_tags(tags: &[i32]) -> Option<Vec<DiagnosticTag>> {
-    let known: Vec<DiagnosticTag> = tags
-        .iter()
-        .filter_map(|tag| match *tag {
-            1 => Some(DiagnosticTag::UNNECESSARY),
-            2 => Some(DiagnosticTag::DEPRECATED),
-            _ => None,
-        })
-        .collect();
-    (!known.is_empty()).then_some(known)
-}
-
-/// Map Roslyn severity string to LSP `DiagnosticSeverity`.
-fn map_severity(severity: &str) -> DiagnosticSeverity {
-    match severity {
-        "Error" => DiagnosticSeverity::ERROR,
-        "Warning" => DiagnosticSeverity::WARNING,
-        "Info" => DiagnosticSeverity::INFORMATION,
-        _ => DiagnosticSeverity::HINT,
-    }
-}
-
 #[cfg(test)]
 #[path = "diagnostics/diagnostics_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "diagnostics/retention_tests.rs"]
+mod retention_tests;
