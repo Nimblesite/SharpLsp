@@ -40,7 +40,15 @@ export class SharpLspBuildTaskProvider implements vscode.TaskProvider {
 }
 
 /**
- * A task that runs `dotnet <command>` with the msCompile matcher.
+ * The build task's problem matcher: `$msCompile` without the vulnerability
+ * codes NU1901–NU1904, which SharpLsp reports itself on the declaring element,
+ * so one advisory never shows twice ([PKG-VULN-SEVERITY]). Contributed in
+ * `package.json`.
+ */
+export const BUILD_PROBLEM_MATCHER = '$sharplsp-msCompile';
+
+/**
+ * A task that runs `dotnet <command>` with the build problem matcher.
  *
  * `ProcessExecution`, not `ShellExecution`: a target path containing a space or
  * a shell metacharacter is passed as one argv entry rather than re-parsed by the
@@ -57,7 +65,7 @@ export function createBuildTask(command: string, label: string, target?: string)
     label,
     SharpLspBuildTaskProvider.Source,
     execution,
-    '$msCompile',
+    BUILD_PROBLEM_MATCHER,
   );
   task.group = vscode.TaskGroup.Build;
   // [SE-ACTIONS-BUILD]: "Output appears in VS Code terminal".

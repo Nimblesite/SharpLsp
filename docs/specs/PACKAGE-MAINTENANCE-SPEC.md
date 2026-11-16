@@ -126,6 +126,9 @@ enforce_in_build = false  # true => error-mapped codes also fail `dotnet build`
   associated rule of the update fix ([FIXALL-RULES-TABLE]).
 - The VS Code `$msCompile` diagnostic for the same code and project is superseded: the build task's matcher
   output stays in the Problems panel only for codes SharpLsp does not own, so one advisory never shows twice.
+  The build tasks use the contributed matcher `$sharplsp-msCompile`: `$msCompile` with the same groups, whose
+  pattern does not match a line reporting `NU1901`–`NU1904`. Every other compiler, MSBuild and NuGet code
+  still reaches the panel with its severity, position and message.
 
 ### [PKG-VULN-FIX] "Update to known-good version" quick fix
 

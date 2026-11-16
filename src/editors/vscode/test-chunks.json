@@ -88,6 +88,7 @@
         "blazor-wasm-session.test.js",
         "run-debug-profiles.test.js",
         "run-debug-contributions.test.js",
+        "build-problem-matcher.test.js",
         "run-debug-target.test.js",
         "run-debug-build.test.js",
         "run-debug-commands.test.js",

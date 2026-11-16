@@ -1599,6 +1599,20 @@
         "language": "fsharp"
       }
     ],
+    "problemMatchers": [
+      {
+        "name": "sharplsp-msCompile",
+        "base": "$msCompile",
+        "pattern": {
+          "regexp": "^\\s*(?:\\s*\\d+>)?(\\S.*?)(?:\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\))?\\s*:\\s+(?:(\\S+)\\s+)?((?:fatal +)?error|warning|info)\\s+(?!NU190[1-4]\\s*:)(\\w+\\d+)?\\s*:\\s*(.*)$",
+          "file": 1,
+          "location": 2,
+          "severity": 4,
+          "code": 5,
+          "message": 6
+        }
+      }
+    ],
     "taskDefinitions": [
       {
         "type": "sharplsp-build",
