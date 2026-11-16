@@ -65,6 +65,9 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Extra fixes beyond FSAC list | ⭐✅ | `[ANALYZERS-FSAC-CODEFIX-COMPILER]` — FS0020 `\|> ignore`, FS0025 wildcard arm (innermost match, from the AST), FS0026 remove redundant case, FS0001 type conversion (typed FCS data) |
 | Formatting via Fantomas | 🟡 | implemented in `FSharpFeatures.fs` but **sequestered** — not routed by host. **gap: enable routing** |
 | Code lens (reference counts) | ✅ | `[FS-CODELENS]` |
+| Compile-order quick fix (FS0039 on a name a later file declares) | ⭐ | "Move B.fs above A.fs", applied through the MSBuild DOM — `[REFACTOR-FSHARP-FILE-ORDER]`; e2e `fsharp_file_order.rs` |
+| Type-provider navigation | ⭐ | provided types and members land on the declaration that instantiates the provider, never a phantom file — `[DEFINITION-FSHARP-PROVIDED]` |
+| Rename refuses a colliding name | ⭐ | the compiler judges the renamed declaring file (FS0037) — `[RENAME-ERRORS]` |
 | Code lens (signature) | 🟡 | reference-count only; signature lens missing |
 
 ### Analysis & advanced — `[FSAC-PARITY-ADVANCED]`
