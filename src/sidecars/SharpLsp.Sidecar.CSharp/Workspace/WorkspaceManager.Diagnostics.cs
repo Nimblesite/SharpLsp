@@ -150,6 +150,11 @@ internal sealed partial class WorkspaceManager
             );
         }
         var diagnostics = MapDiagnostics(filePath, model, ct);
+        diagnostics.AddRange(
+            MapAnalyzerDiagnostics(filePath, ScriptReferences.Unresolved(model, ct))
+        );
+        var root = await model.SyntaxTree.GetRootAsync(ct).ConfigureAwait(false);
+        ScriptReferences.Explain(filePath, root, diagnostics);
         AppendDegradation(filePath, degradation, diagnostics);
         diagnostics.AddRange(
             await DocumentAnalyzerDiagnosticsAsync(document, model, filePath, ct)

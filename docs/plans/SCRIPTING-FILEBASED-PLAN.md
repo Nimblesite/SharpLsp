@@ -110,8 +110,8 @@ remaining gaps are explicit rather than implied.
 - [x] `SourceReferenceResolver` for `#load`, rooted at the script directory. The closure stays
       root-only so Roslyn owns `#load` resolution rather than double-adding loaded files —
       [SCRIPT-CSX-RESOLVERS]
-- [ ] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [SCRIPT-CSX-RESOLVERS]
-- [ ] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [SCRIPT-CSX-RESOLVERS]
+- [x] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [SCRIPT-CSX-RESOLVERS] — `ScriptReferences.cs` `ScriptAssemblyResolver`; `ScriptReferenceEndToEndTests.cs` (every `#r` was ignored without a diagnostic before)
+- [x] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [SCRIPT-CSX-RESOLVERS] — `SLSPC0003`, `ScriptReferences.Explain`; a missing assembly gets the compiler's `CS0006`
 
 ### C# Sidecar — regression guards on the existing MSBuild path
 

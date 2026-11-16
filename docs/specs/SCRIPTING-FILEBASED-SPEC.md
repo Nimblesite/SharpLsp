@@ -151,8 +151,8 @@ A file-based app root file carries top-level statements. `#:include`d `.cs` file
 ### Directive resolution `[SCRIPT-CSX-RESOLVERS]`
 
 - `#load` is resolved by a `SourceReferenceResolver` rooted at the script's directory, feeding [SCRIPT-CLOSURE] expansion.
-- `#r "assembly.dll"` is resolved by a `MetadataReferenceResolver` rooted at the script's directory.
-- `#r "nuget: Pkg, Version"` requires NuGet resolution and is **out of scope for phase 1**. It must produce a clearly-worded unresolved-reference diagnostic, never a silent wrong answer.
+- `#r "assembly.dll"` is resolved by a `MetadataReferenceResolver` rooted at the directory of the file that names it (the script, or a `#load`ed file). An assembly that is not there gets the compiler's own `CS0006` on its directive. `CS0006` is a declaration diagnostic of the compilation, which a document's semantic model does not carry, so the sidecar adds it for scripts; without that an unresolved reference says nothing.
+- `#r "nuget: Pkg, Version"` requires NuGet resolution and is **out of scope for phase 1**. It must produce a clearly-worded unresolved-reference diagnostic, never a silent wrong answer: the warning `SLSPC0003` on the directive, naming the package and the two ways to get its symbols (an assembly path, or a file-based app with `#:package`), in place of a `CS0006` that would call the package a missing file.
 
 ## F# scripts `[SCRIPT-FSX]`
 

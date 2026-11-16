@@ -359,7 +359,8 @@ internal sealed partial class WorkspaceManager
     }
 
     // Scripts need a SourceReferenceResolver rooted at the script's directory, otherwise Roslyn
-    // reports CS8099 "Source file references are not supported" for every #load.
+    // reports CS8099 "Source file references are not supported" for every #load; and a
+    // MetadataReferenceResolver, otherwise every #r is ignored without a word.
     // Implements [SCRIPT-CSX-RESOLVERS].
     private static CSharpCompilationOptions BuildCompilationOptions(bool isScript, string rootPath)
     {
@@ -374,9 +375,11 @@ internal sealed partial class WorkspaceManager
         }
 
         var baseDirectory = NativePaths.DirectoryOf(rootPath);
-        return options.WithSourceReferenceResolver(
-            new SourceFileResolver([], baseDirectory.Length == 0 ? null : baseDirectory)
-        );
+        return options
+            .WithSourceReferenceResolver(
+                new SourceFileResolver([], baseDirectory.Length == 0 ? null : baseDirectory)
+            )
+            .WithMetadataReferenceResolver(new ScriptAssemblyResolver(baseDirectory));
     }
 
     // LanguageVersion.Latest, not Preview: Preview enables unstable features the user's SDK may
