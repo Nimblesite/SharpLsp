@@ -367,17 +367,41 @@ where
     Ok(value)
 }
 
-/// Fetch `url` and parse it as `T`.
-async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
+/// Fetch `url`'s body.
+async fn fetch_text(url: &str) -> Result<String> {
     info!("nuget/source: fetching {url}");
-    let body = super::cache::http_client()
+    Ok(super::cache::http_client()
         .get(url)
         .send()
         .await?
         .error_for_status()?
         .text()
-        .await?;
-    Ok(serde_json::from_str(&body)?)
+        .await?)
+}
+
+/// Fetch `url` and parse it as `T`.
+async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T> {
+    Ok(serde_json::from_str(&fetch_text(url).await?)?)
+}
+
+/// The `.nuspec` of one package version from a source's flat container, cached
+/// until [`CACHE_TTL`]; `None` when the source has no flat container.
+pub(super) async fn nuspec(
+    source: &str,
+    package_id: &str,
+    version: &str,
+) -> Result<Option<String>> {
+    let Some(flat) = service_resource(source, "PackageBaseAddress").await? else {
+        return Ok(None);
+    };
+    let (id, version) = (
+        package_id.to_ascii_lowercase(),
+        version.to_ascii_lowercase(),
+    );
+    let url = format!("{flat}{id}/{version}/{id}.nuspec");
+    let fetch = async { fetch_text(&url).await.map(serde_json::Value::String) };
+    let document = memo(&DOCUMENTS, &url, fetch).await?;
+    Ok(document.as_str().map(str::to_owned))
 }
 
 /// `url`'s JSON document, cached until [`CACHE_TTL`], parsed as `T`.

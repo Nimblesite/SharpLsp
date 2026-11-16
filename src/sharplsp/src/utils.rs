@@ -75,19 +75,47 @@ pub fn with_sidecar<P: serde::de::DeserializeOwned>(
     handle(sidecar, serde_json::from_value(req.params)?)
 }
 
+/// Who is asking a sidecar: the runtime that drives the exchange and, for a
+/// request that can be cancelled or superseded, its lifetime.
+/// [DIAG-ANALYSIS-CANCELLATION]
+#[derive(Clone, Copy)]
+pub struct Caller<'a> {
+    /// Drives the sidecar exchange.
+    pub runtime: &'a tokio::runtime::Handle,
+    /// Ends the exchange when the request is cancelled or superseded.
+    pub cancel: Option<&'a lspkit_server::CancellationToken>,
+}
+
+impl<'a> From<&'a tokio::runtime::Runtime> for Caller<'a> {
+    fn from(runtime: &'a tokio::runtime::Runtime) -> Self {
+        runtime.handle().into()
+    }
+}
+
+impl<'a> From<&'a tokio::runtime::Handle> for Caller<'a> {
+    fn from(runtime: &'a tokio::runtime::Handle) -> Self {
+        Self {
+            runtime,
+            cancel: None,
+        }
+    }
+}
+
 /// Send `request` to the sidecar as `method` and decode its answer.
 ///
 /// `Ok(None)` when the sidecar call itself fails: the handler then answers with
 /// its method's empty value, because a sidecar that is still loading — or has
 /// crashed — must degrade the feature, never fail the LSP request.
-pub fn request_sidecar<T: serde::de::DeserializeOwned, R: serde::Serialize>(
-    runtime: &tokio::runtime::Runtime,
+pub fn request_sidecar<'a, T: serde::de::DeserializeOwned, R: serde::Serialize>(
+    caller: impl Into<Caller<'a>>,
     sidecar: &SidecarManager,
     method: &str,
     request: &R,
 ) -> Result<Option<T>> {
+    let caller = caller.into();
     let payload = rmp_serde::to_vec(request)?;
-    match runtime.block_on(sidecar.request(method, payload)) {
+    let exchange = sidecar.request_cancellable(method, payload, caller.cancel);
+    match caller.runtime.block_on(exchange) {
         Ok(bytes) => Ok(Some(rmp_serde::from_slice(&bytes)?)),
         Err(err) => {
             warn!(method, error = %format_args!("{err:#}"), "sidecar request unavailable");

@@ -64,6 +64,10 @@ type FSharpSidecar() as this =
                     // normalize at the boundary. [GitHub #110]
                     let path = NativePaths.NormalizeFullPath path
                     let! result = FSharpWorkspaceLoading.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
+                    // A source or signature file opened with no workspace root arrived
+                    // before this workspace existed: load the project that compiles it
+                    // now. [SCRIPT-DETECT] [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+                    do! this.AdoptOwnerAsync(path, ct)
                     match result with
                     | Ok () ->
                         return Helpers.serializeOk "ok" ct

@@ -7,3 +7,9 @@ slow-timeout = { period = "120s", terminate-after = 2 }
 # Full-stack integration tests: allow 5 minutes each (Roslyn startup + query).
 filter = 'test(full_stack)'
 slow-timeout = { period = "120s", terminate-after = 3 }
+
+[[profile.default.overrides]]
+# Latency and memory budgets are measurements, so each of these runs alone: a
+# neighbouring test's compilers would be measured with it. [SHARPLSP-PERFORMANCE]
+filter = 'test(navigation_latency) | test(performance_budgets)'
+threads-required = "num-test-threads"

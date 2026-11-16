@@ -110,6 +110,11 @@ let discoverFsprojFiles (path: string) (ct: CancellationToken) =
             // Build output, packages and dot-directories left unwalked:
             // [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
             return Ok(NativePaths.WorkspaceFiles(fullPath, ".fsproj"))
+        elif File.Exists(fullPath) then
+            // A source or signature file opened with no workspace root: an empty
+            // workspace, into which the project that compiles it is adopted when
+            // the document arrives. [SCRIPT-DETECT] [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
+            return Ok [||]
         else
             return Error $"Path does not exist: {path}"
     }

@@ -23,7 +23,7 @@ use crate::semantic::{
 };
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::LangId;
-use crate::utils::{request_sidecar, SidecarPositionReq};
+use crate::utils::{request_sidecar, Caller, SidecarPositionReq};
 use crate::vfs::Vfs;
 
 /// The request naming a symbol by identity, matching the sidecars'
@@ -48,11 +48,7 @@ struct CSharpBuffersReq {
 /// Hand the F# sidecar what the editor shows of the C# sources, so navigation from
 /// F# lands where a declaration is now. Sent with each navigation request, never per
 /// keystroke: typing C# must not wait on F#. [DEFINITION-CROSSLANG]
-pub fn share_csharp_buffers(
-    runtime: &tokio::runtime::Runtime,
-    fsharp: Option<&Arc<SidecarManager>>,
-    vfs: &Vfs,
-) {
+pub fn share_csharp_buffers(caller: Caller<'_>, fsharp: Option<&Arc<SidecarManager>>, vfs: &Vfs) {
     let Some(fsharp) = fsharp else {
         return;
     };
@@ -69,7 +65,7 @@ pub fn share_csharp_buffers(
         .collect();
     let method = "workspace/csharpBuffers";
     let sent: Result<Option<String>> =
-        request_sidecar(runtime, fsharp, method, &CSharpBuffersReq { buffers });
+        request_sidecar(caller, fsharp, method, &CSharpBuffersReq { buffers });
     if let Err(err) = sent {
         debug!(error = %format_args!("{err:#}"), "C# buffers not handed to F#");
     }
@@ -81,7 +77,7 @@ pub fn share_csharp_buffers(
 /// one [`unplaced`] keeps. With no F# sidecar, nothing can place it, so the
 /// decompiled answer is final.
 pub fn in_fsharp_source(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     fsharp: Option<&Arc<SidecarManager>>,
     result: SidecarLocationListResult,
 ) -> (SidecarLocationListResult, bool) {
@@ -91,7 +87,7 @@ pub fn in_fsharp_source(
     let (placed, settled): (Vec<_>, Vec<_>) = result
         .locations
         .into_iter()
-        .map(|location| declarations_of(runtime, fsharp, location))
+        .map(|location| declarations_of(caller, fsharp, location))
         .unzip();
     let locations = placed.into_iter().flatten().collect();
     (
@@ -103,24 +99,20 @@ pub fn in_fsharp_source(
 /// The F# declarations of the symbol `location` shows, else `location`, and
 /// whether that is final: a location naming no F# symbol always is.
 fn declarations_of(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     fsharp: &Arc<SidecarManager>,
     location: SidecarLocationResult,
 ) -> (Vec<SidecarLocationResult>, bool) {
     let Some(symbol) = location.symbol.as_ref().filter(|symbol| symbol.found) else {
         return (vec![location], true);
     };
-    let found = by_identity(
-        runtime,
-        fsharp,
-        "workspace/declarationForeign",
-        symbol,
-        true,
-    )
-    .inspect_err(|err| debug!(error = %format_args!("{err:#}"), "F# declaration lookup failed"));
+    let found = by_identity(caller, fsharp, "workspace/declarationForeign", symbol, true)
+        .inspect_err(
+            |err| debug!(error = %format_args!("{err:#}"), "F# declaration lookup failed"),
+        );
     match found {
         Ok(declared) if !declared.is_empty() => (declared, true),
-        found => unplaced(runtime, fsharp, location, found.is_ok()),
+        found => unplaced(caller, fsharp, location, found.is_ok()),
     }
 }
 
@@ -130,12 +122,12 @@ fn declarations_of(
 /// such symbol. A load that failed or found nothing never leaves F12 dead.
 /// [DEFINITION-CROSSLANG-IDENTITY]
 fn unplaced(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     fsharp: &Arc<SidecarManager>,
     location: SidecarLocationResult,
     answered: bool,
 ) -> (Vec<SidecarLocationResult>, bool) {
-    match sidecar_workspace_loaded(runtime.handle(), fsharp, None) {
+    match sidecar_workspace_loaded(caller.runtime, fsharp, caller.cancel) {
         Ok(false) if !fsharp.workspace_open_finished() => (Vec::new(), false),
         Ok(loaded) => (vec![location], loaded && answered),
         Err(_) => (vec![location], false),
@@ -146,7 +138,7 @@ fn unplaced(
 /// none when the other sidecar has no workspace, the symbol has no identity,
 /// or either sidecar fails, so the primary answer always stands.
 pub fn foreign_references(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     primary: &SidecarManager,
     other: Option<&Arc<SidecarManager>>,
     at: &SidecarPositionReq,
@@ -155,7 +147,7 @@ pub fn foreign_references(
     let Some(other) = other else {
         return Vec::new();
     };
-    references_by_identity(runtime, primary, other, at, include_declaration).unwrap_or_else(|err| {
+    references_by_identity(caller, primary, other, at, include_declaration).unwrap_or_else(|err| {
         debug!(error = %format_args!("{err:#}"), "cross-language references failed");
         Vec::new()
     })
@@ -164,27 +156,27 @@ pub fn foreign_references(
 /// The other sidecar's references to the symbol at `at`, found by the identity
 /// the primary sidecar names it with; none when it names no foreign symbol.
 fn references_by_identity(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     primary: &SidecarManager,
     other: &Arc<SidecarManager>,
     at: &SidecarPositionReq,
     include_declaration: bool,
 ) -> Result<Vec<Location>> {
-    if !sidecar_workspace_loaded(runtime.handle(), other, None)? {
+    if !sidecar_workspace_loaded(caller.runtime, other, caller.cancel)? {
         return Ok(Vec::new());
     }
-    let identity = request_symbol_identity(runtime.handle(), primary, at, None)?;
+    let identity = request_symbol_identity(caller.runtime, primary, at, caller.cancel)?;
     if !identity.found {
         return Ok(Vec::new());
     }
     let method = "workspace/referencesForeign";
-    let found = by_identity(runtime, other, method, &identity, include_declaration)?;
+    let found = by_identity(caller, other, method, &identity, include_declaration)?;
     Ok(found.iter().filter_map(sidecar_location_to_lsp).collect())
 }
 
 /// Ask `sidecar` for the locations `method` finds for the symbol `identity`.
 fn by_identity(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     sidecar: &Arc<SidecarManager>,
     method: &str,
     identity: &SidecarRenameIdentityResult,
@@ -196,7 +188,7 @@ fn by_identity(
         include_declaration,
     };
     let found: Option<SidecarLocationListResult> =
-        request_sidecar(runtime, sidecar, method, &request)?;
+        request_sidecar(caller, sidecar, method, &request)?;
     Ok(found.map_or_else(Vec::new, |result| result.locations))
 }
 
@@ -251,7 +243,7 @@ mod tests {
             .flatten()
             .collect(),
         };
-        let placed = runtime.map(|runtime| in_fsharp_source(&runtime, None, result));
+        let placed = runtime.map(|runtime| in_fsharp_source((&runtime).into(), None, result));
         let (result, settled) = placed.unzip();
         assert_eq!(settled, Some(true), "nothing could ever place it");
         assert_eq!(
@@ -274,7 +266,7 @@ mod tests {
             };
             runtime
                 .as_ref()
-                .map(|runtime| in_fsharp_source(runtime, Some(&fsharp), result))
+                .map(|runtime| in_fsharp_source(runtime.into(), Some(&fsharp), result))
                 .map(|(result, settled)| (lines(&result), settled))
         };
         assert_eq!(
@@ -307,7 +299,7 @@ mod tests {
         let found = |other: Option<&Arc<SidecarManager>>| {
             runtime
                 .as_ref()
-                .map(|runtime| foreign_references(runtime, &primary, other, &at, true))
+                .map(|runtime| foreign_references(runtime.into(), &primary, other, &at, true))
         };
         assert_eq!(found(None), Some(Vec::new()), "no other sidecar");
         assert_eq!(

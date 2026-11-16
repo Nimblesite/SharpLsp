@@ -90,6 +90,7 @@ output_directory = ".sharplsp/profiles"
 | `diagnostics.project_filter` | 按项目名称或相对于所选解决方案的项目路径筛选 F# 和 C# 工作区结果；直接文档拉取不受影响 |
 | `diagnostics.min_severity` | 设置最低严重级别：`error`、`warning`、`info` 或 `hint`；默认为 `hint` |
 | `diagnostics.max_per_file` | 先按严重级别筛选，再限制每个文件的数量；`0` 表示不限制 |
+| `server.debounce_ms` | 编辑之后，悬停和导航请求会先等待指定的毫秒数再发送给编译器；如果下一次按键取代了它们，请求就在等待中结束。默认为 `150`，支持实时更改 |
 | `diagnostics.refresh_debounce_ms` | 在指定的毫秒窗口内合并诊断刷新请求；默认为 `2000`，支持实时更改 |
 | `diagnostics.auto_restore_on_open` | 打开工作区前还原缺失或过期的 SDK 资产和包文件，默认为 `true`；更改在下次打开工作区时生效 |
 | `analyzers.dead_code` | 启用 SharpLsp 的 C# 和 F# 死代码分析器 |
@@ -105,10 +106,19 @@ output_directory = ".sharplsp/profiles"
 以下字段会被解析并保留以确保兼容性，但更改它们目前不会改变所述行为：
 
 - `server.log_level`；
-- `server.debounce_ms`；
 - 除 `max_concurrent_sessions` 以外的所有 `profiler.*` 默认值。
 
 如需配置 VS Code 日志，请使用 `sharplsp.logging.level`；它会作为 `RUST_LOG` 转发给宿主。性能分析器命令目前使用请求自身的默认值，并将文件写入 `.sharplsp/profiles`。
+
+## 遥测导出
+
+SharpLsp 默认不导出任何数据。若要在自己的 OpenTelemetry 收集器中查看请求耗时，请在启动服务器的环境中设置标准变量：
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+服务器随后通过 OTLP/HTTP 发送请求跨度（`lsp.request`、`sidecar.request`）和指标（`sharplsp.request.duration`、`sharplsp.requests`）。其中只包含方法名、编译器名称、结果和耗时，绝不包含源代码内容。其他标准 `OTEL_*` 变量（请求头、超时、导出间隔）照常生效。
 
 ## 常用 VS Code 设置
 

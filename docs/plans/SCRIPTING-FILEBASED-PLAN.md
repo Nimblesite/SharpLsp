@@ -57,11 +57,12 @@ remaining gaps are explicit rather than implied.
 - [x] Remove trailing whitespace introduced in `src/sharplsp/src/main.rs` (failed `cargo fmt --check`)
 - [x] Flatten the 4-level `if let` nest in `init_workspace_for_file` into
       `opened_document_path` + `sidecar_for_path` (functions <20 LOC)
-- [ ] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
-      `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpSignature`
-      lattice; currently an extension match inside `main.rs` — [SCRIPT-DETECT]
-- [ ] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
-      filesystem root) — [SCRIPT-CONE]
+- [x] Extract classification into `src/sharplsp/src/document_kind.rs` with the full
+      `ProjectOwned` / `CSharpFileBasedApp` / `CSharpScript` / `FSharpScript` / `FSharpLooseSource` /
+      `FSharpSignature` lattice, consumed by the lazy open — [SCRIPT-DETECT]: `document_kind_tests.rs`,
+      `lazy_routing.rs` `a_signature_file_starts_fcs_only_inside_a_project_cone`
+- [x] Implement cone search with the four stop conditions (project file, workspace root, `.git`,
+      filesystem root) — [SCRIPT-CONE]: `paths/cone.rs`, `the_cone_walk_stops_at_each_of_its_four_boundaries`
 - [x] Start the second language's sidecar on demand when a document of that language is first opened
       — [SCRIPT-ROUTE-LAZY]: the latch only gates the first lazy `workspace/open`; the second language's
       document is forwarded to its own sidecar, which starts and loads it — `lazy_routing.rs`
@@ -85,15 +86,15 @@ remaining gaps are explicit rather than implied.
       `CSharpCompilationOptions.Usings` is honoured only for `SourceCodeKind.Script`, so a file-based
       app needs the generated-file route the SDK itself uses — [SCRIPT-FILEBASED-PARSEOPTIONS]
 - [x] Replace a root's previous project when reopening without discarding other projectless roots
-- [ ] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
-      `.razor`→Content); only `Compile` joins the semantic closure. Currently every resolved include
-      is treated as Compile — [SCRIPT-FILEBASED-DIRECTIVES]
+- [x] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
+      `.razor`→Content); only `Compile` joins the semantic closure — [SCRIPT-FILEBASED-DIRECTIVES] —
+      `DocumentClosure.cs` `IncludedItem`; `FileBasedIncludeEndToEndTests.cs`
 - [x] Diagnose a `#:` directive appearing after the first non-trivia token through Roslyn's
       compiler diagnostic pipeline, and exclude it from semantic activation —
       [SCRIPT-FILEBASED-DIRECTIVES]
-- [ ] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
-      [SCRIPT-FILEBASED-PARSEOPTIONS]
-- [ ] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT]
+- [x] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
+      [SCRIPT-FILEBASED-PARSEOPTIONS] — `FileBasedRules.cs` `FileBasedLanguage`
+- [x] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT] — `SLSPC0004`, `FileBasedRules.cs` `FileBasedEntryPoints`
 - [x] Keep root-path keyed model/degradation generations in one `AdhocWorkspace` so two apps in one
       directory stay independent concurrently; reopening replaces only the matching root —
       [SCRIPT-MULTIROOT]
@@ -110,8 +111,8 @@ remaining gaps are explicit rather than implied.
 - [x] `SourceReferenceResolver` for `#load`, rooted at the script directory. The closure stays
       root-only so Roslyn owns `#load` resolution rather than double-adding loaded files —
       [SCRIPT-CSX-RESOLVERS]
-- [ ] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [SCRIPT-CSX-RESOLVERS]
-- [ ] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [SCRIPT-CSX-RESOLVERS]
+- [x] `MetadataReferenceResolver` for `#r "assembly.dll"`, rooted at the script directory — [SCRIPT-CSX-RESOLVERS] — `ScriptReferences.cs` `ScriptAssemblyResolver`; `ScriptReferenceEndToEndTests.cs` (every `#r` was ignored without a diagnostic before)
+- [x] Clear unresolved-reference diagnostic for `#r "nuget:"` (phase 3) — [SCRIPT-CSX-RESOLVERS] — `SLSPC0003`, `ScriptReferences.Explain`; a missing assembly gets the compiler's `CS0006`
 
 ### C# Sidecar — regression guards on the existing MSBuild path
 
@@ -153,14 +154,14 @@ remaining gaps are explicit rather than implied.
 
 ### Phase 2 — tier 1 references
 
-- [ ] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
-      never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
-      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
-      [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
-      — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
+- [x] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
+      never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `WriteProject`
+- [x] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
+      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `WorkDirectory`
+- [x] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
+      [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `RestoreAsync`, `LoadReferencesAsync`
+- [x] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
+      — [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `DefaultProperties`
 - [x] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 - [x] The upgrade reaches the editor: the tier-2 notice carries `SLSPC0002` while the restore runs
       and `SLSPC0001` once it terminally fails, and the host republishes a document's diagnostics
@@ -219,8 +220,8 @@ Still to write:
 - [x] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`,
       counting the host's compiler children by apphost; it found both #554 (the workspace scan started FCS) and #553
       (hover on an F# token right after another token was dropped as whitespace)
-- [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
-- [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET]
+- [x] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS] — VSIX `filebased-package-e2e.test.ts`, sidecar `FileBasedPackageSpecEndToEndTests.cs`
+- [x] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET] — `fsharp_script_packages.rs` `an_fsharp_script_binds_the_symbols_of_its_nuget_reference` (a packed local feed; hover, namespace, FS0039 on an undeclared member)
 
 ### Test debt inherited from PR #188
 

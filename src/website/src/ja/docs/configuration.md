@@ -90,6 +90,7 @@ output_directory = ".sharplsp/profiles"
 | `diagnostics.project_filter` | F# と C# のワークスペース結果をプロジェクト名または選択したソリューションからの相対パスで絞り込みます。直接の文書プルは除外されません |
 | `diagnostics.min_severity` | `error`、`warning`、`info`、`hint` で最低の重要度を指定します。既定は `hint` です |
 | `diagnostics.max_per_file` | 重要度で絞り込んだ後、ファイルごとの件数を制限します。`0` は無制限です |
+| `server.debounce_ms` | 編集の直後、ホバーとナビゲーションの要求はコンパイラーに届く前にこのミリ秒数だけ待機し、次のキー入力で置き換えられた場合はそこで終了します。既定は `150` で、変更は即時反映されます |
 | `diagnostics.refresh_debounce_ms` | 指定したミリ秒の間に発生した診断更新要求をまとめます。既定は `2000` で、変更は即時反映されます |
 | `diagnostics.auto_restore_on_open` | ワークスペースを開く前に、不足または古い SDK アセットとパッケージファイルを復元します。既定は `true` で、変更は次回のワークスペース読み込み時に反映されます |
 | `analyzers.dead_code` | SharpLsp の C# および F# デッドコードアナライザーを有効にします |
@@ -105,10 +106,19 @@ output_directory = ".sharplsp/profiles"
 次のフィールドは互換性のために解析および保持されますが、値を変更しても現在は該当する動作が変わりません。
 
 - `server.log_level`
-- `server.debounce_ms`
 - すべての `profiler.*` 既定値（`max_concurrent_sessions` を除く）
 
 VS Code のログには `sharplsp.logging.level` を使用します。この値は `RUST_LOG` としてホストへ転送されます。現在、プロファイラーコマンドは各リクエストの既定値を使用し、`.sharplsp/profiles` 以下へ書き込みます。
+
+## テレメトリのエクスポート
+
+SharpLsp は既定では何もエクスポートしません。要求の所要時間を自分の OpenTelemetry コレクターで確認するには、サーバーを起動する環境に標準の変数を設定します。
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+サーバーは要求のスパン（`lsp.request`、`sidecar.request`）とメトリック（`sharplsp.request.duration`、`sharplsp.requests`）を OTLP/HTTP で送信します。含まれるのはメソッド名、コンパイラー名、結果、所要時間のみで、ソースコードの内容は含まれません。そのほかの標準 `OTEL_*` 変数（ヘッダー、タイムアウト、エクスポート間隔）も通常どおり適用されます。
 
 ## VS Code の主な設定
 

@@ -16,6 +16,7 @@ mod cross_language;
 mod diagnostic_publish;
 mod diagnostics;
 mod dispatch;
+mod document_kind;
 mod document_symbols;
 mod folding;
 // Formatting module is sequestered — not wired into the LSP server.
@@ -29,7 +30,6 @@ mod import_command;
 mod inbound;
 mod inlay_hints;
 mod member_navigation;
-mod nav_cache;
 mod notifications;
 mod nuget;
 mod paths;
@@ -41,6 +41,7 @@ mod pull_diagnostics;
 mod razor;
 mod related_files;
 mod semantic;
+mod semantic_memo;
 mod semantic_tokens;
 mod service_notifications;
 mod sidecar;
@@ -51,6 +52,7 @@ mod source_walk;
 mod statement_stop;
 mod syntax;
 mod target_framework;
+mod telemetry;
 mod tree_sitter_parse;
 mod type_hierarchy;
 mod utils;
@@ -133,8 +135,14 @@ fn main() -> ExitCode {
     // (e.g. VS Code) capture stderr into a plain Output panel where escape
     // codes would render as garbage. See issue #78 / [DIST-CLEAN-OUTPUT].
     let stderr_is_terminal = std::io::stderr().is_terminal();
+    // Kept until `main` returns: dropping it flushes the last spans and metrics.
+    let telemetry = telemetry::Telemetry::start();
+    let exported = telemetry
+        .as_ref()
+        .map(|telemetry| tracing_opentelemetry::layer().with_tracer(telemetry.tracer()));
     tracing_subscriber::registry()
         .with(env_filter)
+        .with(exported)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
@@ -227,6 +235,7 @@ fn run_server() -> Result<()> {
         "SharpLsp LSP initialized (log_level={}, debounce_ms={})",
         sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
+    semantic::requests::configure(sharplsp_config.server.debounce_ms);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -488,7 +497,6 @@ fn main_loop(
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
-    let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
     let diagnostic_requests =
         diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
@@ -523,20 +531,25 @@ fn main_loop(
                 {
                     continue;
                 }
-                if diagnostic_requests.dispatch(&req, runtime)? {
+                let settled = dispatch::settled_without_compiler(&req, &trees);
+                if diagnostic_requests.dispatch(&req, runtime, settled)? {
                     continue;
                 }
-                dispatch::handle_request(
-                    req,
-                    vfs,
-                    &parsers,
-                    &trees,
-                    &mut nav_cache,
-                    connection,
-                    runtime,
-                    csharp_sidecar,
-                    fsharp_sidecar,
-                )?;
+                let (method, started) = (req.method.clone(), std::time::Instant::now());
+                let answered = telemetry::request_span(&method).in_scope(|| {
+                    dispatch::handle_request(
+                        req,
+                        vfs,
+                        &parsers,
+                        &trees,
+                        connection,
+                        runtime,
+                        csharp_sidecar,
+                        fsharp_sidecar,
+                    )
+                });
+                telemetry::record_request(&method, started.elapsed(), answered.is_ok());
+                answered?;
             }
             Message::Notification(notif) => {
                 let Some(notif) = service_notifications::route(
@@ -573,7 +586,6 @@ fn main_loop(
                         vfs,
                         parsers: &parsers,
                         trees: &mut trees,
-                        nav_cache: &mut nav_cache,
                         connection,
                         runtime,
                         sidecars: [csharp_sidecar, fsharp_sidecar],

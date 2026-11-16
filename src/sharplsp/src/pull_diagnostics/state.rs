@@ -108,6 +108,7 @@ pub fn configuration() -> Result<DiagnosticsConfig> {
 pub fn select_workspace(target: &str) -> Result<()> {
     with_session(|session| {
         session.workspace = Some(target.to_owned());
+        crate::semantic_memo::memo().invalidate();
         session.store.invalidate();
         if let Some(inbound) = &session.inbound {
             session.inputs.replace(target, &session.runtime, inbound)?;
@@ -252,11 +253,15 @@ pub fn release_closed() {
 
 /// Drop every Salsa input and memo; the next pulls recompute what is still live.
 fn release() -> Result<()> {
+    crate::semantic_memo::memo().release();
     change_store(|store| Ok(store.clear()?))
 }
 
 /// Apply one store change and retain the standard debounced refresh.
 fn change_store(operation: impl FnOnce(&PullStore) -> Result<()>) -> Result<()> {
+    // Every input a diagnostic depends on is one a semantic answer depends on:
+    // documents, the solution and the compiler's own state. [REFERENCES-SALSA]
+    crate::semantic_memo::memo().invalidate();
     operation(&store()?)?;
     with_session(|session| {
         schedule_refresh(session);

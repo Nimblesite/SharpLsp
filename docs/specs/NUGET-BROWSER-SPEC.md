@@ -263,7 +263,7 @@ Product decision for [#270](https://github.com/Nimblesite/SharpLsp/issues/270): 
 
 #### [NUGET-REQUESTS-UPDATE-TESTS] Deterministic Regression Contract
 
-Use disposable, real `.fsproj` and `.csproj` workspaces with a controlled package source/version inventory. Assert within-line selection, major and prerelease opt-in, cancellation, unavailable feeds, ambiguity, CPM ownership, and exact-version apply. Test selection MUST fail if its expected project is absent; no fallback to the first workspace project. Assert unrelated files and checked-in fixtures remain byte-for-byte unchanged, including on failure. Implementation progress is tracked in [NUGET-UPDATE-PLAN.md](../plans/NUGET-UPDATE-PLAN.md); documenting this decision does not close #270.
+Use disposable, real `.fsproj` and `.csproj` workspaces with a controlled package source/version inventory. Assert within-line selection, major and prerelease opt-in, cancellation, unavailable feeds, ambiguity, CPM ownership, and exact-version apply. Test selection MUST fail if its expected project is absent; no fallback to the first workspace project. Assert unrelated files and checked-in fixtures remain byte-for-byte unchanged, including on failure.
 
 ### [NUGET-REQUESTS-UNINSTALL] `sharplsp/nuget/uninstall`
 

@@ -6,17 +6,21 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_server::{Message, Notification, Request, Response};
-use lspkit_server::pull::{AnalysisError, PullError, PullStore};
+use lspkit_server::pull::PullStore;
 use lspkit_server::{
     CancellationHandle, CancellationToken, Dispatcher, HandlerResult, JsonRpcError, ReplyGate,
 };
 use serde_json::{json, Value};
 use tracing::warn;
 
-use crate::sidecar::manager::{CompilerRefusal, SidecarManager};
+use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
 mod interest;
+mod refusal;
+
+pub(super) use refusal::settled_refusal;
+use refusal::{rpc_error, Interrupted};
 
 #[cfg(test)]
 mod rpc_error_tests;
@@ -73,14 +77,19 @@ impl Snapshot {
         Ok(())
     }
 
-    /// Cancellation cannot interleave a terminal response ahead of this partial.
+    /// One diagnostic report of a partial workspace pull.
     pub fn partial(&self, token: &lsp_types::ProgressToken, report: &Value) -> Result<()> {
+        self.progress(token, &json!({"items": [report]}))
+    }
+
+    /// Cancellation cannot interleave a terminal response ahead of this partial.
+    pub fn progress(&self, token: &lsp_types::ProgressToken, value: &Value) -> Result<()> {
         self.reply
             .emit(|| {
                 self.check()?;
                 let notification = lsp_server::Notification::new(
                     "$/progress".to_owned(),
-                    json!({"token": token, "value": {"items": [report]}}),
+                    json!({"token": token, "value": value}),
                 );
                 self.sender.send(Message::Notification(notification))?;
                 Ok::<(), anyhow::Error>(())
@@ -111,7 +120,11 @@ impl Requests {
         }
         if handles(request) {
             let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
-            cancellation.register(id, interest::request(request))?;
+            let interest = interest::request(request);
+            if let Some(document) = interest.as_ref() {
+                crate::semantic::requests::arrived(request, &document.resource);
+            }
+            cancellation.register(id, interest)?;
         }
         Ok(())
     }
@@ -141,23 +154,52 @@ impl Requests {
     }
 
     /// Register before scheduling, so an immediate cancellation cannot get lost.
-    pub fn dispatch(&self, request: &Request, runtime: &tokio::runtime::Runtime) -> Result<bool> {
+    /// `settled` is an answer the input loop already knows, such as `null`
+    /// for a position holding no symbol; it still replies through here, where
+    /// the request was registered.
+    pub fn dispatch(
+        &self,
+        request: &Request,
+        runtime: &tokio::runtime::Runtime,
+        settled: Option<Value>,
+    ) -> Result<bool> {
         if !handles(request) {
             return Ok(false);
         }
         let reply = ReplyGate::default();
         let store = super::state::store()?;
         let revision = diagnostic(request).then(|| store.revision());
-        let future = self.prepare(request.clone(), reply.clone(), store.clone(), revision)?;
-        let (id, sender) = (request.id.clone(), self.context.sender.clone());
+        let snapshot = (reply.clone(), store.clone(), revision);
+        let (dispatcher, context) = (self.dispatcher.clone(), self.context.clone());
+        let start = settled.map_or(Start::Now, Start::Settled);
+        let future = prepare(&dispatcher, &context, request.clone(), snapshot, start)?;
+        let (request, sender) = (request.clone(), self.context.sender.clone());
+        let started = std::time::Instant::now();
         drop(runtime.spawn(async move {
-            let result = future.await;
+            let mut result = future.await;
+            // Only its own document's change ends a position request: one a
+            // lost watcher event or a reload superseded is asked again.
+            // [SHARPLSP-ARCHITECTURE-ROUTING]
+            let deadline = started + crate::semantic::requests::RETRY_BUDGET;
+            while std::time::Instant::now() < deadline {
+                let snapshot = (reply.clone(), store.clone(), revision);
+                let start = Start::After(crate::semantic::requests::RETRY_PAUSE);
+                let again = crate::semantic::requests::asks_again(&request, &result)
+                    .then(|| prepare(&dispatcher, &context, request.clone(), snapshot, start).ok())
+                    .flatten();
+                let Some(next) = again else { break };
+                tracing::debug!(method = request.method, "Superseded request asked again");
+                result = next.await;
+            }
+            crate::semantic::requests::finished(&request);
+            let (id, method) = (request.id, request.method);
+            let succeeded = matches!(result, HandlerResult::Ok(_));
+            crate::telemetry::record_request(&method, started.elapsed(), succeeded);
             if reply
                 .finish(|| {
-                    sender.send(Message::Response(response(
-                        id,
-                        current(result, &store, revision),
-                    )))
+                    let result = current(result, &store, revision);
+                    let result = crate::semantic::requests::superseded(&method, result);
+                    sender.send(Message::Response(response(id, result)))
                 })
                 .is_err()
             {
@@ -165,32 +207,6 @@ impl Requests {
             }
         }));
         Ok(true)
-    }
-
-    /// Capture a coherent input epoch and register its worker before spawning.
-    fn prepare(
-        &self,
-        request: Request,
-        reply: ReplyGate,
-        store: PullStore,
-        revision: Option<u64>,
-    ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
-        let context = self.context.clone();
-        let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
-        let sender = context.sender.clone();
-        Ok(Box::pin(self.dispatcher.prepare_call(
-            id,
-            move |cancel| {
-                let snapshot = Snapshot {
-                    store,
-                    revision,
-                    cancel,
-                    reply,
-                    sender,
-                };
-                compute(request, context, snapshot)
-            },
-        )?))
     }
 
     /// Unknown and already completed cancellation IDs are harmless.
@@ -209,6 +225,40 @@ impl Requests {
     }
 }
 
+/// How one attempt at a request begins.
+enum Start {
+    /// At once.
+    Now,
+    /// With an answer the input loop already knows; no work is done.
+    Settled(Value),
+    /// After a pause, for a request asked again while a reload settles. The
+    /// pause is part of the registered attempt, so a cancellation ends it.
+    After(std::time::Duration),
+}
+
+/// Capture a coherent input epoch and register its worker before spawning.
+fn prepare(
+    dispatcher: &Dispatcher,
+    context: &Context,
+    request: Request,
+    (reply, store, revision): (ReplyGate, PullStore, Option<u64>),
+    start: Start,
+) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
+    let context = context.clone();
+    let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
+    let sender = context.sender.clone();
+    Ok(Box::pin(dispatcher.prepare_call(id, move |cancel| {
+        let snapshot = Snapshot {
+            store,
+            revision,
+            cancel,
+            reply,
+            sender,
+        };
+        compute(request, context, snapshot, start)
+    })?))
+}
+
 /// The foreground and protocol reader agree on the requests owned by this dispatcher.
 fn handles(request: &Request) -> bool {
     matches!(
@@ -217,7 +267,7 @@ fn handles(request: &Request) -> bool {
             | "workspace/diagnostic"
             | "textDocument/codeLens"
             | "textDocument/rename"
-    )
+    ) || crate::semantic::requests::handles(&request.method)
 }
 
 /// Only diagnostic pulls are reports of the whole store's current truth.
@@ -235,10 +285,25 @@ impl Drop for Requests {
 }
 
 /// Cancellation answers immediately; the worker stops between documents.
-async fn compute(request: Request, context: Context, snapshot: Snapshot) -> HandlerResult {
-    let rename = request.method == "textDocument/rename";
+async fn compute(
+    request: Request,
+    context: Context,
+    snapshot: Snapshot,
+    start: Start,
+) -> HandlerResult {
+    let pause = match start {
+        Start::Settled(value) => return HandlerResult::Ok(value),
+        Start::After(pause) => pause,
+        Start::Now => std::time::Duration::ZERO,
+    };
+    // An editor request's own failure reaches the user as it is.
+    let rename = request.method == "textDocument/rename"
+        || crate::semantic::requests::handles(&request.method);
     let cancel = snapshot.cancel.clone();
-    let worker = tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot));
+    let worker = async move {
+        tokio::time::sleep(pause).await;
+        tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot)).await
+    };
     let result = tokio::select! {
         biased;
         () = cancel.cancelled() => Err(Interrupted::Cancelled.into()),
@@ -255,7 +320,8 @@ async fn compute(request: Request, context: Context, snapshot: Snapshot) -> Hand
 
 /// Execute compiler pulls outside the foreground protocol loop.
 fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
-    tracing::debug!(method = request.method, "Diagnostic request started");
+    let _exported = crate::telemetry::request_span(&request.method).entered();
+    tracing::debug!(method = request.method, "Request started");
     snapshot.check()?;
     let result = if request.method == "workspace/diagnostic" {
         super::handle_workspace_diagnostic(
@@ -307,70 +373,19 @@ fn document_request(request: Request, context: &Context, snapshot: &Snapshot) ->
             snapshot.cancellation(),
             &context.sender,
         )
+    } else if crate::semantic::requests::handles(&request.method) {
+        crate::semantic::requests::answer(
+            request,
+            context.engines.each_ref().map(Option::as_ref),
+            &context.vfs,
+            &context.runtime,
+            snapshot.cancellation(),
+            &context.sender,
+            &|token, value| snapshot.progress(token, value),
+        )
     } else {
         super::handle_document_diagnostic(request, &context.vfs, snapshot)
     }
-}
-
-/// Preserve protocol cancellation and request-error semantics at the adapter boundary.
-fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
-    let interrupted = error.downcast_ref::<Interrupted>();
-    tracing::debug!(?interrupted, "Diagnostic request rejected");
-    match interrupted {
-        Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Diagnostic request cancelled"),
-        // Stable compiler-input failures retain their actionable cause. [DIAG-TRUTH-GUARANTEES]
-        _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
-        _ if settled_refusal(error) => refused(error),
-        _ if error.downcast_ref::<serde_json::Error>().is_some() => {
-            JsonRpcError::new(-32602, "Invalid diagnostic parameters")
-        }
-        // A preempted lens is retryable exactly like superseded work, and says
-        // why it was cancelled. [SHARPLSP-FEATURES-CODE-LENS]
-        _ if error.is::<crate::code_lens::LensPreempted>() => {
-            JsonRpcError::new(-32802, crate::code_lens::LensPreempted.to_string())
-                .with_data(json!({"retriggerRequest": true}))
-        }
-        _ => JsonRpcError::new(-32802, "Diagnostic snapshot unavailable or superseded")
-            .with_data(json!({"retriggerRequest": true})),
-    }
-}
-
-/// The compiler's own message, when an analysis failed because the compiler
-/// answered with an error: not a superseded request, a timeout or a broken
-/// transport. The shared store keeps failures as text. [DIAG-TRUTH-GUARANTEES]
-fn compiler_refusal(error: &anyhow::Error) -> Option<&str> {
-    let Some(PullError::Analysis(AnalysisError(message))) = error.downcast_ref::<PullError>()
-    else {
-        return None;
-    };
-    message
-        .strip_prefix(crate::diagnostics::DIAGNOSTICS_REQUEST)?
-        .strip_prefix(": ")?
-        .strip_prefix(CompilerRefusal::PREFIX)
-}
-
-/// Unavailable SDK inputs fail a pull loudly, with their actionable cause. [DIAG-TRUTH-GUARANTEES]
-fn compiler_inputs_unavailable(error: &anyhow::Error) -> bool {
-    compiler_refusal(error)
-        .is_some_and(|cause| cause.starts_with("SDK compiler inputs unavailable: "))
-}
-
-/// Any other refusal is settled for the current inputs: asking again cannot
-/// change the answer until the workspace changes, and that change refreshes.
-/// VS Code asked again at once whenever it was told it could, 165,000 times in
-/// thirteen minutes for one document outside every project (#527).
-/// A refusal while a selected solution still loads is about the inputs being
-/// replaced, so it stays retryable.
-pub(super) fn settled_refusal(error: &anyhow::Error) -> bool {
-    compiler_refusal(error).is_some()
-        && !compiler_inputs_unavailable(error)
-        && !super::state::loading()
-}
-
-/// Server-cancelled with the compiler's cause and no retrigger: the editor keeps
-/// what it showed, never an empty report, and asks again on the next refresh.
-fn refused(error: &anyhow::Error) -> JsonRpcError {
-    JsonRpcError::new(-32802, error.to_string()).with_data(json!({"retriggerRequest": false}))
 }
 
 /// Convert shared dispatcher outcomes into the existing lsp-server wire shape.
@@ -404,18 +419,3 @@ fn current(result: HandlerResult, store: &PullStore, revision: Option<u64>) -> H
         result
     }
 }
-
-#[derive(Debug)]
-/// Why this query's result cannot be presented as current truth.
-enum Interrupted {
-    /// The client cancelled this request.
-    Cancelled,
-    /// A source, workspace or configuration mutation superseded its snapshot.
-    Superseded,
-}
-impl std::fmt::Display for Interrupted {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("diagnostic request interrupted")
-    }
-}
-impl std::error::Error for Interrupted {}

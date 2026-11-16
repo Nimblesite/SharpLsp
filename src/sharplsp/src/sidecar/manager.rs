@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use tokio::io::AsyncBufReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, warn, Instrument as _};
 
 use super::protocol::Envelope;
 use super::transport::FramedTransport;
@@ -278,6 +278,9 @@ impl SidecarManager {
                 *self.backoff.lock().await = INITIAL_BACKOFF;
                 *self.spawn_retry_after.lock().await = None;
                 info!(sidecar = %self.name, "Sidecar connected");
+                // A new compiler generation: an answer its predecessor gave, or
+                // one given while it was down, is not this one's. [REFERENCES-SALSA]
+                crate::semantic_memo::memo().invalidate();
                 Ok(())
             }
             Err(err) => {
@@ -378,7 +381,9 @@ impl SidecarManager {
         self.session.remember(method, &payload)?;
         let fresh = transport_guard.is_none();
         self.connect_if_needed(&mut transport_guard).await?;
+        let exported = crate::telemetry::sidecar_span(&self.name, method);
         self.request_connected(&mut transport_guard, method, payload, budget, fresh, cancel)
+            .instrument(exported)
             .await
     }
 
