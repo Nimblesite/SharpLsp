@@ -46,9 +46,6 @@ pub fn handle_code_action(
     runtime: &tokio::runtime::Runtime,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
-    if let Some(actions) = crate::nuget::vulnerability::msbuild_actions(runtime, &req.params) {
-        return Ok(serde_json::to_value(actions)?);
-    }
     with_sidecar(req, sidecar, |sidecar, params: CodeActionParams| {
         let request = SidecarRangeReq::at(&params.text_document.uri, params.range)?;
         let Some(items) = request_sidecar::<Vec<SidecarCodeActionItem>, _>(

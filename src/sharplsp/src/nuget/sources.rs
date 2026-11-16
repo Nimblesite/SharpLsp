@@ -141,7 +141,11 @@ impl Merged {
             ..Sources::default()
         };
         for (key, location) in packages {
-            if self.disabled.iter().any(|off| off.eq_ignore_ascii_case(&key)) {
+            if self
+                .disabled
+                .iter()
+                .any(|off| off.eq_ignore_ascii_case(&key))
+            {
                 continue;
             }
             match location {
@@ -234,7 +238,8 @@ fn apply_entry(
         (b"clear", Section::Audit) => merged.audit.clear(),
         (b"clear", Section::Disabled) => merged.disabled.clear(),
         (b"add", _) => {
-            let (Some(key), Some(value)) = (attribute(element, "key")?, attribute(element, "value")?)
+            let (Some(key), Some(value)) =
+                (attribute(element, "key")?, attribute(element, "value")?)
             else {
                 return Ok(());
             };
@@ -246,7 +251,9 @@ fn apply_entry(
                 ),
                 Section::Audit => upsert(&mut merged.audit, &key, value),
                 Section::Disabled => {
-                    merged.disabled.retain(|off| !off.eq_ignore_ascii_case(&key));
+                    merged
+                        .disabled
+                        .retain(|off| !off.eq_ignore_ascii_case(&key));
                     if value.eq_ignore_ascii_case("true") {
                         merged.disabled.push(key);
                     }
@@ -349,7 +356,10 @@ where
     }
     let value = Arc::new(fetch.await?);
     if let Ok(mut entries) = cache.lock() {
-        let _ = entries.insert(key.to_string(), (Instant::now() + CACHE_TTL, Arc::clone(&value)));
+        let _ = entries.insert(
+            key.to_string(),
+            (Instant::now() + CACHE_TTL, Arc::clone(&value)),
+        );
     }
     Ok(value)
 }

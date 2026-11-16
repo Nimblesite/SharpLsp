@@ -14,13 +14,13 @@ use url::Url;
 mod inherited;
 mod inputs;
 mod nuget;
-pub use nuget::{nuget_config_chain, source_location, SourceLocation};
 pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes};
 pub use inputs::{
     diagnostic_requires_reload, diagnostic_restore_output, exists, is_diagnostic_input,
     is_diagnostic_source, is_directory, is_fsharp_diagnostic_input, is_project_graph_file,
     is_user_diagnostic_source, output_owner, path_within,
 };
+pub use nuget::{nuget_config_chain, source_location, SourceLocation};
 
 /// Convert a `file://` URI string to a native filesystem path string.
 ///

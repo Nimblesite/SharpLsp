@@ -12,8 +12,7 @@ const CONFIG_NAME: &str = "NuGet.Config";
 /// the project's own — nearer files override, as `NuGet` merges them.
 pub fn nuget_config_chain(project: &Path) -> Vec<PathBuf> {
     let mut chain: Vec<PathBuf> = super::directory_of(project)
-        .map(|directory| directory.ancestors().filter_map(config_in).collect())
-        .unwrap_or_default();
+        .map_or_default(|directory| directory.ancestors().filter_map(config_in).collect());
     chain.extend(user_nuget_config());
     chain.reverse();
     chain

@@ -256,6 +256,7 @@ fn run_server() -> Result<()> {
         connection.sender.clone(),
     )?;
     nuget::vulnerability::configure(&sharplsp_config.nuget.vulnerabilities);
+    nuget::vulnerability::attach_documents(&vfs);
     pull_diagnostics::events::start(
         [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
         &runtime,

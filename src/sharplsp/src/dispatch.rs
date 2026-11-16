@@ -58,6 +58,10 @@ pub(crate) fn handle_request(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<()> {
+    // `MSBuild` code actions answer from their own task. [PKG-VULN-FIX]
+    if nuget::vulnerability::spawn_msbuild_actions(&req, runtime, &connection.sender) {
+        return Ok(());
+    }
     let id = req.id.clone();
     let method = req.method.clone();
     let document_uri = request_document_uri(&req.params);

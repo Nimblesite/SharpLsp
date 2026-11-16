@@ -53,7 +53,7 @@ fn missing_audit_sources_fall_back_to_package_sources() {
     let (_dir, sources) = merged(&[
         "<configuration><packageSources><add key=\"n\" value=\"https://s/v3/index.json\" /></packageSources></configuration>",
     ]);
-    assert!(sources.audit.is_empty());
+    assert_eq!(sources.audit, Vec::<String>::new());
     assert_eq!(sources.audit_sources(), vec!["https://s/v3/index.json"]);
 }
 
@@ -72,7 +72,11 @@ fn chain_merges_clears_overrides_and_disables() {
         vec![dir.path().join("d").join("d").join("feed")]
     );
     assert_eq!(sources.http, vec!["https://near/v3/index.json"]);
-    assert!(sources.audit.is_empty(), "no audit list was declared");
+    assert_eq!(
+        sources.audit,
+        Vec::<String>::new(),
+        "no audit list was declared"
+    );
 }
 
 /// A chain that never declares `<packageSources>` — no config at all, or one
@@ -85,11 +89,15 @@ fn undeclared_package_sources_default_to_nuget_org() {
     ] {
         let (_dir, sources) = merged(configs);
         assert_eq!(sources.http, vec!["https://api.nuget.org/v3/index.json"]);
-        assert!(sources.folders.is_empty());
+        assert_eq!(sources.folders, Vec::<PathBuf>::new());
     }
     let (_dir, cleared) =
         merged(&["<configuration><packageSources><clear /></packageSources></configuration>"]);
-    assert!(cleared.http.is_empty(), "an explicit clear means none");
+    assert_eq!(
+        cleared.http,
+        Vec::<String>::new(),
+        "an explicit clear means none"
+    );
 }
 
 /// The chain lists every ancestor's config, farthest first, in any casing.
@@ -106,8 +114,10 @@ fn config_chain_walks_up_in_any_casing() {
         .filter(|path| path.starts_with(dir.path()))
         .collect();
     assert_eq!(ours.len(), 2, "{chain:?}");
-    assert!(crate::paths::has_file_name(ours[1], "NuGet.Config"));
-    assert!(ours[1].starts_with(&deep), "nearest last: {chain:?}");
+    let (farthest, nearest) = (ours.first().unwrap(), ours.last().unwrap());
+    assert!(crate::paths::has_file_name(nearest, "NuGet.Config"));
+    assert!(nearest.starts_with(&deep), "nearest last: {chain:?}");
+    assert!(!farthest.starts_with(&deep), "{chain:?}");
 }
 
 /// Folder feeds carry versions in `{id}.{version}.nupkg` file names; other
