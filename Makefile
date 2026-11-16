@@ -161,7 +161,7 @@ KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/
         _gate-vsix-coverage _build-vsix-suite _check-vsix-chunks _check-spec-citations \
         _verify-vsix-payload _verify-staged-vsix-payload _rebuild-vsix-binaries _copy-vsix-binaries \
         _test-dotnet _test-dotnet-win-transport _test-tooling _test-website \
-        _lint-rust _lint-zed _lint-vsix _lint-dotnet \
+        _lint-rust _lint-zed _lint-vsix _lint-dotnet _check-workspace-diagnostics \
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix _package-archive \
         _deploy-rust _deploy-sidecars \
@@ -890,6 +890,15 @@ _check-structured-writes:
 _lint-dotnet:
 	$(DOTNET) build $(SIDECAR_SLN) --configuration $(DOTNET_CFG) -warnaserror \
 		-p:UseSharedCompilation=false -nodeReuse:false -maxcpucount:1
+
+# [DIAG-HYGIENE-GUARD] The repository's own Problems panel stays empty: the host
+# runs its workspace diagnostics over this checkout and any finding outside the
+# demo fixtures fails. The Debug build gives every project the design-time
+# references its compilers read; the host and sidecars are the ones already
+# built (PREBUILT=1 in CI, where they are downloaded artifacts).
+_check-workspace-diagnostics: $(if $(PREBUILT),,_build-rust _build-dotnet)
+	$(DOTNET) build $(SIDECAR_SLN) --nologo -v q
+	$(RUST_E2E_SIDECARS) node tools/ci/workspace-diagnostics.mjs --server $(BINARY)
 
 # ── Format ───────────────────────────────────────────────────────
 

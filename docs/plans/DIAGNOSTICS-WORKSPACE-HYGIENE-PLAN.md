@@ -32,15 +32,15 @@ Workspace-wide diagnostics must not report files no developer owns. Rider/VS nev
 ## [DIAG-HYGIENE-CODE] Our code to fix
 
 - [x] FS3886 (173, fixed at the compiler-reported ranges by `tools/debug/fix-diagnostics.mjs --code FS3886`): wrap single-tuple list elements in parentheses (`[ ("Only.fs", src) ]`) across `SharpLsp.Sidecar.FSharp.Tests`
-- [ ] FL0067/FL0068: rename test/tool identifiers to camelCase (`GuardMethod`, `KIND_SOURCE`, …) via SharpLsp rename, not text edits
-- [ ] FL0085/FL0083: add `[<TailCall>]` where truly tail-recursive, drop bogus `rec`
-- [ ] FL0034/FL0035/FL0014/FL0055/FL0072/FL0090: apply the lint fixes (SharpLsp code actions where offered)
+- [x] FL0067/FL0068 (52 identifiers, renamed through SharpLsp's own `textDocument/rename` by `tools/debug/fix-diagnostics.mjs --rename`; the one collision it let through became the F# rename conflict check): rename test/tool identifiers to camelCase (`GuardMethod`, `KIND_SOURCE`, …) via SharpLsp rename, not text edits
+- [x] FL0085/FL0083: `[<TailCall>]` on the 14 functions the compiler proves tail-recursive, with FS3569 now enforced in the three F# projects; the bogus `rec` is dropped. Local functions cannot carry the attribute and tree or task recursion is not tail recursion, so the repo `fsharplint.json` (upstream defaults) turns that one rule off. Original item: add `[<TailCall>]` where truly tail-recursive, drop bogus `rec`
+- [x] FL0034/FL0035/FL0014/FL0055/FL0072/FL0090 (three synchronous bridges keep `Async.RunSynchronously` with a stated reason): apply the lint fixes (SharpLsp code actions where offered)
 - [x] SLSPF0102/0103 in hand-written sources: remove unused opens and redundant qualifiers — applied with SharpLsp's own "Fix all in solution" through `tools/debug/fix-diagnostics.mjs --fix-all` (25 opens, 67 qualifiers; the fixtures that demonstrate them are left as they are)
 - [x] SLSPC0101: `WellKnownPackages.All` is deleted (nothing references it); `DiagnosticWorkspacePulls` is referenced and no longer reported; the report on `MsBuildRegistration` was a false positive — a class holding only a `[ModuleInitializer]` — fixed in the analyzer with a failing-first test
-- [ ] Non-demo fixtures: fix FL0065/FL0037/FS3886 in `fsharp-profiling` and `workspace/fsharp` unless a test asserts them (grep test suites first)
+- [x] Non-demo fixtures (tests assert names and positions on those six lines, so each finding is suppressed on its own line with `fsharplint:disable-line`, changing no position): fix FL0065/FL0037/FS3886 in `fsharp-profiling` and `workspace/fsharp` unless a test asserts them (grep test suites first)
 
 ## [DIAG-HYGIENE-GUARD] Ratchet
 
-- [ ] Add a CI step that runs the host's workspace diagnostics over the repo and fails on any report outside the allow-listed demo fixtures (`diagnostic-lint`, `diagnostic-tags`, `diagnostic-cancellation`)
-- [ ] Promote the fixed FSharpLint rules to errors in the repo's lint config so regressions break the build
+- [x] (`make _check-workspace-diagnostics`, run by the existing Tooling job with the prebuilt host and sidecars) Add a CI step that runs the host's workspace diagnostics over the repo and fails on any report outside the allow-listed demo fixtures (`diagnostic-lint`, `diagnostic-tags`, `diagnostic-cancellation`)
+- [x] FSharpLint has no severities to promote; the guard fails on a finding of any severity outside the demo fixtures, so a regression of any fixed rule breaks the build. Original item: promote the fixed FSharpLint rules to errors in the repo's lint config so regressions break the build
 - [ ] Re-run the Problems-panel count; target: only demo-fixture diagnostics remain. Delete this plan
