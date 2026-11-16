@@ -168,7 +168,13 @@ async function renameOne(session, { uri, item }, opened) {
         opened.set(uri, 1);
         session.send({ method: "textDocument/didOpen", params: { textDocument: { uri, languageId: "fsharp", version: 1, text } } });
     }
-    const response = await session.request("textDocument/rename", { textDocument: { uri }, position: item.range.start, newName });
+    // A rename the compilers supersede is asked again: it is the standard retriable answer.
+    let response;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        response = await session.request("textDocument/rename", { textDocument: { uri }, position: item.range.start, newName });
+        if (response.error?.code !== SUPERSEDED) break;
+        await sleep(1000);
+    }
     const edits = response.error === undefined && response.result ? editsByFile(response.result) : new Map();
     console.log(`${oldName} -> ${newName}: ${edits.size === 0 ? `refused ${JSON.stringify(response.error ?? null)}` : `${edits.size} files`}`);
     for (const [changed, fileEdits] of edits) {
