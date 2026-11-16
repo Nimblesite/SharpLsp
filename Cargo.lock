@@ -1693,6 +1693,7 @@ dependencies = [
  "quick-xml",
  "reqwest",
  "rmp-serde",
+ "salsa",
  "serde",
  "serde_bytes",
  "serde_json",

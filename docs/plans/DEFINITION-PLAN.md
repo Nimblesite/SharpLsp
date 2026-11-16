@@ -29,8 +29,8 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 - [x] Support `DefinitionLink[]` response format for peek preview — `LocationResult` includes `EndLine`/`EndCharacter` for proper range highlighting
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
 - [x] Add the interim `nav_cache.rs` result map keyed by `(document_uri, document_version, position, method)` (nonconformant; removal tracked below)
-- [ ] Replace `nav_cache.rs` with Rust-host salsa queries keyed by document/version/position/method plus solution and sidecar-generation inputs
-- [ ] Implement cancellation for superseded requests; `didChange`/`didClose` invalidation currently prevents only later reuse
+- [x] Replace `nav_cache.rs` with Rust-host salsa queries keyed by document/version/position/method plus solution and sidecar-generation inputs — `semantic_memo.rs`
+- [x] Implement cancellation for superseded requests — `semantic/requests.rs`; `semantic_memo_session.rs`
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for definition request lifecycle (dispatch, cache hit/miss, latency)
 
@@ -114,7 +114,7 @@ The remaining work covers F# sidecar navigation, metadata/decompiled source navi
 - [x] Integrate ICSharpCode.Decompiler v9.1.0 for metadata symbol navigation — `MetadataNavigator.cs`
 - [x] Decompile containing type to temporary file on definition request — writes to `{tempdir}/sharplsp-decompiled/{type}.cs`
 - [x] Add interim decompiled-source reuse keyed by `(assemblyPath, typeFullName)` in `ConcurrentDictionary` (nonconformant)
-- [ ] Move decompiled-source memoization to the Rust-host salsa database and remove the sidecar `ConcurrentDictionary`
+- [x] Move decompiled-source memoization to the Rust-host salsa database and remove the sidecar `ConcurrentDictionary` — the dictionary is gone (#173): the sidecar keeps only the decompiled file the editor opens, and the definition answer that points at it is memoized by `semantic_memo.rs`
 - [x] Fallback in `DefinitionResolver`: when `ToAllSourceLocations` returns empty, calls `MetadataNavigator.ResolveMetadataSymbol`
 - [x] Symbol position search in decompiled source using kind-specific patterns (method, property, field, type)
 
@@ -162,14 +162,14 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] E2E test: F# go-to-implementation on abstract member returns implementations — `navigation_kinds.rs` `every_declaration_kind_navigates_to_its_source_name_in_fsharp_and_csharp`; F# implementation was a stub answering the symbol's own declaration, now `FSharpImplementations.fs`
 - [x] E2E test: definition after document edit returns updated location
 - [x] E2E test: definition after sidecar crash recovery works correctly — `navigation_kinds.rs` `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` kills the host's F# compiler and requires a new process to answer from source
-- [ ] E2E test: definition salsa hit returns result in <1ms
+- [x] E2E test: definition salsa hit returns result in <1ms — `semantic_memo_tests.rs` `a_memo_hit_answers_in_under_a_millisecond` times the hit itself; `semantic_memo_session.rs` pins the whole client round trip of a repeat
 - [ ] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution
 - [x] E2E test: all four nav methods interleaved in single session
 
 ### Performance Validation
 
 - [ ] Benchmark definition latency on cold start (first request after project load)
-- [ ] Benchmark definition latency on a warm salsa query (repeated request on the same position)
+- [x] Benchmark definition latency on a warm salsa query (repeated request on the same position) — same two tests
 - [ ] Benchmark definition latency on large solution (~2M LOC)
 - [ ] Benchmark find-implementations latency with 100+ implementations
 - [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs` measures the median over a 20,000-line file and pins every comment and string shape of both grammars (the test found and fixed all F# comments and strings slipping through; C# string contents deliberately reach the compiler, where a module path is navigable)

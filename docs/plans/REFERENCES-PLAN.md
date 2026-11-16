@@ -36,11 +36,11 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Implement request routing: identify language from VFS, dispatch to correct sidecar
 - [x] Pass `context.includeDeclaration` through to sidecar via `ReferencesRequest`
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
-- [ ] Support partial result streaming for large result sets (P1)
+- [x] Support partial result streaming for large result sets (P1) — `semantic/requests.rs` `streamed`; `semantic_memo_session.rs` `a_large_references_answer_streams_as_partial_results` (450 calls, chunks of 200)
 - [x] Add the interim `nav_cache.rs` references map keyed by `(document_uri, document_version, position, include_declaration)` (nonconformant)
-- [ ] Replace the interim map with a Rust-host salsa query and remove `nav_cache.rs`
-- [ ] Make every solution document, project graph, and sidecar generation/readiness value a salsa input so any relevant change invalidates references; current code invalidates only entries requested from the edited URI
-- [ ] Cancel superseded references requests and prevent late results from updating newer inputs
+- [x] Replace the interim map with a Rust-host salsa query and remove `nav_cache.rs` — `semantic_memo.rs`
+- [x] Make every solution document, project graph, and sidecar generation/readiness value a salsa input so any relevant change invalidates references — the workspace generation input; it moves with every diagnostic-store change and on each compiler (re)connect
+- [x] Cancel superseded references requests and prevent late results from updating newer inputs — `semantic/requests.rs`; an edit bumps the generation again once the compiler holds the new text, so an answer computed across it is never reused
   - [x] F# IPC cancellation reaches project checks and rejects late success (#562); all 37 focused checks pass, including held-source cancellation for references, implementations, incoming calls and subtypes.
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for references request lifecycle (dispatch, cache hit/miss, result count, latency)
@@ -52,8 +52,8 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [x] Implement request routing: identify language from VFS, dispatch to correct sidecar
 - [x] Add tree-sitter pre-validation to short-circuit on whitespace/comments/string literals
 - [x] Add the interim `nav_cache.rs` highlight map keyed by `(document_uri, document_version, position)` (nonconformant)
-- [ ] Replace the interim map with a Rust-host salsa query driven by document/version and sidecar-generation inputs
-- [ ] Cancel superseded highlight requests; version invalidation alone does not cancel in-flight work
+- [x] Replace the interim map with a Rust-host salsa query driven by document/version and sidecar-generation inputs — `semantic_memo.rs`
+- [x] Cancel superseded highlight requests — `semantic/requests.rs`
 - [x] Add fallback behavior: return `null` when sidecar is unavailable or loading
 - [x] Add tracing/logging for highlight request lifecycle
 
@@ -135,5 +135,5 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [ ] Benchmark references latency on small solution (<100 files): target <500ms
 - [ ] Benchmark references latency on medium solution (~1000 files): target <2s
 - [ ] Benchmark document highlight latency: target <100ms
-- [ ] Benchmark references salsa hit: target <1ms
+- [x] Benchmark references salsa hit: target <1ms — `semantic_memo_tests.rs` `a_memo_hit_answers_in_under_a_millisecond`, five hundred locations
 - [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs`, shared with [DEFINITION-PERFORMANCE]

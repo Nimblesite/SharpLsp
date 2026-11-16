@@ -113,7 +113,14 @@ The Rust host classifies every incoming LSP request and routes it to the fastest
 | Hybrid | Rust + Sidecar | <100ms | semanticTokens (tree-sitter for structure, sidecar for classification) |
 | Memoized | Rust-host salsa | <1ms | Repeat requests for unchanged inputs |
 
-Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
+Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (`server.debounce_ms`, default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
+
+Hover, definition, type definition, declaration, implementation, references and document highlight run off the input loop, so an edit or a `$/cancelRequest` reaches the host while a compiler still works on one of them:
+
+- **Memoized.** Their answers live only in the Rust-host salsa memo ([SHARPLSP-ARCHITECTURE-CACHING]). A position holding no symbol answers `null` from the syntax tree, before any of this.
+- **Debounced.** A request that arrives inside the debounce window after a `textDocument/didChange` waits the window out before it reaches a compiler. A request that arrives outside it is dispatched at once: the window never delays reading code.
+- **Superseded.** A `didOpen`, `didChange` or `didClose` of a request's document, a solution switch, or a lost-event rescan ends every such request asked before it: its compiler exchange is cancelled and it answers `ContentModified` (`-32801`), which clients drop silently. While the user types, each keystroke's requests therefore end inside the window without a compiler round trip. A request is never superseded by another position's request, because clients ask about several positions at once.
+- **Cancelled.** `$/cancelRequest` ends the compiler exchange and answers `RequestCancelled` (`-32800`).
 
 ### [SHARPLSP-ARCHITECTURE-SIDECARS] Sidecar Lifecycle Management
 

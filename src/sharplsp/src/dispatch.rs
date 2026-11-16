@@ -11,9 +11,8 @@ use lsp_types::{
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
         CodeActionRequest, CodeActionResolveRequest, Completion, DocumentDiagnosticRequest,
-        DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest, GotoDeclaration,
-        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
-        LinkedEditingRange, PrepareRenameRequest, References, Request as _, ResolveCompletionItem,
+        DocumentSymbolRequest, FoldingRangeRequest, HoverRequest, InlayHintRequest,
+        LinkedEditingRange, PrepareRenameRequest, Request as _, ResolveCompletionItem,
         SelectionRangeRequest, SemanticTokensFullDeltaRequest, SemanticTokensFullRequest,
         SemanticTokensRangeRequest, SignatureHelpRequest, TypeHierarchyPrepare,
         TypeHierarchySubtypes, TypeHierarchySupertypes, WorkspaceDiagnosticRequest,
@@ -31,10 +30,10 @@ use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
 use crate::{
-    call_hierarchy, code_actions, cross_language, document_symbols, handlers, hierarchy,
-    hot_reload, import_command, inlay_hints, nav_cache, nuget, project_edit, project_sources,
-    razor, semantic, semantic_tokens, signature_help, solution_load, sort_members, statement_stop,
-    target_framework, type_hierarchy, workspace_symbol_query, workspace_symbols,
+    call_hierarchy, code_actions, document_symbols, handlers, hierarchy, hot_reload,
+    import_command, inlay_hints, nuget, project_edit, project_sources, razor, semantic,
+    semantic_tokens, signature_help, solution_load, sort_members, statement_stop, target_framework,
+    type_hierarchy, workspace_symbol_query, workspace_symbols,
 };
 
 /// Dispatch an incoming LSP request to the appropriate handler.
@@ -52,7 +51,6 @@ pub(crate) fn handle_request(
     vfs: &Arc<Vfs>,
     parsers: &TsParsers,
     trees: &HashMap<Uri, Tree>,
-    nav_cache: &mut nav_cache::NavCache,
     connection: &Connection,
     runtime: &tokio::runtime::Runtime,
     csharp_sidecar: Option<&Arc<SidecarManager>>,
@@ -112,28 +110,6 @@ pub(crate) fn handle_request(
         ResolveCompletionItem::METHOD => {
             semantic::completion::handle_completion_resolve(req, runtime, sidecar)
         }
-        HoverRequest::METHOD => {
-            if handlers::hover_has_no_symbol(&req, trees) {
-                info!("Hover: skipped (whitespace or comment position)");
-                Ok(serde_json::Value::Null)
-            } else {
-                semantic::hover::handle_hover(req, vfs, nav_cache, runtime, sidecar)
-            }
-        }
-        GotoDefinition::METHOD
-        | GotoTypeDefinition::METHOD
-        | GotoDeclaration::METHOD
-        | GotoImplementation::METHOD
-        | References::METHOD
-        | DocumentHighlightRequest::METHOD => handle_nav_request(
-            req,
-            vfs,
-            trees,
-            nav_cache,
-            runtime,
-            csharp_sidecar,
-            fsharp_sidecar,
-        ),
         // Formatting intentionally disabled — use CSharpier (C#) / Fantomas via Ionide (F#).
         // Handler code is sequestered in src/sharplsp/src/formatting.rs
         // (see docs/formatting/README.md).
@@ -189,7 +165,7 @@ pub(crate) fn handle_request(
         "sharplsp/targetFramework" => target_framework::handle_get(req, runtime, sidecar),
         "sharplsp/setTargetFramework" => target_framework::handle_set(req, runtime, sidecar)
             .and_then(|switched| {
-                nav_cache.clear();
+                crate::semantic_memo::memo().invalidate();
                 republish_open_diagnostics(
                     vfs,
                     runtime,
@@ -257,7 +233,7 @@ fn request_response(
 }
 
 /// The `textDocument.uri` of a request's params, when the request carries one.
-fn request_document_uri(params: &serde_json::Value) -> Option<Uri> {
+pub(crate) fn request_document_uri(params: &serde_json::Value) -> Option<Uri> {
     params
         .get("textDocument")
         .and_then(|document| document.get("uri"))
@@ -283,49 +259,28 @@ fn reveals_semantic_state(method: &str) -> bool {
     ) && !method.starts_with("sharplsp/")
 }
 
-// ── Navigation Request Dispatch ───────────────────────────────────
+// ── Hover and Navigation Pre-validation ───────────────────────────
 
-/// Route navigation requests (definition, typeDefinition, declaration,
-/// implementation, references, documentHighlight) with tree-sitter
-/// pre-validation and cross-language fallback.
+/// The answer the syntax tree alone gives a hover or navigation request:
+/// `null` where the position holds no symbol, so no compiler is asked. Hover
+/// rejects whitespace and comments; navigation rejects comments and strings.
+/// [REFERENCES-ROUTING] [DEFINITION-ROUTING] [HOVER-ROUTING]
 #[expect(clippy::mutable_key_type, reason = "see main_loop")]
-fn handle_nav_request(
-    req: Request,
-    vfs: &Vfs,
+pub(crate) fn settled_without_compiler(
+    req: &Request,
     trees: &HashMap<Uri, Tree>,
-    nav_cache: &mut nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    csharp_sidecar: Option<&Arc<SidecarManager>>,
-    fsharp_sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    if handlers::is_non_symbol_position(&req, trees) {
-        return Ok(serde_json::Value::Null);
-    }
-    let (primary, fallback) = pick_sidecar_with_fallback(&req, csharp_sidecar, fsharp_sidecar);
-    if request_lang(&req) == Some(LangId::FSharp) && req.method != GotoImplementation::METHOD {
-        cross_language::share_csharp_buffers(runtime, fsharp_sidecar, vfs);
-    }
-    match req.method.as_str() {
-        GotoDefinition::METHOD => {
-            semantic::handle_definition(req, vfs, nav_cache, runtime, primary, fallback)
+) -> Option<serde_json::Value> {
+    let no_symbol = match req.method.as_str() {
+        HoverRequest::METHOD => handlers::hover_has_no_symbol(req, trees),
+        method if semantic::requests::handles(method) => {
+            handlers::is_non_symbol_position(req, trees)
         }
-        GotoTypeDefinition::METHOD => {
-            semantic::handle_type_definition(req, vfs, nav_cache, runtime, primary, fallback)
-        }
-        GotoDeclaration::METHOD => {
-            semantic::handle_declaration(req, vfs, nav_cache, runtime, primary, fallback)
-        }
-        GotoImplementation::METHOD => {
-            semantic::handle_implementation(req, runtime, primary, fallback)
-        }
-        References::METHOD => {
-            semantic::handle_references(req, vfs, nav_cache, runtime, primary, fallback)
-        }
-        DocumentHighlightRequest::METHOD => {
-            semantic::handle_document_highlight(req, vfs, nav_cache, runtime, primary)
-        }
-        _ => Err(anyhow::anyhow!("unexpected nav method: {}", req.method)),
-    }
+        _ => false,
+    };
+    no_symbol.then(|| {
+        info!(method = %req.method, "skipped: no symbol at the position");
+        serde_json::Value::Null
+    })
 }
 
 /// Route custom and profiler requests.

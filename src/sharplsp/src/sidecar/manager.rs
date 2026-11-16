@@ -278,6 +278,9 @@ impl SidecarManager {
                 *self.backoff.lock().await = INITIAL_BACKOFF;
                 *self.spawn_retry_after.lock().await = None;
                 info!(sidecar = %self.name, "Sidecar connected");
+                // A new compiler generation: an answer its predecessor gave, or
+                // one given while it was down, is not this one's. [REFERENCES-SALSA]
+                crate::semantic_memo::memo().invalidate();
                 Ok(())
             }
             Err(err) => {

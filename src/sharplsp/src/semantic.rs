@@ -9,11 +9,9 @@ pub(crate) mod completion;
 pub(crate) mod hover;
 mod navigation;
 pub(crate) mod rename;
+pub(crate) mod requests;
 
-use navigation::{
-    cached_at_position, handle_cached_nav_with_fallback, handle_multi_location_nav, or_fallback,
-    NavRoute,
-};
+use navigation::{locations_with_fallback, memoized, or_fallback, NavRoute};
 
 use rename::SidecarRenameIdentityResult;
 
@@ -21,141 +19,116 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_server::Request;
+use lsp_types::request::{
+    DocumentHighlightRequest, GotoDeclaration, GotoDefinition, GotoImplementation,
+    GotoTypeDefinition, HoverRequest, References, Request as _,
+};
 use lsp_types::{
     DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, Location, Position, Range,
     ReferenceParams, Uri,
 };
+use lspkit_server::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::paths::path_to_lsp_uri;
 use crate::sidecar::manager::SidecarManager;
-use crate::utils::{request_sidecar, with_sidecar, SidecarPositionReq};
+use crate::utils::{request_sidecar, with_sidecar, Caller, SidecarPositionReq};
+use crate::vfs::Vfs;
 
-/// Handle `textDocument/definition` — tries primary sidecar, falls back to
-/// the other for cross-language navigation (C# ↔ F#).
-pub fn handle_definition(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-    fallback: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    handle_cached_nav_with_fallback(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        fallback,
-        "textDocument/definition",
-        true,
-    )
+/// What one semantic request runs with: owned, so the semantic memo can run
+/// its compiler round trip. [DEFINITION-ROUTING]
+#[derive(Clone)]
+pub struct Route {
+    /// Drives the sidecar exchanges.
+    pub runtime: tokio::runtime::Handle,
+    /// Ends the exchanges when the request is cancelled or superseded.
+    pub cancel: CancellationToken,
+    /// The sidecar that owns the request's document.
+    pub primary: Option<Arc<SidecarManager>>,
+    /// The other language's sidecar, for cross-language symbols (C# ↔ F#).
+    pub fallback: Option<Arc<SidecarManager>>,
 }
 
-/// Handle `textDocument/typeDefinition` with cross-language fallback.
-pub fn handle_type_definition(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-    fallback: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    handle_cached_nav_with_fallback(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        fallback,
-        "textDocument/typeDefinition",
-        false,
-    )
+impl Route {
+    /// Who asks the sidecars on this request's behalf.
+    pub(crate) fn caller(&self) -> Caller<'_> {
+        Caller {
+            runtime: &self.runtime,
+            cancel: Some(&self.cancel),
+        }
+    }
+
+    /// The primary sidecar, and the F# sidecar that places F# symbols.
+    fn nav(&self) -> NavRoute<'_> {
+        (self.primary.as_ref(), self.fallback.as_ref())
+    }
 }
 
-/// Handle `textDocument/declaration` with cross-language fallback.
-pub fn handle_declaration(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-    fallback: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    handle_cached_nav_with_fallback(
-        req,
-        vfs,
-        nav_cache,
-        runtime,
-        sidecar,
-        fallback,
-        "textDocument/declaration",
-        false,
-    )
+/// Answer hover, definition, type definition, declaration, implementation,
+/// references or document highlight through the request's sidecars.
+/// [DEFINITION-ROUTING] [REFERENCES-ROUTING] [HOVER-ROUTING]
+pub fn handle(req: Request, vfs: &Vfs, route: Route) -> Result<serde_json::Value> {
+    match req.method.as_str() {
+        HoverRequest::METHOD => hover::handle_hover(req, vfs, route),
+        GotoDefinition::METHOD => located(req, vfs, route, GotoDefinition::METHOD, true),
+        GotoTypeDefinition::METHOD => located(req, vfs, route, GotoTypeDefinition::METHOD, false),
+        GotoDeclaration::METHOD => located(req, vfs, route, GotoDeclaration::METHOD, false),
+        GotoImplementation::METHOD => {
+            let method = GotoImplementation::METHOD;
+            locations_with_fallback(req, &route, method, true).map(|(value, _)| value)
+        }
+        References::METHOD => handle_references(req, vfs, route),
+        DocumentHighlightRequest::METHOD => {
+            let method = DocumentHighlightRequest::METHOD;
+            memoized(req, vfs, method, move |req| {
+                dispatch_document_highlight(req, route.caller(), route.primary.as_ref())
+                    .map(|value| (value, true))
+            })
+        }
+        method => Err(anyhow::anyhow!("unexpected semantic method: {method}")),
+    }
 }
 
-/// Handle `textDocument/implementation` with cross-language fallback.
-pub fn handle_implementation(
+/// Memoized locations with cross-language fallback (C# ↔ F#).
+fn located(
     req: Request,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-    fallback: Option<&Arc<SidecarManager>>,
+    vfs: &Vfs,
+    route: Route,
+    method: &'static str,
+    multi: bool,
 ) -> Result<serde_json::Value> {
-    let method = "textDocument/implementation";
-    let (value, _) = handle_multi_location_nav(req.clone(), runtime, (sidecar, fallback), method)?;
-    Ok(or_fallback(value, fallback, method, |fb| {
-        handle_multi_location_nav(req, runtime, (Some(fb), None), method).map(|(value, _)| value)
-    }))
+    memoized(req, vfs, method, move |req| {
+        locations_with_fallback(req, &route, method, multi)
+    })
 }
 
-/// Handle `textDocument/references` with caching and cross-language fallback. [REFERENCES-ROUTING]
-pub fn handle_references(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-    fallback: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
+/// Memoized `textDocument/references` with cross-language fallback; with and
+/// without the declaration are separate questions. [REFERENCES-ROUTING]
+fn handle_references(req: Request, vfs: &Vfs, route: Route) -> Result<serde_json::Value> {
     let params: ReferenceParams = serde_json::from_value(req.params.clone())?;
-    let cache_method = if params.context.include_declaration {
+    let question = if params.context.include_declaration {
         "textDocument/references:decl"
     } else {
         "textDocument/references:nodecl"
     };
-    cached_at_position(req, vfs, nav_cache, cache_method, |req| {
-        let value = handle_references_nav(req.clone(), runtime, (sidecar, fallback))?;
+    memoized(req, vfs, question, move |req| {
+        let (caller, fallback) = (route.caller(), route.fallback.as_ref());
+        let own = handle_references_nav(req.clone(), caller, route.nav())?;
         Ok(or_fallback(
-            value,
+            (own, true),
             fallback,
-            "textDocument/references",
-            |fb| handle_references_nav(req, runtime, (Some(fb), None)),
+            References::METHOD,
+            |other| {
+                handle_references_nav(req, caller, (Some(other), None)).map(|value| (value, true))
+            },
         ))
     })
-}
-
-/// Handle `textDocument/documentHighlight` with caching via the sidecar.
-pub fn handle_document_highlight(
-    req: Request,
-    vfs: &crate::vfs::Vfs,
-    nav_cache: &mut crate::nav_cache::NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    cached_at_position(
-        req,
-        vfs,
-        nav_cache,
-        "textDocument/documentHighlight",
-        |req| dispatch_document_highlight(req, runtime, sidecar),
-    )
 }
 
 /// Dispatch document highlight request to the sidecar.
 fn dispatch_document_highlight(
     req: Request,
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     sidecar: Option<&Arc<SidecarManager>>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: DocumentHighlightParams| {
@@ -169,7 +142,7 @@ fn dispatch_document_highlight(
         );
         let method = "textDocument/documentHighlight";
         let Some(result) = request_sidecar::<SidecarDocumentHighlightListResult, _>(
-            runtime, sidecar, method, &request,
+            caller, sidecar, method, &request,
         )?
         else {
             return Ok(serde_json::Value::Null);
@@ -204,7 +177,7 @@ fn to_document_highlight(h: &SidecarDocumentHighlightResult) -> DocumentHighligh
 /// [REFERENCES-CROSS-LANGUAGE]
 fn handle_references_nav(
     req: Request,
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     (sidecar, other): NavRoute<'_>,
 ) -> Result<serde_json::Value> {
     with_sidecar(req, sidecar, |sidecar, params: ReferenceParams| {
@@ -213,11 +186,11 @@ fn handle_references_nav(
             params.text_document_position.position,
         )?;
         let include_declaration = params.context.include_declaration;
-        let Some(own) = own_references(runtime, sidecar, &at, include_declaration)? else {
+        let Some(own) = own_references(caller, sidecar, &at, include_declaration)? else {
             return Ok(serde_json::Value::Null);
         };
         let foreign = crate::cross_language::foreign_references(
-            runtime,
+            caller,
             sidecar,
             other,
             &at,
@@ -232,7 +205,7 @@ fn handle_references_nav(
 /// The owning sidecar's references for the symbol at `at`; `None` when it
 /// could not answer, which is the whole request's `null`.
 fn own_references(
-    runtime: &tokio::runtime::Runtime,
+    caller: Caller<'_>,
     sidecar: &SidecarManager,
     at: &SidecarPositionReq,
     include_declaration: bool,
@@ -252,7 +225,7 @@ fn own_references(
     };
     let method = "textDocument/references";
     let result: Option<SidecarLocationListResult> =
-        request_sidecar(runtime, sidecar, method, &request)?;
+        request_sidecar(caller, sidecar, method, &request)?;
     Ok(result.map(|found| {
         found
             .locations

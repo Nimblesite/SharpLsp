@@ -53,6 +53,8 @@ lsp-profiler = "0.5"
 lsp-profiler-dotnet = "0.5"
 lspkit = "0.5"
 lspkit-server = { version = "0.5", features = ["pull"] }
+# The semantic memo; the version lspkit-server memoizes diagnostics with. [DEFINITION-CACHE]
+salsa = "0.28.5"
 globset = "0.4"
 async-trait = "0.1"
 

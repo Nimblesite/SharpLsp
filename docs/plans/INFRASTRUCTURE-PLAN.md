@@ -21,10 +21,10 @@ Core infrastructure improvements for the SharpLsp LSP host.
 
 ## Incremental Computation
 
-- [ ] Implement the Rust-host salsa database as the only semantic-result memoization mechanism
-- [ ] Replace and remove the interim, nonconformant `nav_cache.rs` `HashMap`; model document, solution, and sidecar-generation state as salsa inputs
-- [ ] Cancel superseded semantic requests; input invalidation alone does not cancel in-flight sidecar work
-- [ ] Request coalescing and cancellation (150ms debounce window) — config exists, wire up active debouncing
+- [x] Implement the Rust-host salsa database as the only semantic-result memoization mechanism — `semantic_memo.rs`, one tracked query for hover, definition, type definition, declaration, references and document highlight
+- [x] Replace and remove the interim, nonconformant `nav_cache.rs` `HashMap`; model document, solution, and sidecar-generation state as salsa inputs — the question input carries the document version, the workspace generation input moves on every edit, solution or target-framework switch, compiler change and compiler (re)connect
+- [x] Cancel superseded semantic requests; input invalidation alone does not cancel in-flight sidecar work — `semantic/requests.rs` runs them off the input loop on the shared dispatcher; `semantic_memo_session.rs` pins `ContentModified` and `RequestCancelled`
+- [x] Request coalescing and cancellation (150ms debounce window) — `server.debounce_ms` is applied at start and live; a request inside the window after an edit waits it out and ends there when the next keystroke supersedes it
 
 ## File Watching
 

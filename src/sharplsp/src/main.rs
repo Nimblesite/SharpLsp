@@ -29,7 +29,6 @@ mod import_command;
 mod inbound;
 mod inlay_hints;
 mod member_navigation;
-mod nav_cache;
 mod notifications;
 mod nuget;
 mod paths;
@@ -41,6 +40,7 @@ mod pull_diagnostics;
 mod razor;
 mod related_files;
 mod semantic;
+mod semantic_memo;
 mod semantic_tokens;
 mod service_notifications;
 mod sidecar;
@@ -227,6 +227,7 @@ fn run_server() -> Result<()> {
         "SharpLsp LSP initialized (log_level={}, debounce_ms={})",
         sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
+    semantic::requests::configure(sharplsp_config.server.debounce_ms);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -488,7 +489,6 @@ fn main_loop(
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
-    let mut nav_cache = nav_cache::NavCache::new();
     let mut shutdown_requested = false;
     let diagnostic_requests =
         diagnostic_requests(runtime, [fsharp_sidecar, csharp_sidecar], vfs, connection);
@@ -523,7 +523,8 @@ fn main_loop(
                 {
                     continue;
                 }
-                if diagnostic_requests.dispatch(&req, runtime)? {
+                let settled = dispatch::settled_without_compiler(&req, &trees);
+                if diagnostic_requests.dispatch(&req, runtime, settled)? {
                     continue;
                 }
                 dispatch::handle_request(
@@ -531,7 +532,6 @@ fn main_loop(
                     vfs,
                     &parsers,
                     &trees,
-                    &mut nav_cache,
                     connection,
                     runtime,
                     csharp_sidecar,
@@ -573,7 +573,6 @@ fn main_loop(
                         vfs,
                         parsers: &parsers,
                         trees: &mut trees,
-                        nav_cache: &mut nav_cache,
                         connection,
                         runtime,
                         sidecars: [csharp_sidecar, fsharp_sidecar],

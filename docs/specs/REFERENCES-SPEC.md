@@ -193,7 +193,7 @@ Sidecar readiness and generation MUST be salsa inputs so a result produced while
 | Memoized reference lookup | <1ms | Salsa query hit |
 | Tree-sitter pre-validation | <1ms | Whitespace/comment/literal rejection |
 
-Large result sets MAY use the LSP `partialResult` token.
+A `textDocument/references` request carrying a `partialResultToken` whose answer holds more than 200 locations is delivered as `$/progress` notifications of at most 200 locations each, in answer order, followed by an empty final result, as LSP 3.17 partial results require. A partial is never sent after the request was cancelled or superseded. Smaller answers, and requests without the token, answer in the response alone.
 
 ## Error Handling `[REFERENCES-ERRORS]`
 

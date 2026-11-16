@@ -17,9 +17,7 @@ use crate::diagnostic_publish::{sidecar_for_uri, trigger_diagnostics};
 use crate::sidecar::manager::SidecarManager;
 use crate::tree_sitter_parse::{LangId, TsParsers};
 use crate::vfs::Vfs;
-use crate::{
-    diagnostics, nav_cache, paths, pull_diagnostics, semantic, semantic_tokens, workspace_open,
-};
+use crate::{diagnostics, paths, pull_diagnostics, semantic, semantic_tokens, workspace_open};
 
 /// Everything a document notification touches: the host's own document state
 /// and the channels that carry its consequences to the sidecars and the client.
@@ -31,7 +29,6 @@ pub(crate) struct DocumentContext<'a> {
     /// Cached syntax trees per open document.
     pub(crate) trees: &'a mut HashMap<Uri, Tree>,
     /// Cached navigation answers, cleared whenever any text moves.
-    pub(crate) nav_cache: &'a mut nav_cache::NavCache,
     /// The client connection diagnostics publish to.
     pub(crate) connection: &'a Connection,
     /// The async runtime sidecar traffic runs on.
@@ -93,9 +90,10 @@ fn changed(params: lsp_types::DidChangeTextDocumentParams, ctx: &mut DocumentCon
     };
     pull_diagnostics::state::begin_change();
     ctx.vfs.change(&uri, version, change.text.clone());
-    // A cached answer can point into the edited file from any other.
-    ctx.nav_cache.clear();
     sync_document(&uri, &change.text, ctx);
+    // A memoized answer can point into the edited file from any other, and one
+    // asked before the compiler had this text must not outlive it. [DEFINITION-CACHE]
+    crate::semantic_memo::memo().invalidate();
 }
 
 /// Re-parse the new text, hand it to the document's own sidecar and refresh
@@ -126,7 +124,6 @@ fn closed(uri: Uri, ctx: &mut DocumentContext<'_>) {
     ctx.vfs.close(&uri);
     let _ = ctx.trees.remove(&uri);
     semantic_tokens::forget(uri.as_str());
-    ctx.nav_cache.clear();
     if pull_diagnostics::state::is_pull() {
         if let Err(error) = pull_diagnostics::changes::closed(&uri, ctx.runtime, ctx.sidecars) {
             warn!(%error, "Closed document could not reload disk text");

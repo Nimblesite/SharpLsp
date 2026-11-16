@@ -73,14 +73,19 @@ impl Snapshot {
         Ok(())
     }
 
-    /// Cancellation cannot interleave a terminal response ahead of this partial.
+    /// One diagnostic report of a partial workspace pull.
     pub fn partial(&self, token: &lsp_types::ProgressToken, report: &Value) -> Result<()> {
+        self.progress(token, &json!({"items": [report]}))
+    }
+
+    /// Cancellation cannot interleave a terminal response ahead of this partial.
+    pub fn progress(&self, token: &lsp_types::ProgressToken, value: &Value) -> Result<()> {
         self.reply
             .emit(|| {
                 self.check()?;
                 let notification = lsp_server::Notification::new(
                     "$/progress".to_owned(),
-                    json!({"token": token, "value": {"items": [report]}}),
+                    json!({"token": token, "value": value}),
                 );
                 self.sender.send(Message::Notification(notification))?;
                 Ok::<(), anyhow::Error>(())
@@ -141,23 +146,32 @@ impl Requests {
     }
 
     /// Register before scheduling, so an immediate cancellation cannot get lost.
-    pub fn dispatch(&self, request: &Request, runtime: &tokio::runtime::Runtime) -> Result<bool> {
+    /// `settled` is an answer the input loop already knows, such as `null`
+    /// for a position holding no symbol; it still replies through here, where
+    /// the request was registered.
+    pub fn dispatch(
+        &self,
+        request: &Request,
+        runtime: &tokio::runtime::Runtime,
+        settled: Option<Value>,
+    ) -> Result<bool> {
         if !handles(request) {
             return Ok(false);
         }
         let reply = ReplyGate::default();
         let store = super::state::store()?;
         let revision = diagnostic(request).then(|| store.revision());
-        let future = self.prepare(request.clone(), reply.clone(), store.clone(), revision)?;
+        let snapshot = (reply.clone(), store.clone(), revision);
+        let future = self.prepare(request.clone(), snapshot, settled)?;
         let (id, sender) = (request.id.clone(), self.context.sender.clone());
+        let method = request.method.clone();
         drop(runtime.spawn(async move {
             let result = future.await;
             if reply
                 .finish(|| {
-                    sender.send(Message::Response(response(
-                        id,
-                        current(result, &store, revision),
-                    )))
+                    let result = current(result, &store, revision);
+                    let result = crate::semantic::requests::superseded(&method, result);
+                    sender.send(Message::Response(response(id, result)))
                 })
                 .is_err()
             {
@@ -171,9 +185,8 @@ impl Requests {
     fn prepare(
         &self,
         request: Request,
-        reply: ReplyGate,
-        store: PullStore,
-        revision: Option<u64>,
+        (reply, store, revision): (ReplyGate, PullStore, Option<u64>),
+        settled: Option<Value>,
     ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
         let context = self.context.clone();
         let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
@@ -188,7 +201,7 @@ impl Requests {
                     reply,
                     sender,
                 };
-                compute(request, context, snapshot)
+                compute(request, context, snapshot, settled)
             },
         )?))
     }
@@ -217,7 +230,7 @@ fn handles(request: &Request) -> bool {
             | "workspace/diagnostic"
             | "textDocument/codeLens"
             | "textDocument/rename"
-    )
+    ) || crate::semantic::requests::handles(&request.method)
 }
 
 /// Only diagnostic pulls are reports of the whole store's current truth.
@@ -235,8 +248,18 @@ impl Drop for Requests {
 }
 
 /// Cancellation answers immediately; the worker stops between documents.
-async fn compute(request: Request, context: Context, snapshot: Snapshot) -> HandlerResult {
-    let rename = request.method == "textDocument/rename";
+async fn compute(
+    request: Request,
+    context: Context,
+    snapshot: Snapshot,
+    settled: Option<Value>,
+) -> HandlerResult {
+    if let Some(value) = settled {
+        return HandlerResult::Ok(value);
+    }
+    // An editor request's own failure reaches the user as it is.
+    let rename = request.method == "textDocument/rename"
+        || crate::semantic::requests::handles(&request.method);
     let cancel = snapshot.cancel.clone();
     let worker = tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot));
     let result = tokio::select! {
@@ -307,6 +330,16 @@ fn document_request(request: Request, context: &Context, snapshot: &Snapshot) ->
             snapshot.cancellation(),
             &context.sender,
         )
+    } else if crate::semantic::requests::handles(&request.method) {
+        crate::semantic::requests::answer(
+            request,
+            context.engines.each_ref().map(Option::as_ref),
+            &context.vfs,
+            &context.runtime,
+            snapshot.cancellation(),
+            &context.sender,
+            &|token, value| snapshot.progress(token, value),
+        )
     } else {
         super::handle_document_diagnostic(request, &context.vfs, snapshot)
     }
@@ -317,7 +350,7 @@ fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
     let interrupted = error.downcast_ref::<Interrupted>();
     tracing::debug!(?interrupted, "Diagnostic request rejected");
     match interrupted {
-        Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Diagnostic request cancelled"),
+        Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Request cancelled"),
         // Stable compiler-input failures retain their actionable cause. [DIAG-TRUTH-GUARANTEES]
         _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
         _ if settled_refusal(error) => refused(error),

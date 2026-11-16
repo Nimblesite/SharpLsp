@@ -102,6 +102,7 @@ pub mod references;
 pub mod region_session;
 pub mod selection;
 pub mod semantic_coverage;
+pub mod semantic_memo_session;
 pub mod semantic_tokens_tests;
 pub mod sidecar_orphan;
 pub mod sidecar_shutdown;
