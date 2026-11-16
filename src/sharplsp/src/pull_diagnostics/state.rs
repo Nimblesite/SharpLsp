@@ -370,6 +370,10 @@ fn analyzer(
 }
 
 #[cfg(test)]
+#[path = "release_tests.rs"]
+mod release_tests;
+
+#[cfg(test)]
 mod load_completion_tests {
     use super::*;
     use anyhow::{anyhow, ensure};

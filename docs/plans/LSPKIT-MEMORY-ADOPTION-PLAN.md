@@ -39,8 +39,8 @@ adoption is the SharpLsp agent on the open `fix/*` branch. They coordinate on To
       (`state::load_finished`). Because `clear()` drops every input, a deleted or renamed file's memo goes on the next
       close or solution switch. The host-side leaks in the push gate, restore lanes and feed cache are already fixed,
       each with a test that failed on the leak (efa9446c)
-- [ ] Add a host test that fails if a closed document's memo is still held. This needs lspkit to expose a document
-      count or a heap probe on `PullStore`; file it on lspkit.
+- [x] Host test that fails if a closed document's memo is still held:
+      `release_tests::closing_a_document_or_loading_a_solution_frees_every_pulled_memo` (red with invalidate only: 5/5 held)
 - [ ] Delete any SharpLsp scaffolding the release makes redundant. Don't keep a copy.
 - [ ] `make ci` locally. Open a PR with `gh pr merge --auto --squash`, then own it until it's green.
 - [ ] Measure the F# sidecar RSS on this repo for 30 minutes of idle plus editing. It must stay under the #566 soft budget
