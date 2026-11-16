@@ -246,7 +246,7 @@ let private openFanOut () =
 /// project, so the same value coming back is the builder being reused, not rebuilt.
 let private declaredIn state (scope: FSharpProjectOptions list) =
     task {
-        let! results = FSharpWorkspace.checkAllWithCancellation state scope System.Threading.CancellationToken.None
+        let! results = FSharpWorkspace.checkAllWithCancellation state scope CancellationToken.None
 
         return
             results

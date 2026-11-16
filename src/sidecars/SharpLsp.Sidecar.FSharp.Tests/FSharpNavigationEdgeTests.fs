@@ -17,7 +17,7 @@ open SharpLsp.Sidecar.Common
 /// Caret two characters into `needle` on the fixture line that contains `anchor`.
 let private caretAt (anchor: string) (needle: string) =
     let line = kindLineOf anchor
-    let text = KIND_SOURCE.Split('\n')[line]
+    let text = kindSource.Split('\n')[line]
     (line, text.IndexOf(needle, StringComparison.Ordinal) + 2)
 
 // ── Declaration versus definition on an overridden member ─────────
@@ -34,7 +34,7 @@ let ``declaration climbs to the interface member while definition lands on the o
 
     try
         let appended = "let described = widget.Describe()"
-        let text = KIND_SOURCE + appended + "\n"
+        let text = kindSource + appended + "\n"
         FSharpWorkspace.applyDidChange state paths[0] text
         let line = text.Split('\n') |> Array.findIndex (fun l -> l = appended)
         let character = appended.IndexOf("Describe", StringComparison.Ordinal) + 2
@@ -79,7 +79,7 @@ let ``definition of an unresolved identifier returns no location`` () = task {
 
     try
         let appended = "let broken = notARealSymbolAnywhere"
-        let text = KIND_SOURCE + appended + "\n"
+        let text = kindSource + appended + "\n"
         FSharpWorkspace.applyDidChange state paths[0] text
         let line = text.Split('\n') |> Array.findIndex (fun l -> l = appended)
         let! location = FSharpWorkspace.getDefinition state paths[0] line (appended.IndexOf("notARealSymbol") + 2)

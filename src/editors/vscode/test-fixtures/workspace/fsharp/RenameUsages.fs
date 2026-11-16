@@ -8,7 +8,7 @@ let service: IService = Service()
 let structValue: StructThing = { StructValue = 1 }
 let objectModel = ObjectModelThing(1)
 let eventSource = EventSource()
-let eventSubscription = eventSource.Changed.Subscribe(fun _ -> ())
+let eventSubscription = eventSource.Changed.Subscribe(fun _ -> ()) // fsharplint:disable-line Hints
 let indexerValue = IndexerThing().[0]
 let recordValue: RecordThing = { Field = 1 }
 let copied = { recordValue with Field = 2 }

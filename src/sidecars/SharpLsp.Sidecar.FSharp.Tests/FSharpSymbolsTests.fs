@@ -151,6 +151,8 @@ let private parsedCallName text caret =
     let state = FSharpWorkspace.create ()
     let path = "SignatureCall.fsx"
     let options = { FSharpParsingOptions.Default with SourceFiles = [| path |] }
+    // A parse of one in-memory line for a synchronous theory helper.
+    // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
     let parsed = state.Checker.ParseFile(path, SourceText.ofString text, options) |> Async.RunSynchronously
     FSharpSignature.nameBeforeParen parsed (Position.mkPos 1 caret)
     |> Option.map (fun (ending, names) -> ending.Column, names)

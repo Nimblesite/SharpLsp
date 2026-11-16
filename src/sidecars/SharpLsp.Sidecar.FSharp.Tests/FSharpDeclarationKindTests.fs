@@ -16,7 +16,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 /// an explicit CLR interface, a delegate, a literal constant, a mutable value,
 /// a record, an abstract base and a derived type that both overrides the base
 /// member and implements the interface.
-let internal KIND_SOURCE =
+let internal kindSource =
     source
         [ "module KindProject.Kinds"
           ""
@@ -53,11 +53,11 @@ let internal KIND_SOURCE =
           "let piped = [ 1; 2; 3 ] |> List.sum"
           "let stamp = DateTime.UtcNow" ]
 
-let internal kindProject () = loadWorkspace [ ("Kinds.fs", KIND_SOURCE) ]
+let internal kindProject () = loadWorkspace [ ("Kinds.fs", kindSource) ]
 
 /// 0-based index of the fixture line containing `needle`.
 let internal kindLineOf (needle: string) =
-    KIND_SOURCE.Split('\n') |> Array.findIndex (fun line -> line.Contains(needle))
+    kindSource.Split('\n') |> Array.findIndex (fun line -> line.Contains(needle))
 
 /// Every (name, kind) pair in a symbol tree, top level and nested.
 let private allKinds (items: FSharpSymbols.SymbolItem list) =
@@ -73,7 +73,7 @@ let private allKinds (items: FSharpSymbols.SymbolItem list) =
 /// line, with the caret at its end — exactly where a developer would be typing.
 let internal completeAppended (state: FSharpWorkspace.FSharpWorkspaceState) source (appended: string) =
     task {
-        let text = KIND_SOURCE + appended + "\n"
+        let text = kindSource + appended + "\n"
         FSharpWorkspace.applyDidChange state source text
         let line = text.Split('\n') |> Array.findIndex (fun l -> l = appended)
         let! items = FSharpCompletion.getCompletions state source line appended.Length

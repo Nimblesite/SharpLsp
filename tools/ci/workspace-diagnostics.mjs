@@ -17,8 +17,12 @@ import { Session } from "./lsp-session.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Fixtures whose diagnostics are the point of them. */
-const DEMO_FIXTURES = ["/diagnostic-lint", "/diagnostic-tags", "/diagnostic-cancellation"];
+/**
+ * Fixtures whose diagnostics are the point of them: the lint, tag and cancellation
+ * demos, and the file the code-fix suites remove an unused open and a redundant
+ * qualifier from.
+ */
+const DEMO_FIXTURES = ["/diagnostic-lint", "/diagnostic-tags", "/diagnostic-cancellation", "/test-fixtures/workspace/fsharp/CodeFixes.fs"];
 
 /** LSP severities, most severe first; the index + 1 is the wire value. */
 const SEVERITIES = ["error", "warning", "information", "hint"];

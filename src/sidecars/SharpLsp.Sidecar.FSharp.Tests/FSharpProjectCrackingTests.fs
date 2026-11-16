@@ -209,7 +209,7 @@ let ``hand-built options name each source once, so FCS never sees a file twice``
         Assert.DoesNotContain(library, options.OtherOptions)
         Assert.All(options.OtherOptions, fun option -> Assert.StartsWith("-", option))
 
-        let checkedProject = state.Checker.ParseAndCheckProject(options) |> Async.RunSynchronously
+        let! checkedProject = state.Checker.ParseAndCheckProject(options)
 
         // FS3551: "The source file ... already appeared in the compilation list".
         Assert.DoesNotContain(checkedProject.Diagnostics, fun diagnostic -> diagnostic.ErrorNumber = 3551)

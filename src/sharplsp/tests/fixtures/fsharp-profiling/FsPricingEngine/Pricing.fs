@@ -17,7 +17,7 @@ let lineTotal (catalogue: Map<Sku, Product>) (line: BasketLine) : decimal =
     unitPrice catalogue line.Product * decimal line.Quantity
 
 let subtotal (catalogue: Map<Sku, Product>) (lines: BasketLine list) : decimal =
-    lines |> List.map (lineTotal catalogue) |> List.sum
+    lines |> List.map (lineTotal catalogue) |> List.sum // fsharplint:disable-line Hints
 
 let private percentOf (percent: decimal) (amount: decimal) : decimal =
     round2 (amount * percent / 100M)

@@ -182,4 +182,7 @@ let notifyFileChanged (checker: FSharpChecker) (filePath: string) (options: FSha
     (notifyMethod ()).Invoke(checker, arguments)
     |> requiredFcs "FSharpChecker.NotifyFileChanged returned null."
     :?> Async<unit>
+    // The checker's notification only marks the file stale and returns at once; its callers
+    // are synchronous notification handlers.
+    // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
     |> Async.RunSynchronously

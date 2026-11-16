@@ -83,14 +83,14 @@ test("arguments override the defaults, the demo fixtures stay allowed, and a bad
     const defaults = parseArguments([]);
     assert.equal(defaults.failOn, "hint");
     assert.equal(defaults.list, false);
-    assert.deepEqual(defaults.allow, ["/diagnostic-lint", "/diagnostic-tags", "/diagnostic-cancellation"]);
+    assert.deepEqual(defaults.allow, ["/diagnostic-lint", "/diagnostic-tags", "/diagnostic-cancellation", "/test-fixtures/workspace/fsharp/CodeFixes.fs"]);
     assert.match(defaults.server, /target[\\/]debug[\\/]sharplsp(\.exe)?$/);
 
     const set = parseArguments(["--root", ".", "--server", "/bin/host", "--allow", "/demo", "--fail-on", "warning", "--timeout", "60", "--list"]);
     assert.equal(set.root, process.cwd());
     assert.equal(set.server, "/bin/host");
     assert.deepEqual(set.allow.slice(-1), ["/demo"]);
-    assert.equal(set.allow.length, 4);
+    assert.equal(set.allow.length, 5);
     assert.deepEqual([set.failOn, set.timeout, set.list], ["warning", 60, true]);
 
     assert.throws(() => parseArguments(["--nope"]), /unknown argument --nope/);
