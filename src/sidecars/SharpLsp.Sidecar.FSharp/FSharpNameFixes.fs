@@ -17,10 +17,10 @@ open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 /// The similarity a name in scope needs to be offered as the intended one.
-let private SUGGESTION_THRESHOLD = 0.85
+let private suggestionThreshold = 0.85
 
 /// The most replacements offered for one misspelling.
-let private MAX_SUGGESTIONS = 3
+let private maxSuggestions = 3
 
 // ── Similarity ──────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ let private closeness (name: string) (candidate: string) : float option =
     let a, b = name.ToUpperInvariant(), candidate.ToUpperInvariant()
     let score = similarity a b
 
-    if score >= SUGGESTION_THRESHOLD && editDistance a b <= editBudget a.Length then Some score else None
+    if score >= suggestionThreshold && editDistance a b <= editBudget a.Length then Some score else None
 
 // ── FS0039: replace with the intended name ──────────────────────
 
@@ -97,7 +97,7 @@ let private closestNames (name: string) (items: DeclarationListItem array) : str
     |> Array.sortByDescending fst
     |> Array.map snd
     |> Array.distinct
-    |> Array.truncate MAX_SUGGESTIONS
+    |> Array.truncate maxSuggestions
     |> Array.toList
 
 /// "Replace with 'name'" for each name in scope close to the one FS0039
@@ -162,7 +162,7 @@ let private namespaceNames (candidates: ((InsertionContextEntity * InsertionCont
     |> List.choose (fun ((target, _), _) -> target.Namespace)
     |> List.distinct
     |> List.sort
-    |> List.truncate MAX_SUGGESTIONS
+    |> List.truncate maxSuggestions
 
 let private qualifiedNames (candidates: ((InsertionContextEntity * InsertionContext) * string array) list) =
     candidates
@@ -206,7 +206,7 @@ let private typesWith (checkResults: FSharpCheckFileResults) name =
     |> List.sort
 
 let private staticTypes checkResults name =
-    typesWith checkResults name |> List.truncate MAX_SUGGESTIONS
+    typesWith checkResults name |> List.truncate maxSuggestions
 
 let private supportsOpenType (checkResults: FSharpCheckFileResults) =
     checkResults.ProjectContext.ProjectOptions.OtherOptions

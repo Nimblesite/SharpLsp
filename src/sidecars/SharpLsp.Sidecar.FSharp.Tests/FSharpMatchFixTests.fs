@@ -16,7 +16,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 //  9:         | P -> 1
 // 10:         | Q -> 2
 // 11:     | Y -> 3
-let private NESTED =
+let private nested =
     source
         [ "module Matches"
           ""
@@ -31,7 +31,7 @@ let private NESTED =
           "        | Q -> 2"
           "    | Y -> 3" ]
 
-let private TITLE = "Add wildcard case '| _ ->'"
+let private title = "Add wildcard case '| _ ->'"
 
 /// The wildcard completes the match FCS reported — the inner one, after its own
 /// last case and at its indentation — never the enclosing match whose case
@@ -39,12 +39,12 @@ let private TITLE = "Add wildcard case '| _ ->'"
 [<Fact>]
 let ``an incomplete inner match gains its wildcard after its own last case`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ ("Matches.fs", NESTED) ]
+        let! state, dir, _, paths = loadWorkspace [ ("Matches.fs", nested) ]
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 8 |], linesWith 25 before)
             let! completed =
-                applyActionAt state paths[0] NESTED "quickfix" TITLE (8, 8) (11, "        | _ -> failwith \"Unhandled case\"")
+                applyActionAt state paths[0] nested "quickfix" title (8, 8) (11, "        | _ -> failwith \"Unhandled case\"")
             Assert.Empty(linesWith 25 completed)
             Assert.Empty(linesWith 26 completed)
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error completed)
@@ -62,7 +62,7 @@ let ``a match whose only clause has no bar gains a wildcard lined up with its pa
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 5 |], linesWith 25 before)
-            let! completed = applyActionAt state paths[0] first "quickfix" TITLE (5, 4) (7, "    | _ -> failwith \"Unhandled case\"")
+            let! completed = applyActionAt state paths[0] first "quickfix" title (5, 4) (7, "    | _ -> failwith \"Unhandled case\"")
             Assert.Empty(linesWith 25 completed)
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error completed)
         finally

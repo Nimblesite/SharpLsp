@@ -25,7 +25,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 // 12: let private first, second = 1, 2
 // 13: let private commented = 3 // kept for a reason
 // 14: let live = shared + 1
-let private DEAD =
+let private dead =
     source
         [ "module Dead"
           ""
@@ -44,10 +44,10 @@ let private DEAD =
           "let live = shared + 1" ]
 
 /// The editor's default analyzers: dead code on, outside monorepo mode.
-let private ANALYZERS = Some FSharpAnalyzers.AnalyzerConfig.Default
+let private analyzers = Some FSharpAnalyzers.AnalyzerConfig.Default
 
 /// Monorepo mode, where unused public code is dead too.
-let private MONOREPO = Some(FSharpAnalyzers.AnalyzerConfig.Create(true, true))
+let private monorepo = Some(FSharpAnalyzers.AnalyzerConfig.Create(true, true))
 
 /// The "Remove unused" titles offered on 0-based `line` with `analyzers`.
 let private removalsAt analyzers state path line =
@@ -59,10 +59,10 @@ let private removalsAt analyzers state path line =
 [<Fact>]
 let ``a dead private function goes whole, with its documentation and attributes, leaving one gap`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", dead) ]
         try
             // 1. Offered once, at the dead function, as a quick fix nobody applies by accident.
-            let! fixes, actions = actionsWith ANALYZERS state paths[0] 6 0
+            let! fixes, actions = actionsWith analyzers state paths[0] 6 0
             let removal = actions |> List.filter (fun action -> action.Title = "Remove unused 'unusedAnswer'")
             let offered = Assert.Single(removal)
             Assert.Equal("quickfix", offered.Kind)
@@ -73,7 +73,7 @@ let ``a dead private function goes whole, with its documentation and attributes,
             let deletion = Assert.Single(Assert.Single(edit.DocumentChanges).Edits)
             Assert.Equal((4, 0, 8, 0), (deletion.StartLine, deletion.StartCharacter, deletion.EndLine, deletion.EndCharacter))
             Assert.Equal("", deletion.NewText)
-            let edited = applyEdit DEAD deletion
+            let edited = applyEdit dead deletion
             let lines = edited.Split('\n')
             Assert.Equal<string array>([| "let shared = 1"; ""; "type Counter() =" |], lines[2..4])
 
@@ -88,24 +88,24 @@ let ``a dead private function goes whole, with its documentation and attributes,
 [<Fact>]
 let ``a dead member goes whole, and a binding sharing its names or its line is never offered`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", dead) ]
         try
             // 1. The private member nothing calls goes alone; its type still checks.
             let! check =
-                applyActionWith ANALYZERS state paths[0] DEAD "quickfix" "Remove unused 'Unused'" (9, 0) (9, "    member _.Value = shared")
+                applyActionWith analyzers state paths[0] dead "quickfix" "Remove unused 'Unused'" (9, 0) (9, "    member _.Value = shared")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error check)
 
             // 2. Dead, but one binding declares two names: deleting it would decide for both.
-            let! tuple = removalsAt ANALYZERS state paths[0] 12
+            let! tuple = removalsAt analyzers state paths[0] 12
             Assert.Empty(tuple)
 
             // 3. Dead, but its line also holds a comment the fix would take with it.
-            let! commented = removalsAt ANALYZERS state paths[0] 13
+            let! commented = removalsAt analyzers state paths[0] 13
             Assert.Empty(commented)
 
             // 4. Live, or public outside monorepo mode: nothing to remove.
-            let! shared = removalsAt ANALYZERS state paths[0] 2
-            let! live = removalsAt ANALYZERS state paths[0] 14
+            let! shared = removalsAt analyzers state paths[0] 2
+            let! live = removalsAt analyzers state paths[0] 14
             Assert.Empty(shared)
             Assert.Empty(live)
         finally
@@ -115,7 +115,7 @@ let ``a dead member goes whole, and a binding sharing its names or its line is n
 [<Fact>]
 let ``the fix follows the analyzer: off, disabled or outside monorepo mode it offers nothing`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", DEAD) ]
+        let! state, dir, _, paths = loadWorkspace [ ("Dead.fs", dead) ]
         try
             // 1. With the analyzers off, or the dead-code analyzer disabled, nothing is offered.
             let! off = removalsAt None state paths[0] 6
@@ -124,13 +124,13 @@ let ``the fix follows the analyzer: off, disabled or outside monorepo mode it of
             Assert.Empty(disabled)
 
             // 2. In monorepo mode the unused public binding is dead, so it can go too.
-            let! publicOutside = removalsAt ANALYZERS state paths[0] 14
-            let! publicMonorepo = removalsAt MONOREPO state paths[0] 14
+            let! publicOutside = removalsAt analyzers state paths[0] 14
+            let! publicMonorepo = removalsAt monorepo state paths[0] 14
             Assert.Empty(publicOutside)
             Assert.Equal<string list>([ "Remove unused 'live'" ], publicMonorepo)
 
             // 3. A used binding is live in every mode.
-            let! sharedMonorepo = removalsAt MONOREPO state paths[0] 2
+            let! sharedMonorepo = removalsAt monorepo state paths[0] 2
             Assert.Empty(sharedMonorepo)
         finally
             cleanup dir
@@ -144,7 +144,7 @@ let ``a declaration a signature file declares is never removed from its implemen
         let! state, dir, _, paths = loadWorkspace [ "Lib.fsi", signature; "Lib.fs", implementation ]
         try
             // 1. The analyzer still finds both unused in monorepo mode.
-            let config = MONOREPO.Value
+            let config = monorepo.Value
             let! inSignature = FSharpAnalyzers.deadCodeInFile state config paths[0] CancellationToken.None
             let! inImplementation = FSharpAnalyzers.deadCodeInFile state config paths[1] CancellationToken.None
             let found = inSignature @ inImplementation |> List.map _.Message
@@ -152,13 +152,13 @@ let ``a declaration a signature file declares is never removed from its implemen
             Assert.Contains(found, fun message -> message.Contains "'api'")
 
             // 2. Neither is removed from the implementation, whose signature still declares it.
-            let! helper = removalsAt MONOREPO state paths[1] 2
-            let! api = removalsAt MONOREPO state paths[1] 3
+            let! helper = removalsAt monorepo state paths[1] 2
+            let! api = removalsAt monorepo state paths[1] 3
             Assert.Empty(helper)
             Assert.Empty(api)
 
             // 3. Nor from the signature file, which holds no implementation to delete.
-            let! signatureHelper = removalsAt MONOREPO state paths[0] 2
+            let! signatureHelper = removalsAt monorepo state paths[0] 2
             Assert.Empty(signatureHelper)
         finally
             cleanup dir
@@ -172,7 +172,7 @@ let ``a declaration a signature file declares is never removed from its implemen
 //  7:     { X: int }
 //  8:     member private p.Hidden() = p.X
 //  9:     member p.Shown = p.X
-let private NESTED =
+let private nested =
     source
         [ "module Nested"
           ""
@@ -188,21 +188,21 @@ let private NESTED =
 [<Fact>]
 let ``dead code in a nested module or on a record goes whole, and its neighbours stay`` () =
     task {
-        let! state, dir, _, paths = loadWorkspace [ ("Nested.fs", NESTED) ]
+        let! state, dir, _, paths = loadWorkspace [ ("Nested.fs", nested) ]
         try
             // 1. A nested module's dead binding goes; the module's live binding moves up.
             let! inModule =
-                applyActionWith ANALYZERS state paths[0] NESTED "quickfix" "Remove unused 'nestedDead'" (3, 0) (3, "    let visible = 1")
+                applyActionWith analyzers state paths[0] nested "quickfix" "Remove unused 'nestedDead'" (3, 0) (3, "    let visible = 1")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error inModule)
 
             // 2. A record's dead member goes; its live member moves up.
             let! onRecord =
-                applyActionWith ANALYZERS state paths[0] NESTED "quickfix" "Remove unused 'Hidden'" (8, 0) (8, "    member p.Shown = p.X")
+                applyActionWith analyzers state paths[0] nested "quickfix" "Remove unused 'Hidden'" (8, 0) (8, "    member p.Shown = p.X")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error onRecord)
 
             // 3. The live public neighbours offer nothing.
-            let! visible = removalsAt ANALYZERS state paths[0] 4
-            let! shown = removalsAt ANALYZERS state paths[0] 9
+            let! visible = removalsAt analyzers state paths[0] 4
+            let! shown = removalsAt analyzers state paths[0] 9
             Assert.Empty(visible)
             Assert.Empty(shown)
         finally
@@ -212,7 +212,7 @@ let ``dead code in a nested module or on a record goes whole, and its neighbours
 /// The single deletion of the dead binding offered on 0-based `line`.
 let private soleRemoval state path line =
     task {
-        let! fixes, actions = actionsWith ANALYZERS state path line 0
+        let! fixes, actions = actionsWith analyzers state path line 0
         let edit = (resolveSole fixes "Remove unused 'dead'" actions).Value
         return Assert.Single(Assert.Single(edit.DocumentChanges).Edits)
     }

@@ -12,38 +12,38 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
 // Each file holds exactly one problem, so a fix leaves its file error-free.
-let private TYPOS = source [ "module Typos"; ""; "let length = 3"; "let total = lenght + 1" ]
+let private typos = source [ "module Typos"; ""; "let length = 3"; "let total = lenght + 1" ]
 
-let private MEMBERS = source [ "module Members"; ""; "let text = \"abc\""; "let size = text.Lenght" ]
+let private members = source [ "module Members"; ""; "let text = \"abc\""; "let size = text.Lenght" ]
 
-let private UNMATCHED = source [ "module Unmatched"; ""; "let other = qqqzzz" ]
+let private unmatched = source [ "module Unmatched"; ""; "let other = qqqzzz" ]
 
-let private DISPOSABLES =
+let private disposables =
     source
         [ "module Disposables"
           ""
           "let reader = System.IO.StringReader(\"x\")"
           "let readers = [ \"a\" ] |> List.map System.IO.StringReader" ]
 
-let private OPENS =
+let private opens =
     source [ "namespace Shapes"; ""; "module Area ="; "    let joined = Path.Combine(\"a\", \"b\")" ]
 
-let private BUILDERS = source [ "module Builders"; ""; "let builder = StringBuilder()" ]
+let private builders = source [ "module Builders"; ""; "let builder = StringBuilder()" ]
 
-let private TIMERS = source [ "module Timers"; ""; "let stop (timer: Timer) = timer.Dispose()" ]
+let private timers = source [ "module Timers"; ""; "let stop (timer: Timer) = timer.Dispose()" ]
 
-let private ATTRIBUTES = source [ "module Attributes"; ""; "[<Obsolete(\"old\")>]"; "let legacy = 1" ]
+let private attributes = source [ "module Attributes"; ""; "[<Obsolete(\"old\")>]"; "let legacy = 1" ]
 
 let private nameFixProject () =
     loadWorkspace
-        [ "Typos.fs", TYPOS
-          "Members.fs", MEMBERS
-          "Unmatched.fs", UNMATCHED
-          "Disposables.fs", DISPOSABLES
-          "Opens.fs", OPENS
-          "Builders.fs", BUILDERS
-          "Timers.fs", TIMERS
-          "Attributes.fs", ATTRIBUTES ]
+        [ "Typos.fs", typos
+          "Members.fs", members
+          "Unmatched.fs", unmatched
+          "Disposables.fs", disposables
+          "Opens.fs", opens
+          "Builders.fs", builders
+          "Timers.fs", timers
+          "Attributes.fs", attributes ]
 
 let private replaceTitlesAt state path line col =
     task {
@@ -60,9 +60,9 @@ let ``a misspelled value or member is replaced with the closest name in scope`` 
     task {
         let! state, dir, _, paths = nameFixProject ()
         try
-            let! valueFixed = applyAction state paths[0] TYPOS "quickfix" "Replace with 'length'" (3, 12) "let total = length + 1"
+            let! valueFixed = applyAction state paths[0] typos "quickfix" "Replace with 'length'" (3, 12) "let total = length + 1"
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error valueFixed)
-            let! memberFixed = applyAction state paths[1] MEMBERS "quickfix" "Replace with 'Length'" (3, 16) "let size = text.Length"
+            let! memberFixed = applyAction state paths[1] members "quickfix" "Replace with 'Length'" (3, 16) "let size = text.Length"
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error memberFixed)
         finally
             cleanup dir
@@ -95,7 +95,7 @@ let ``a disposable constructor call gains new but a constructor function value d
             let! _, before, _ = checkedFixture state paths[3]
             Assert.Equal<int array>([| 2; 3 |], linesWith 760 before)
             let! fixedFile =
-                applyAction state paths[3] DISPOSABLES "quickfix" "Add 'new'" (2, 13) "let reader = new System.IO.StringReader(\"x\")"
+                applyAction state paths[3] disposables "quickfix" "Add 'new'" (2, 13) "let reader = new System.IO.StringReader(\"x\")"
             Assert.Equal<int array>([| 3 |], linesWith 760 fixedFile)
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error fixedFile)
             let! titles = titlesOfKind state paths[3] "quickfix" 3 34
@@ -116,7 +116,7 @@ let ``an undefined type from a known namespace is opened inside its module`` () 
         try
             let! _, before, _ = checkedFixture state paths[4]
             Assert.Equal<int array>([| 3 |], linesWith 39 before)
-            let! opened = applyActionAt state paths[4] OPENS "quickfix" "Add 'open System.IO' — imports every type and module in namespace System.IO" (3, 17) (3, "    open System.IO")
+            let! opened = applyActionAt state paths[4] opens "quickfix" "Add 'open System.IO' — imports every type and module in namespace System.IO" (3, 17) (3, "    open System.IO")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error opened)
             let! titles = replaceTitlesAt state paths[4] 3 17
             Assert.Empty(titles)
@@ -134,7 +134,7 @@ let ``an undefined type opens whichever referenced namespace declares it`` () =
         let! state, dir, _, paths = nameFixProject ()
         try
             // 1. One namespace declares StringBuilder: its `open` goes below the module's gap.
-            let! built = applyActionAt state paths[5] BUILDERS "quickfix" "Add 'open System.Text' — imports every type and module in namespace System.Text" (2, 14) (2, "open System.Text")
+            let! built = applyActionAt state paths[5] builders "quickfix" "Add 'open System.Text' — imports every type and module in namespace System.Text" (2, 14) (2, "open System.Text")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error built)
 
             // 2. Two declare Timer: both are offered, in order.
@@ -151,13 +151,13 @@ let ``an undefined type opens whichever referenced namespace declares it`` () =
             // 3. Either resolves the name.
             let! timers =
                 applyActionAt
-                    state paths[6] TIMERS "quickfix"
+                    state paths[6] timers "quickfix"
                     "Add 'open System.Timers' — imports every type and module in namespace System.Timers"
                     (2, 18) (2, "open System.Timers")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error timers)
 
             // 4. An attribute named without its suffix opens its namespace too.
-            let! attributed = applyActionAt state paths[7] ATTRIBUTES "quickfix" "Add 'open System' — imports every type and module in namespace System" (2, 3) (2, "open System")
+            let! attributed = applyActionAt state paths[7] attributes "quickfix" "Add 'open System' — imports every type and module in namespace System" (2, 3) (2, "open System")
             Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error attributed)
         finally
             cleanup dir

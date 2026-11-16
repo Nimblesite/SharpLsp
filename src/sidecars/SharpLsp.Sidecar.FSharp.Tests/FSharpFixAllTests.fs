@@ -23,11 +23,11 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 // ── Helpers ──────────────────────────────────────────────────────
 
 /// `Core`: one unused `open System.IO` (0-based line 2), one live function.
-let private CORE_OPENS =
+let private coreOpens =
     String.Join("\n", [ "module Core.Library"; ""; "open System.IO"; ""; "let greet () = \"core\""; "" ])
 
 /// `App`: one unused `open System.IO` (0-based line 2), one use of `Core.greet`.
-let private APP_OPENS =
+let private appOpens =
     String.Join(
         "\n",
         [ "module App.Program"; ""; "open System.IO"; "open Core.Library"; ""; "let message = greet ()"; "" ]
@@ -101,7 +101,7 @@ let private errorsOf (check: FSharpCheckFileResults) =
 [<Fact>]
 let ``fix all unused opens spans document project and solution and the fixed files re-check clean`` () =
     task {
-        let! state, root, corePath, appPath = openSolution CORE_OPENS APP_OPENS
+        let! state, root, corePath, appPath = openSolution coreOpens appOpens
         try
             // 1. Document: only the anchor file, one whole-line deletion of its unused open.
             let! document = fixAll state appPath FSharpCodeFixes.FixAllKeys.RemoveUnusedOpen "document"
@@ -131,13 +131,13 @@ let ``fix all unused opens spans document project and solution and the fixed fil
             Assert.Equal<(string * int) array>([| ("Library.fs", 1); ("Program.fs", 1) |], countsByFile solution)
 
             // 5. Applying the solution edit leaves both files error-free with no unused opens.
-            let coreEdited = applyEdits CORE_OPENS (editsFor "Library.fs" solution)
+            let coreEdited = applyEdits coreOpens (editsFor "Library.fs" solution)
             let! coreCheck = recheck state corePath coreEdited
             Assert.Empty(errorsOf coreCheck)
             let! coreFindings = findingsOf coreEdited coreCheck
             Assert.Empty(coreFindings.UnusedOpens)
 
-            let appEdited = applyEdits APP_OPENS (editsFor "Program.fs" solution)
+            let appEdited = applyEdits appOpens (editsFor "Program.fs" solution)
             let! appCheck = recheck state appPath appEdited
             Assert.Empty(errorsOf appCheck)
             let! appFindings = findingsOf appEdited appCheck
@@ -153,7 +153,7 @@ let ``fix all unused opens spans document project and solution and the fixed fil
 [<Fact>]
 let ``a fix all that finds nothing or cannot run refuses with a reason`` () =
     task {
-        let! state, root, _, appPath = openSolution CORE_OPENS APP_OPENS
+        let! state, root, _, appPath = openSolution coreOpens appOpens
         try
             // The anchor holds one unused open; the simplify-name key finds nothing there.
             match! fixAll state appPath FSharpCodeFixes.FixAllKeys.SimplifyName "document" with

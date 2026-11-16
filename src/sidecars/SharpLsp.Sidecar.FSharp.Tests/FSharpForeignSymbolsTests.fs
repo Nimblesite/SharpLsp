@@ -11,7 +11,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.Common
 
-let private DOMAIN =
+let private domain =
     source
         [ "namespace Domain"
           ""
@@ -21,7 +21,7 @@ let private DOMAIN =
           "    let total (players: seq<Player>) = players |> Seq.sumBy (fun player -> player.Score)"
           "    let best (players: seq<Player>) = players |> Seq.maxBy (fun player -> player.Score)" ]
 
-let private BOARD =
+let private board =
     source
         [ "module Board"
           "open Domain"
@@ -37,7 +37,7 @@ let private placed (locations: FSharpWorkspace.DefinitionLocation list) =
     |> List.map (fun location -> string (NativePaths.NameOf location.FilePath), location.Line, location.Character)
     |> List.sort
 
-let private domain () = loadWorkspace [ "Domain.fs", DOMAIN; "Board.fs", BOARD ]
+let private domain () = loadWorkspace [ "Domain.fs", domain; "Board.fs", board ]
 
 [<Fact>]
 let ``declarations place a type, a record field and a function where F# declares them`` () = task {
@@ -117,7 +117,7 @@ let ``F# references and foreign uses place each use on its name alike`` () = tas
         cleanup dir
 }
 
-let private MARKS =
+let private marks =
     source
         [ "module Marks"
           ""
@@ -132,7 +132,7 @@ let private MARKS =
 /// so C# can never name it. [REFERENCES-FSHARP-FIND] [DEFINITION-CROSSLANG-IDENTITY]
 [<Fact>]
 let ``a use no token spells keeps its range, and a symbol without a signature has no identity`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ ("Marks.fs", MARKS) ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Marks.fs", marks) ]
     try
         let! fileCheck = FSharpWorkspace.checkFile state paths[0]
         let checkResults, _ = FSharpForeignSymbols.requireCheckedFile paths[0] fileCheck

@@ -63,7 +63,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 // 62: let summed = adder.Sum 1 (f v)
 // 63: let bannerParen () = printfn ("hi")
 // 64: let typed = id<int> (f v)
-let private PIPE_SOURCE =
+let private pipeSource =
     source
         [ "module PipeFix"
           ""
@@ -131,7 +131,7 @@ let private PIPE_SOURCE =
           "let bannerParen () = printfn (\"hi\")"
           "let typed = id<int> (f v)" ]
 
-let private pipeProject () = loadWorkspace [ ("PipeFix.fs", PIPE_SOURCE) ]
+let private pipeProject () = loadWorkspace [ ("PipeFix.fs", pipeSource) ]
 
 // ── Harness ─────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ let private pipeProject () = loadWorkspace [ ("PipeFix.fs", PIPE_SOURCE) ]
 /// edited file type-checks with no FCS errors.
 let private assertConverted state path title (line: int) (col: int) (expected: string) =
     task {
-        let! check = applyAction state path PIPE_SOURCE "refactor" title (line, col) expected
+        let! check = applyAction state path pipeSource "refactor" title (line, col) expected
         Assert.Empty(diagnosticsOf FSharpDiagnosticSeverity.Error check)
     }
 
@@ -327,7 +327,7 @@ let ``a stale source or a signature file offers no pipe conversion`` () =
         let! state, dir, _, paths = pipeProject ()
         try
             let! parseResults, _, _ = checkedFixture state paths[0]
-            let current = FSharpPipeRefactoring.tryGenerateActions parseResults PIPE_SOURCE paths[0] 9 11
+            let current = FSharpPipeRefactoring.tryGenerateActions parseResults pipeSource paths[0] 9 11
             Assert.Equal<string list>([ "Convert pipeline to nested calls" ], current |> List.map _.Title)
             Assert.Empty(FSharpPipeRefactoring.tryGenerateActions parseResults "" paths[0] 9 11)
             let signature = "module PipeFix\n\nval v: int\n"
