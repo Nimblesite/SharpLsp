@@ -20,11 +20,15 @@ function codeOf(diagnostic: vscode.Diagnostic): string {
   return typeof code === 'object' ? String(code.value) : String(code ?? '');
 }
 
-/** Every diagnostic in the Problems panel under `dir`, as `[file, code]` pairs. */
+/**
+ * Every diagnostic in the Problems panel under `dir`, as `[file, code]` pairs. VS Code
+ * lowercases a Windows drive letter in `fsPath`, so the two are compared as it spells them.
+ */
 function problemsUnder(dir: string): [string, vscode.Diagnostic][] {
+  const root = vscode.Uri.file(dir).fsPath.toLowerCase();
   return vscode.languages
     .getDiagnostics()
-    .filter(([uri]) => uri.fsPath.startsWith(dir))
+    .filter(([uri]) => uri.fsPath.toLowerCase().startsWith(root))
     .flatMap(([uri, diagnostics]) =>
       diagnostics.map((diagnostic): [string, vscode.Diagnostic] => [
         path.basename(uri.fsPath),
