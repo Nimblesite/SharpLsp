@@ -253,7 +253,10 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
         Assert.Null(+closed);
 
         // Interaction 3 — opening one of its files adopts it, as any owner is adopted.
-        var opened = await manager.UpdateDocumentTextAsync(probe, await File.ReadAllTextAsync(probe));
+        var opened = await manager.UpdateDocumentTextAsync(
+            probe,
+            await File.ReadAllTextAsync(probe)
+        );
         Assert.False(opened.IsError, opened.Match(_ => "ok", err => err));
         var adopted = await HoverWithinAsync(manager, probe, 3, 20);
         Assert.True(adopted is not null, "the fixture answers once its file is opened");
