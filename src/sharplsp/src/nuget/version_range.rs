@@ -1,7 +1,7 @@
 //! `NuGet` `VersionRange` parsing for advisory ranges. Implements [PKG-VULN-FIX].
 //!
 //! Advisory pages express affected versions as `NuGet` range strings — `"(, 5.8.4)"`,
-//! `"[1.0.0, 1.2.0]"`, or a bare exact version. Ordering follows `NuGet` version
+//! `"[1.0.0, 1.2.0]"`, `"[1.0.0]"` (exact), or a bare version — a minimum. Ordering follows `NuGet` version
 //! semantics through [`super::update`]'s comparison — never lexical.
 
 use std::cmp::Ordering;
@@ -74,10 +74,14 @@ pub fn parse_range(text: &str) -> Result<VersionRangeSpec> {
         };
         return bounded(body, (text.starts_with('['), text.ends_with(']')), text);
     }
-    // A bare version is an exact, inclusive match.
-    Ok(exact(
-        parse_version(text).with_context(|| format!("invalid range {text:?}"))?,
-    ))
+    // A bare version is an inclusive minimum, as `NuGet` reads it: `[1.0.0, )`.
+    Ok(VersionRangeSpec {
+        min: Some(Bound {
+            version: parse_version(text).with_context(|| format!("invalid range {text:?}"))?,
+            inclusive: true,
+        }),
+        max: None,
+    })
 }
 
 /// An exact single-version range: both bounds at `version`, inclusive.
@@ -126,11 +130,15 @@ fn bound(text: &str, inclusive: bool, original: &str) -> Result<Option<Bound>> {
 mod tests {
     use super::*;
 
+    /// `NuGet` reads a bare version as a minimum: `1.0.0` is `[1.0.0, )`.
+    /// Read as exact, an advisory would let every later vulnerable version
+    /// pass as known-good.
     #[test]
-    fn exact_version_ranges_match_only_that_version() {
+    fn bare_versions_are_inclusive_minimums() {
         let range = parse_range("1.0.0").unwrap();
         assert!(range.satisfies("1.0.0"));
-        assert!(!range.satisfies("1.0.1"));
+        assert!(range.satisfies("1.0.1"));
+        assert!(range.satisfies("9.0.0"));
         assert!(!range.satisfies("0.9.9"));
     }
 
