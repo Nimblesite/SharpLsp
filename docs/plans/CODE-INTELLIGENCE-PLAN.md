@@ -99,3 +99,4 @@ The unsaved C# case, three F# name variants and four cross-language type/propert
 ## Misc
 
 - [ ] Regex syntax highlighting in string literals
+  - Finding (2026-11-16, Roslyn 5.9): the public `Classifier.GetClassifiedSpansAsync` and the internal `ClassifierHelper` return one `string` span for a regex literal. The internal `IEmbeddedLanguageClassificationService` (Workspaces) is reachable by reflection and runs with `ColorizeRegexPatterns = True`, yet in an `AdhocWorkspace(MefHostServices.DefaultHost)` with the full framework references it yields only the fallback `string - escape character` spans, so the regex `IEmbeddedLanguageClassifier` is not being composed or not detecting `new Regex(...)`. Next step: find why (MEF export of the Features-layer regex classifier, or its `StringSyntax` detection) before mapping `regex - *` classifications to the `regexp` token type in `SemanticTokensResolver.MapClassification`.
