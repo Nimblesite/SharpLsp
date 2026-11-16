@@ -435,6 +435,19 @@ Implementation: [telemetry.rs](../../src/sharplsp/src/telemetry.rs).
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
 
+### [SHARPLSP-TECHNOLOGY-SIDECAR-PUBLISH] Sidecars Publish as Portable IL
+
+Both sidecars publish framework-dependent and platform-neutral: one build serves every platform, as the `bin/all` layout of the VSIX and the `dotnet tool` packages of [BINARY-DEPLOYMENT] require. ReadyToRun (`PublishReadyToRun`) is not used. It was measured and rejected:
+
+| Measured (macOS arm64, .NET 10, median of 5) | IL | ReadyToRun |
+|---|---|---|
+| Launch to first C# hover, restored project | 1168 ms | 1178 ms |
+| Launch to first F# hover, script | 1041 ms | 1055 ms |
+| Sidecar process start (`--version`) | 21 ms / 26 ms | 21 ms / 28 ms |
+| Published size, C# / F# | 55 MB / 63 MB | 109 MB / 134 MB |
+
+A sidecar is ready about 75 ms after it is spawned; what follows is project evaluation and compilation, which precompiled code does not shorten. ReadyToRun would double the download, need one build per platform, and need `PlatformTarget=AnyCPU` to compile the C# sidecar against the Razor compiler assemblies at all. Revisit only with a measurement that shows otherwise.
+
 ## [SHARPLSP-FEATURES] Feature Specification
 
 Both C# and F# columns require full support unless noted.
