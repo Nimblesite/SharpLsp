@@ -3,6 +3,7 @@
 //! [DIAG-LSP-REFRESH] [DIAG-ARCHITECTURE-SCOPE] [DIAG-RESTORE]
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -29,14 +30,14 @@ enum Touched {
     Edited(String),
 }
 
-/// Which compilers `changes` concern; a rescan concerns every compiler.
+/// Which compilers `changes` concern; a rescan concerns those whose inputs changed.
 pub(super) async fn concerned(
     rescan: bool,
     changes: &[FileEvent],
     sidecars: [Option<&Arc<SidecarManager>>; 2],
 ) -> Result<[bool; 2]> {
     if rescan {
-        return Ok(sidecars.map(|sidecar| sidecar.is_some()));
+        return rescanned(sidecars).await;
     }
     let touched = classify(changes)?;
     let mut concerned = [false; 2];
@@ -44,6 +45,20 @@ pub(super) async fn concerned(
         if let Some(sidecar) = sidecar.filter(|_| !touched.is_empty()) {
             let graph = LoadedGraph::of(sidecar, kinds).await?;
             *flag = touched.iter().any(|path| graph.concerns(path));
+        }
+    }
+    Ok(concerned)
+}
+
+/// A rescan reports lost native events, not changed inputs: build churn under
+/// `target/` raises one constantly. A compiler reloads only when what it loaded
+/// changed on disk after its last open, so a reload never re-restores an
+/// unchanged workspace. [DIAG-LSP-REFRESH] [SIDECAR-PROCESS-MEMORY] (#566)
+async fn rescanned(sidecars: [Option<&Arc<SidecarManager>>; 2]) -> Result<[bool; 2]> {
+    let mut concerned = [false; 2];
+    for ((flag, sidecar), kinds) in concerned.iter_mut().zip(sidecars).zip(KINDS) {
+        if let Some(sidecar) = sidecar {
+            *flag = LoadedGraph::of(sidecar, kinds).await?.changed_since_open();
         }
     }
     Ok(concerned)
@@ -82,6 +97,8 @@ struct LoadedGraph {
     projects: Vec<String>,
     /// Comparison keys of every source and project file it knows.
     inputs: HashSet<String>,
+    /// Those sources and project files as the compiler reported them.
+    files: Vec<String>,
     /// The workspace it opened; a folder discovers new projects beneath it.
     target: Option<String>,
     /// When its last open completed.
@@ -98,13 +115,18 @@ impl LoadedGraph {
             (opened.target.clone(), opened.settled)
         };
         let documents = super::engine_documents(sidecar).await?;
+        let files: Vec<String> = documents
+            .iter()
+            .flat_map(|document| [&document.file_path, &document.project_path])
+            .cloned()
+            .collect();
         Ok(Self {
             projects: project_directories(&documents),
-            inputs: documents
+            inputs: files
                 .iter()
-                .flat_map(|document| [&document.file_path, &document.project_path])
                 .map(|path| paths::comparison_key(path))
                 .collect(),
+            files,
             target,
             settled,
             kinds,
@@ -130,6 +152,29 @@ impl LoadedGraph {
                     && !self.inputs.contains(&paths::comparison_key(path))
             }
         }
+    }
+
+    /// Whether anything it loaded changed after its last open: a source or project
+    /// file, the directory holding one (a file added or removed beside it), or
+    /// configuration and restore assets around its projects. A compiler that
+    /// loaded nothing has nothing to compare and reloads.
+    fn changed_since_open(&self) -> bool {
+        let directories = self.files.iter().filter_map(paths::directory_of);
+        let ambient = self
+            .projects
+            .iter()
+            .flat_map(|project| {
+                paths::project_ambient_inputs(Path::new(project)).collect::<Vec<_>>()
+            })
+            .filter(|path| path.exists());
+        self.files.is_empty()
+            || self
+                .files
+                .iter()
+                .any(|file| written_after(file, self.settled))
+            || directories
+                .chain(ambient)
+                .any(|path| written_after(&path, self.settled))
     }
 
     /// A project file of its language it loaded, its target, or one its folder discovers.
@@ -163,7 +208,7 @@ fn project_directories(documents: &[super::DiagnosticDocument]) -> Vec<String> {
 /// Whether `path` changed after `settled`: restore outputs written before the
 /// compiler's latest open completed were consumed by that open's own restore.
 /// An unreadable time, a removed file, counts as changed.
-fn written_after(path: &str, settled: Option<SystemTime>) -> bool {
+fn written_after(path: impl AsRef<Path>, settled: Option<SystemTime>) -> bool {
     let modified = std::fs::metadata(path).and_then(|metadata| metadata.modified());
     match (modified, settled) {
         (Ok(modified), Some(settled)) => modified > settled,
