@@ -95,7 +95,7 @@ internal sealed record SearchScope(
         CancellationToken ct
     )
     {
-        var derived = await AcrossFrameworksAsync<INamedTypeSymbol>(
+        var derived = await AcrossFrameworksAsync(
                 type,
                 async copy =>
                     copy is INamedTypeSymbol copyType

@@ -77,7 +77,7 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         var result = await WorkspaceRestore.EnsureTargetAsync(project, CancellationToken.None);
         Assert.True(result.IsError, "invalid imports must never appear successfully restored");
         Assert.NotEmpty(result.Match(_ => string.Empty, error => error));
-        Assert.Equal<byte>(original, await ReadBytesAsync(project));
+        Assert.Equal(original, await ReadBytesAsync(project));
         WriteInput(input, "before");
         await RestoreSdkAsync(project);
         Assert.True(WorkspaceRestoreInputs.AreCurrent(project, DateTime.UtcNow));
@@ -204,10 +204,7 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
     {
         await EnsureRestoredAsync(snapshot.Project).ConfigureAwait(false);
         Assert.Equal(snapshot.Time, new FileInfo(snapshot.Project).LastWriteTimeUtc);
-        Assert.Equal<byte>(
-            snapshot.Bytes,
-            await ReadBytesAsync(snapshot.Project).ConfigureAwait(false)
-        );
+        Assert.Equal(snapshot.Bytes, await ReadBytesAsync(snapshot.Project).ConfigureAwait(false));
         Assert.True(new FileInfo(AssetsPath(snapshot.Project)).LastWriteTimeUtc > assetsTime);
         AssertPackageRootPath(snapshot.Project, DefaultPackagesRoot());
     }
@@ -220,7 +217,7 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         Assert.True(WorkspaceRestoreInputs.AreCurrent(project, assetsTime));
         await EnsureRestoredAsync(project).ConfigureAwait(false);
         Assert.Equal(assetsTime, new FileInfo(assets).LastWriteTimeUtc);
-        Assert.Equal<byte>(original, await ReadBytesAsync(assets).ConfigureAwait(false));
+        Assert.Equal(original, await ReadBytesAsync(assets).ConfigureAwait(false));
         AssertPackageRootPath(project, DefaultPackagesRoot());
     }
 
@@ -233,7 +230,7 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
         await EnsureRestoredAsync(project).ConfigureAwait(false);
         AssertPackageRoot(project, name);
         Assert.Equal(projectTime, new FileInfo(project).LastWriteTimeUtc);
-        Assert.Equal<byte>(original, await ReadBytesAsync(project).ConfigureAwait(false));
+        Assert.Equal(original, await ReadBytesAsync(project).ConfigureAwait(false));
     }
 
     private void AssertPackageRoot(string project, string name)

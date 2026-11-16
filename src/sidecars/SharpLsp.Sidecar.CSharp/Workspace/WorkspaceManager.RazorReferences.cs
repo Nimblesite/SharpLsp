@@ -83,7 +83,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var csharp = await RunPositionQueryAsync<ISymbol?>(
+        var csharp = await RunPositionQueryAsync(
                 filePath,
                 (line, character),
                 null,

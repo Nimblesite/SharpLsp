@@ -10,6 +10,7 @@ import {
     editsByFile,
     firstDiagnostic,
     offsetOf,
+    overFollowingDot,
     parenthesiseSoleElement,
     rangesByFile,
 } from "./fix-diagnostics.mjs";
@@ -104,4 +105,13 @@ test("the first diagnostic of a code is found with its document, under a path pa
     assert.equal(firstDiagnostic(reports, "SLSPF0102", "/tests/").uri, pathToFileURL("/repo/tests/B.fs").href);
     assert.equal(firstDiagnostic(reports, "SLSPF0102", "/").item.code, "SLSPF0102");
     assert.equal(firstDiagnostic(reports, "CS0001", "/"), undefined);
+});
+
+test("an unnecessary qualifier goes with its dot, and inferable type arguments go alone", () => {
+    const text = "var a = Outcome.Result.Ok();\nvar b = Run<List<int>>(x);\n";
+    const qualifier = overFollowingDot(text, range(0, 8, 15));
+    assert.deepEqual(qualifier.end, { line: 0, character: 16 }, "the dot after `Outcome` is included");
+    const typeArguments = overFollowingDot(text, range(1, 11, 22));
+    assert.deepEqual(typeArguments.end, { line: 1, character: 22 }, "`(` follows: nothing more is taken");
+    assert.equal(applyFixes(text, [qualifier, typeArguments], () => ""), "var a = Result.Ok();\nvar b = Run(x);\n");
 });

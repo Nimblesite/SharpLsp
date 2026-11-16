@@ -12,7 +12,7 @@ internal sealed partial class WorkspaceManager
         (int Line, int Character)? position = null
     )
     {
-        return RunMarkupQueryAsync<HtmlProjectionResult?>(
+        return RunMarkupQueryAsync(
             filePath,
             null,
             async markup =>

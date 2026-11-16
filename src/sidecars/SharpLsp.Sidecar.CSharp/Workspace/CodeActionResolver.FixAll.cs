@@ -92,14 +92,12 @@ internal sealed partial class CodeActionResolver
     private static async Task<ResolveResult> ApplyFixAllAsync(
         string fixKey,
         Solution solution,
-        Microsoft.CodeAnalysis.CodeActions.CodeAction action,
+        CodeAction action,
         CancellationToken ct
     )
     {
         var operations = await action.GetOperationsAsync(ct).ConfigureAwait(false);
-        var applyOp = operations
-            .OfType<Microsoft.CodeAnalysis.CodeActions.ApplyChangesOperation>()
-            .FirstOrDefault();
+        var applyOp = operations.OfType<ApplyChangesOperation>().FirstOrDefault();
         return applyOp is null
             ? FixAllFailure(fixKey, $"fixing every occurrence of '{fixKey}' produced no changes")
             : await ResolveChangesAsync(action.Title, solution, applyOp, ct).ConfigureAwait(false);

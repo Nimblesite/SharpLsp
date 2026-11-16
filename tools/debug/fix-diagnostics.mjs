@@ -6,6 +6,8 @@
 //
 // Fixes:
 //   --code FS3886      parenthesise the reported single-tuple list element
+//   --code IDE0001     remove the qualifier or type arguments Roslyn marks unnecessary
+//   --code IDE0002     the same, for member access
 //   --fix-all <code>   apply the server's own "Fix all in solution" for the first
 //                      diagnostic with that code (SLSPF0102, SLSPF0103, IDE0001…)
 //
@@ -36,7 +38,19 @@ export function parenthesiseSoleElement(text) {
 /** What each supported code does to the text of its reported range. */
 const FIXES = {
     FS3886: parenthesiseSoleElement,
+    // Roslyn marks exactly the unnecessary text: a qualifier or inferable type arguments.
+    IDE0001: () => "",
+    IDE0002: () => "",
 };
+
+/** Codes whose range is a qualifier: the dot that follows it goes with it. */
+const QUALIFIER_CODES = ["IDE0001", "IDE0002"];
+
+/** `range` extended over a `.` that directly follows it in `text`. */
+export function overFollowingDot(text, range) {
+    const end = offsetOf(text, range.end);
+    return text[end] === "." ? { start: range.start, end: { line: range.end.line, character: range.end.character + 1 } } : range;
+}
 
 const SUPERSEDED = -32802;
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -101,8 +115,9 @@ async function solutionFix(session, { uri, item }) {
     const languageId = uri.endsWith(".cs") ? "csharp" : "fsharp";
     session.send({ method: "textDocument/didOpen", params: { textDocument: { uri, languageId, version: 1, text } } });
     const params = { textDocument: { uri }, range: item.range, context: { diagnostics: [item] } };
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-        const actions = (await session.request("textDocument/codeAction", params)).result ?? [];
+    let actions = [];
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        actions = (await session.request("textDocument/codeAction", params)).result ?? [];
         const fixAll = actions.find((action) => action.title.startsWith("Fix all in solution: "));
         if (fixAll !== undefined) {
             console.log(fixAll.title);
@@ -112,7 +127,8 @@ async function solutionFix(session, { uri, item }) {
         }
         await sleep(2000);
     }
-    throw new Error(`no "Fix all in solution" action for ${item.code} at ${uri}`);
+    const offered = actions.map((action) => action.title).join(" | ");
+    throw new Error(`no "Fix all in solution" action for ${item.code} at ${uri}; offered: ${offered}`);
 }
 
 async function pull(session) {
@@ -176,7 +192,8 @@ async function main() {
         const first = ranges[0];
         const sample = text.slice(offsetOf(text, first.start), offsetOf(text, first.end)).replaceAll("\n", "⏎").slice(0, 80);
         console.log(`${file}: ${ranges.length}  e.g. ${sample}`);
-        if (!dryRun) writeFileSync(file, applyFixes(text, ranges, fix));
+        const spans = QUALIFIER_CODES.includes(code) ? ranges.map((range) => overFollowingDot(text, range)) : ranges;
+        if (!dryRun) writeFileSync(file, applyFixes(text, spans, fix));
     }
     console.log(`${dryRun ? "would fix" : "fixed"} ${count} ${code} in ${files.size} files`);
     process.exit(0);

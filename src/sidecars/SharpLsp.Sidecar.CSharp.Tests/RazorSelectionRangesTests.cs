@@ -243,7 +243,7 @@ public sealed class RazorSelectionRangesTests : IClassFixture<RazorFixture>
     /// <summary>The whole file's span: from the first character to past the last line break.</summary>
     private static (int, int, int, int) Document(string file)
     {
-        var text = System.IO.File.ReadAllText(file);
+        var text = File.ReadAllText(file);
         var lines = text.Split('\n');
         return text.EndsWith('\n')
             ? (0, 0, lines.Length - 1, 0)

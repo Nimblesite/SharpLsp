@@ -35,7 +35,7 @@ internal sealed partial class WorkspaceManager
     {
         return NativePaths.IsRazor(filePath)
             ? GetRazorCodeLensesAsync(filePath, ct)
-            : RunScopedQueryAsync<List<CodeLensResult>>(
+            : RunScopedQueryAsync(
                 filePath,
                 [],
                 (document, scope) => CodeLensResolver.GetLensesAsync(document, scope, ct),
@@ -50,7 +50,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<List<TextEditResult>>(
+        return RunDocumentQueryAsync(
             filePath,
             [],
             document => FormattingResolver.FormatDocumentAsync(document, ct),
@@ -69,7 +69,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<List<TextEditResult>>(
+        return RunDocumentQueryAsync(
             filePath,
             [],
             document =>
@@ -94,7 +94,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunDocumentQueryAsync<List<TextEditResult>>(
+        return RunDocumentQueryAsync(
             filePath,
             [],
             document => FormattingResolver.FormatOnTypeAsync(document, line, character, ct),
@@ -166,7 +166,7 @@ internal sealed partial class WorkspaceManager
     {
         return NativePaths.IsRazor(filePath)
             ? GetRazorInlayHintsAsync(filePath, startLine, endLine, ct)
-            : RunDocumentQueryAsync<List<InlayHintResult>>(
+            : RunDocumentQueryAsync(
                 filePath,
                 [],
                 document => InlayHintResolver.GetHintsAsync(document, startLine, endLine, ct),

@@ -301,7 +301,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        return RunPositionQueryAsync<LocationResult?>(
+        return RunPositionQueryAsync(
             filePath,
             at,
             null,

@@ -174,24 +174,20 @@ internal sealed partial class CSharpSidecar : SidecarHost
     private bool _refreshSupported;
 
     /// <summary>Compiler-originated invalidation, including while IPC is idle. [DIAG-IPC-REFRESH]</summary>
-    private async Task<Outcome.Result<Outcome.Unit, string>> NotifyDiagnosticsChangedAsync(
+    private async Task<Result<Outcome.Unit, string>> NotifyDiagnosticsChangedAsync(
         CancellationToken ct
     )
     {
         if (!_refreshSupported)
         {
-            return new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
-                Outcome.Unit.Value
-            );
+            return new Result<Outcome.Unit, string>.Ok<Unit, string>(Unit.Value);
         }
 
         var result = await NotifyAsync("diagnostics/refresh", string.Empty, ct)
             .ConfigureAwait(false);
         return result.Match(
-            _ => new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
-                Outcome.Unit.Value
-            ),
-            Outcome.Result<Outcome.Unit, string>.Failure
+            _ => new Result<Outcome.Unit, string>.Ok<Unit, string>(Unit.Value),
+            Result<Outcome.Unit, string>.Failure
         );
     }
 

@@ -256,7 +256,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             return GetRazorCodeActionsAsync(filePath, range, ct);
         }
 
-        return RunDocumentQueryAsync<List<CodeActionItem>>(
+        return RunDocumentQueryAsync(
             filePath,
             [],
             async document =>
