@@ -93,8 +93,8 @@ The unsaved C# case, three F# name variants and four cross-language type/propert
 ## Editor Navigation
 
 - [x] Breadcrumb / scope bar support (documentSymbol hierarchy) — the host answers `textDocument/documentSymbol` with a nested tree for C# and F#; `lsp-integration.test.ts` and `lsp-invariants-kit.ts` (`assertSymbolTree`) pin the parent/child containment, kinds and selection ranges the breadcrumb trail reads, [SHARPLSP-FEATURES-NAVIGATION]
-- [ ] Go to related files (e.g. .cs <-> .designer.cs, interface <-> implementation)
-- [ ] Structural navigation (next/prev member)
+- [x] Go to related files (e.g. .cs <-> .designer.cs, interface <-> implementation) — `sharplsp/relatedFiles` (`related_files.rs`, `paths/family.rs`) + `sharplsp.goToRelatedFile`; interface ↔ implementation is `textDocument/implementation`; `editor_navigation.rs`, `lsp-editor-navigation.test.ts`, [SHARPLSP-FEATURES-NAVIGATION-RELATED]
+- [x] Structural navigation (next/prev member) — `sharplsp/adjacentMember` (`member_navigation.rs`) over the C#, F# and Razor outlines + `sharplsp.goToNextMember` / `sharplsp.goToPreviousMember`; `editor_navigation.rs`, `lsp-editor-navigation.test.ts`, [SHARPLSP-FEATURES-NAVIGATION-MEMBERS]
 
 ## Misc
 

@@ -62,6 +62,7 @@ pub mod diagnostic_tags;
 pub mod diagnostics;
 pub mod diagnostics_full_stack;
 pub mod document_sync;
+pub mod editor_navigation;
 pub mod filebased_diagnostics;
 pub mod fixall_fsharp_tests;
 pub mod fixall_tests;

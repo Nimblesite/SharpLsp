@@ -489,6 +489,22 @@ Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a re
 | Breadcrumbs | `textDocument/documentSymbol` | Hierarchical symbol tree | Hierarchical symbol tree | P1 |
 | Go to decompiled source | Custom: `sharplsp/decompileSource` | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | ICSharpCode.Decompiler | P1 |
 | Go to source generator output | Custom: `sharplsp/generatorOutput` | GeneratorDriverRunResult | N/A | P2 |
+| Go to related files | Custom: `sharplsp/relatedFiles` | Host, by file name ([SHARPLSP-FEATURES-NAVIGATION-RELATED]) | Host, by file name | P2 |
+| Next / previous member | Custom: `sharplsp/adjacentMember` | Host, over the document symbol tree ([SHARPLSP-FEATURES-NAVIGATION-MEMBERS]) | Host, over the FCS symbol tree | P2 |
+
+#### [SHARPLSP-FEATURES-NAVIGATION-RELATED] Go to Related Files
+
+`sharplsp/relatedFiles` takes `{ textDocument: { uri } }` and answers `{ files: [{ uri, name }] }`: the files that belong with the document. They are the files in its directory that share its name up to the **first dot**, compared as paths compare ([SHARPLSP-ARCHITECTURE-PATHS]), without the document itself, sorted by path. `Form1.cs` relates to `Form1.Designer.cs` and `Form1.resx` but not to `Form10.cs`; `Lib.fs` to `Lib.fsi`; `Index.razor` to `Index.razor.cs` and `Index.razor.css`; `Main.xaml` to `Main.xaml.cs`. The rule names no extension, so it needs no upkeep as SDKs add file kinds. Directories are never related files. A document that stands alone, or is not on disk, answers an empty list. The host answers it itself, with no sidecar.
+
+An interface and its implementations are related symbols, not related files: that is `textDocument/implementation` ([DEFINITION-SPEC.md](DEFINITION-SPEC.md)).
+
+VS Code: `sharplsp.goToRelatedFile` (**Go to Related File**) opens the only related file at once, shows a picker titled `Go to related file` over several, and says `SharpLsp: this file has no related files.` when there is none. A dismissed picker opens nothing.
+
+#### [SHARPLSP-FEATURES-NAVIGATION-MEMBERS] Next and Previous Member
+
+`sharplsp/adjacentMember` takes `{ textDocument: { uri }, position, direction: "next" | "previous" }` and answers `{ position }`: where the neighbouring member's own name starts, or `null` past the last or first member. The members are the symbols of the document's outline at every depth, namespaces aside — the tree `textDocument/documentSymbol` answers, so tree-sitter for C#, the F# compiler for F# and the Razor compiler for Razor, and unsaved edits count. `next` is the first member whose name starts after the position; `previous` the last whose name starts before it, so from inside a body `previous` lands on that member's own name. With no engine for the document's language the request fails with the reason; it never answers `null` for that.
+
+VS Code: `sharplsp.goToNextMember` and `sharplsp.goToPreviousMember` move the caret there and reveal it; past either end the caret stays put. No default key is bound.
 
 ### [SHARPLSP-FEATURES-DIAGNOSTICS] Diagnostics and Analysis
 

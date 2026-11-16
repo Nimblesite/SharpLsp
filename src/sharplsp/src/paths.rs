@@ -11,9 +11,11 @@ use anyhow::{Context, Result};
 use lsp_types::Uri;
 use url::Url;
 
+mod family;
 mod inherited;
 mod inputs;
 mod nuget;
+pub use family::family_siblings;
 pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes, project_ambient_inputs};
 pub use inputs::{
     diagnostic_requires_reload, diagnostic_restore_output, exists, is_diagnostic_input,

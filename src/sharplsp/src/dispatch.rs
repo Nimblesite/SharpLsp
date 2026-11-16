@@ -350,6 +350,10 @@ fn handle_custom_request(
         ),
         "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
         "sharplsp/statementStop" => handle_statement_stop(req, parsers, vfs),
+        "sharplsp/relatedFiles" => crate::related_files::handle(req),
+        "sharplsp/adjacentMember" => {
+            crate::member_navigation::handle(req, parsers, vfs, runtime, engines)
+        }
         "sharplsp/hotReload" => hot_reload::handle(req, runtime, csharp_sidecar),
         razor::HTML_PROJECTION => razor::handle_html_projection(req, runtime, csharp_sidecar),
         // NuGet package management

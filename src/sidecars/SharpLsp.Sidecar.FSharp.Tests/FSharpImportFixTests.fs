@@ -132,7 +132,7 @@ let ``open type imports a static member and a nested type with exact edits`` () 
             cleanup dir
     }
 
-let private projectXml name (references: string list) (packages: (string * string) list) =
+let internal projectXml name (references: string list) (packages: (string * string) list) =
     let projectReferences = references |> List.map (fun reference -> $"    <ProjectReference Include=\"{reference}\" />")
     let packageReferences = packages |> List.map (fun (id, version) -> $"    <PackageReference Include=\"{id}\" Version=\"{version}\" />")
     source
@@ -149,7 +149,7 @@ let private projectXml name (references: string list) (packages: (string * strin
           "</Project>" ]
     |> fun xml -> name, xml
 
-let private writeSolution root (projects: (string * string * string) list) =
+let internal writeSolution root (projects: (string * string * string) list) =
     projects
     |> List.iter (fun (name, xml, text) ->
         let directory = NativePaths.Resolve(root, name)
@@ -159,7 +159,7 @@ let private writeSolution root (projects: (string * string * string) list) =
     let entries = projects |> List.map (fun (name, _, _) -> $"  <Project Path=\"{name}/{name}.fsproj\" />")
     File.WriteAllText(NativePaths.Resolve(root, "Fixture.slnx"), source [ "<Solution>"; yield! entries; "</Solution>" ])
 
-let private loadSolution (projects: (string * string * string) list) =
+let internal loadSolution (projects: (string * string * string) list) =
     task {
         let root = NativePaths.Temp($"sharplsp-import-{Guid.NewGuid():N}")
         Directory.CreateDirectory(root) |> ignore
@@ -172,7 +172,7 @@ let private loadSolution (projects: (string * string * string) list) =
         return state, root
     }
 
-let private libraryPath (root: string) (name: string) =
+let internal libraryPath (root: string) (name: string) =
     NativePaths.Resolve(root, name, "Library.fs")
 
 [<Fact>]

@@ -818,6 +818,24 @@
         "icon": "$(list-ordered)"
       },
       {
+        "command": "sharplsp.goToRelatedFile",
+        "title": "%cmd.goToRelatedFile%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
+        "command": "sharplsp.goToNextMember",
+        "title": "%cmd.goToNextMember%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
+        "command": "sharplsp.goToPreviousMember",
+        "title": "%cmd.goToPreviousMember%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
         "command": "sharplsp.copyQualifiedName",
         "title": "%cmd.copyQualifiedName%",
         "category": "%category%"

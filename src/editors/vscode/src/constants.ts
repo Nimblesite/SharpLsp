@@ -58,6 +58,10 @@ export const CMD_ADD_FSHARP_FILE = 'sharplsp.addFSharpSourceFile';
 export const CMD_REMOVE_FSHARP_FILE = 'sharplsp.removeFSharpSourceFile';
 /** The command a reference quick fix carries. [REFACTOR-IMPORT-REFERENCE] */
 export const CMD_ADD_REFERENCE_AND_IMPORT = 'sharplsp.addReferenceAndImport';
+/** Editor navigation ([SHARPLSP-FEATURES-NAVIGATION-RELATED], [SHARPLSP-FEATURES-NAVIGATION-MEMBERS]). */
+export const CMD_GO_TO_RELATED_FILE = 'sharplsp.goToRelatedFile';
+export const CMD_GO_TO_NEXT_MEMBER = 'sharplsp.goToNextMember';
+export const CMD_GO_TO_PREVIOUS_MEMBER = 'sharplsp.goToPreviousMember';
 export const CMD_UPDATE_VULNERABLE_PACKAGE = 'sharplsp.nuget.updateVulnerable';
 /** VS Code context key: the Solution Explorer selection belongs to an F# project. */
 export const CONTEXT_FS_PROJECT_SELECTED = 'sharplsp.fsProjectSelected';
