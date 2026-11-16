@@ -292,6 +292,21 @@ const CASES: readonly RenameCase[] = [
     SYMBOLS_AND_USAGE,
   ),
   row(
+    'binary operator declaration and bound use',
+    'operator +(RenameDerived left',
+    '+',
+    '-',
+    2,
+    SYMBOLS_AND_USAGE,
+  ),
+  row(
+    'conversion operator keyword, with its cast left in place',
+    'explicit operator int(RenameDerived value)',
+    'explicit',
+    'implicit',
+    1,
+  ),
+  row(
     'namespace segment across every C# fixture document',
     'namespace SharpLsp.TestFixtures.RenameCoverage',
     'RenameCoverage',

@@ -94,9 +94,9 @@ public sealed class WorkspaceManagerRenameRoslynEditsTests(WorkspaceManagerQuery
         Assert.Equal(document.Edits, useDocument.Edits);
     }
 
-    /// <summary>[RENAME-PREPARE] Unary operators are excluded until their metadata mapping is supported.</summary>
+    /// <summary>[RENAME-PREPARE] A unary operator prepares on its own token, apart from the binary one.</summary>
     [Fact]
-    public async Task Prepare_rename_rejects_unsupported_unary_operator()
+    public async Task Prepare_rename_accepts_a_unary_operator_and_renames_only_it()
     {
         var source = WorkspaceManagerQueryFixture.Source;
         var offset =
@@ -109,7 +109,25 @@ public sealed class WorkspaceManagerRenameRoslynEditsTests(WorkspaceManagerQuery
             position.Character
         );
         Assert.False(prepared.IsError, prepared.Match(_ => "ok", error => error));
-        Assert.False((+prepared).CanRename);
+        Assert.True((+prepared).CanRename);
+        Assert.Equal("+", (+prepared).Placeholder);
+        var result = await fixture.Manager.RenameAsync(
+            fixture.SourcePath,
+            position.Line,
+            position.Character,
+            "-"
+        );
+        Assert.False(result.IsError, result.Match(_ => "ok", error => error));
+        var document = Assert.Single((+result).DocumentChanges);
+        // The unary declaration alone: the binary `+` and its uses keep their spelling.
+        Assert.Equal(
+            source.Replace(
+                "operator +(Number a) =>",
+                "operator -(Number a) =>",
+                StringComparison.Ordinal
+            ),
+            TextEditing.ApplyEdits(source, document.Edits)
+        );
     }
 
     /// <summary>[RENAME-ERRORS] An existing operator signature blocks the rename.</summary>

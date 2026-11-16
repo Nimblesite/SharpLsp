@@ -44,7 +44,7 @@ The five completed core items were verified against the latest published v0.32.1
 ### F# Rename
 
 - [x] Resolve `FSharpSymbolUse` at the cursor — `FSharpRename.fs`, `FSharpRenameSemanticTests`, [RENAME-FSHARP-PREPARE]
-- [ ] Validate new names for F# symbol kinds
+- [x] Validate new names for F# symbol kinds — `FSharpRenameNames.isValidNewName`: every kind with a compiler-enforced naming rule is covered by the rows below; all other kinds (types, modules, namespaces, values, members, parameters, record fields, enum cases) take any name the F# lexer accepts as one token of the same class, which the same function checks
   - [x] Reject compiler-reserved trailing `!` in ordinary and generic identifiers while accepting escaped names — `FSharpRenameSemanticTests`, [RENAME-ERRORS], issue #579
   - [x] Reject empty escaped identifiers that the F# lexer accepts but the compiler rejects with FS3563 — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
   - [x] Enforce uppercase union case names except on `RequireQualifiedAccess` types — `FSharpRenameSemanticTests`, [RENAME-ERRORS]
@@ -62,8 +62,9 @@ The five completed core items were verified against the latest published v0.32.1
 - [x] Classes, structs, interfaces, records, and delegates
 - [x] Enums
 - [x] Enum members
-- [ ] Methods, functions, local functions, operators, and conversion operators
-  - [x] Rename a C# binary `+` overload to `-` from its declaration or `+` use, updating bound `+` and `+=` uses and rejecting duplicate signatures; reject unary `+` until its distinct metadata mapping is supported — `WorkspaceManagerRenameRoslynEditsTests`, [RENAME-COVERAGE]
+- [x] Methods, functions, local functions, operators, and conversion operators
+  - [x] Rename a C# binary `+` overload to `-` from its declaration or `+` use, updating bound `+` and `+=` uses and rejecting duplicate signatures — `WorkspaceManagerRenameRoslynEditsTests`, [RENAME-COVERAGE]
+  - [x] Every overloadable C# operator respells to another of the same arity — binary, unary prefix and postfix, compound assignment — and a conversion operator turns `implicit` ↔ `explicit`, casting each implicit use; the compiler refuses a respelling that adds an error — `WorkspaceManagerRenameOperatorsTests`, real-editor rows in `lsp-rename-symbols.test.ts`, [RENAME-CSHARP-OPERATORS]
 - [x] Constructors via containing type rename
 - [x] Properties and indexers
 - [x] Fields and events
@@ -76,11 +77,11 @@ The five completed core items were verified against the latest published v0.32.1
 - [x] F# discriminated union cases
 - [x] F# active patterns
 
-The real-editor C# 37-case symbol suite and F# 27-case symbol suite passed on 2026-11-12. The F# 15-case edge suite separately verified indexer and namespace rename. Each symbol case prepares, applies, rechecks, and reverses its exact edits; other C# operators and conversion-operator rename remain open.
+The real-editor C# 37-case symbol suite and F# 27-case symbol suite passed on 2026-11-12. The F# 15-case edge suite separately verified indexer and namespace rename. Each symbol case prepares, applies, rechecks, and reverses its exact edits.
 
 ### Rename Tests
 
-- [ ] E2E test: `prepareRename` range and placeholder for every code element category
+- [x] E2E test: `prepareRename` range and placeholder for every code element category — `assertPrepareCoverage` in `csharp-rename-test-kit.ts` and the prepare assertion of `fsharp-rename-test-kit.ts` assert the exact range and placeholder at the start, middle and end of the token for every row of the C# and F# real-editor matrices, operators and conversion operators included, [RENAME-TESTS]
 - [x] E2E test: rename updates declarations and references across files — `fsharp-lsp-rename-symbols.test.ts` checks exact declaration and usage edits across two `.fs` files, applies them, rechecks diagnostics, and undoes them; all 26 matrix cases passed locally on 2026-11-12, [RENAME-TESTS]
 - [x] E2E test: rename after document edit uses latest VFS content — `lsp-rename-edge.test.ts` and `fsharp-lsp-rename-edge.test.ts` prepare, apply, reverse and undo renames of unsaved C# and F# bindings, [RENAME-TESTS]
 - [x] E2E test: invalid new names are rejected — `RefactorEndToEndTests` requires an error and no payload for six invalid C# names; `FSharpNavigationEdgeTests` requires the compiler-backed F# refusal, [RENAME-ERRORS]. The #559 regression also passed a real LSP probe with the fixed C# engine; released v0.32.1 still has the bug.
@@ -99,4 +100,4 @@ The unsaved C# case, three F# name variants and four cross-language type/propert
 ## Misc
 
 - [ ] Regex syntax highlighting in string literals
-  - Finding (2026-11-16, Roslyn 5.9): the public `Classifier.GetClassifiedSpansAsync` and the internal `ClassifierHelper` return one `string` span for a regex literal. The internal `IEmbeddedLanguageClassificationService` (Workspaces) is reachable by reflection and runs with `ColorizeRegexPatterns = True`, yet in an `AdhocWorkspace(MefHostServices.DefaultHost)` with the full framework references it yields only the fallback `string - escape character` spans, so the regex `IEmbeddedLanguageClassifier` is not being composed or not detecting `new Regex(...)`. Next step: find why (MEF export of the Features-layer regex classifier, or its `StringSyntax` detection) before mapping `regex - *` classifications to the `regexp` token type in `SemanticTokensResolver.MapClassification`.
+  - Finding (2026-11-16, Roslyn 5.9): the public `Classifier.GetClassifiedSpansAsync` and the internal `ClassifierHelper` return one `string` span for a regex literal. The internal `IEmbeddedLanguageClassificationService` (Workspaces) is reachable by reflection and runs with `ColorizeRegexPatterns = True`, but in a host composed from `MefHostServices.DefaultAssemblies` (Workspaces + Features, C# and core) it holds **zero** embedded-language classifiers (`_identifierToServices` and `_legacyServices` are empty), so only the fallback `string - escape character` spans come back: the regex classifier is not exported by the assemblies the sidecar ships. Options: compose the assembly that exports it, if one is redistributable; or tokenize the pattern in the sidecar (escapes, classes, quantifiers, groups, anchors, alternation) over the literal's `VirtualChar`-equivalent offsets and map to the `regexp` token type in `SemanticTokensResolver`.
