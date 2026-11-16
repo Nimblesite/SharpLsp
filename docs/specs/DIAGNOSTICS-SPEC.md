@@ -119,6 +119,15 @@ project_filter = ["MyApp.Core", "MyApp.Api", "MyApp.Tests.*"]
 
 When empty (default), every project in the solution is included. Per-document pulls (`textDocument/diagnostic`) are never filtered — the editor asked for that file specifically, so the server always answers.
 
+### [DIAG-CONFIG-OWNED-SOURCES] Workspace Diagnostics Cover the Developer's Sources
+
+Workspace-wide diagnostics report files a developer owns. Two kinds of file a workspace holds are nobody's to fix, and neither gets a workspace report, not even an empty one:
+
+- **Build output.** A source file under a directory named `obj` or `bin` — the SDK's `obj/…AssemblyInfo.fs`, a pinned or generated source a project compiles from `obj/` — is compiled with its project but is never listed for workspace diagnostics, in either engine. The one test is each tier's path module (`NativePaths.IsBuildOutput`).
+- **Gitignored projects.** Folder discovery ([SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY]) leaves out every project and solution file git ignores, asked of git itself (`git check-ignore`), so a gitignored clone or scratch folder loads no project and reports nothing. A nested clone is ignored by the repository around it like any other ignored folder. Without git, outside a repository, or when git does not answer within its budget, nothing is treated as ignored.
+
+Neither rule hides a file from its owner's eyes: a file opened in the editor answers `textDocument/diagnostic` as any document does, and a folder that is itself gitignored, opened on purpose as the workspace, keeps all its projects.
+
 ### [DIAG-CONFIG-RELOAD] Runtime Reconfiguration
 
 Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. Changing `solution_wide_analysis`, `project_filter`, or `min_severity` bumps `global_state_version` and triggers `workspace/diagnostic/refresh` so the editor re-pulls under the new policy.

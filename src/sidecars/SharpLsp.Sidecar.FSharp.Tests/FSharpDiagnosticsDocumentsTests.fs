@@ -30,6 +30,9 @@ let private extraSource =
 let private hintsSource =
     "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n"
 
+/// Generated build output, with an unused open a developer would be told about.
+let private generatedSource = "module TestProject.Generated\n\nopen System.Text\n\nlet generated = 1\n"
+
 /// A file with a real F# syntax error that the loaded project does NOT compile.
 let private orphanSource = "module TestProject.Orphan\n\nlet broken = (\n"
 
@@ -47,11 +50,17 @@ let private createFixtureProject () =
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="obj/Generated.fs" />
     <Compile Include="Valid.fs" />
     <Compile Include="Extra.fs" />
     <Compile Include="Hints.fs" />
   </ItemGroup>
 </Project>""")
+
+    // Build output the project compiles, as the SDK's obj/…AssemblyInfo.fs is: its unused
+    // open is a real finding nobody owns. [DIAG-CONFIG-OWNED-SOURCES]
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "obj")) |> ignore
+    File.WriteAllText(NativePaths.Resolve(dir, "obj", "Generated.fs"), generatedSource)
 
     File.WriteAllText(NativePaths.Resolve(dir, "Valid.fs"), validSource)
     File.WriteAllText(NativePaths.Resolve(dir, "Extra.fs"), extraSource)
@@ -78,6 +87,7 @@ type EngineDiagnosticsFixture() =
     member _.Extra = NativePaths.Resolve(dir, "Extra.fs")
     member _.Hints = NativePaths.Resolve(dir, "Hints.fs")
     member _.Orphan = NativePaths.Resolve(dir, "Orphan.fs")
+    member _.Generated = NativePaths.Resolve(dir, "obj", "Generated.fs")
     member _.Notifications = notifications.ToArray()
 
     member private _.ReadEnvelope(transport: FramedTransport, ct: CancellationToken) : Task<Envelope> = task {
@@ -241,6 +251,15 @@ type EngineDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
             // Not part of the loaded workspace's source set.
             Assert.DoesNotContain<string>(fixture.Orphan, paths)
             Assert.Equal(paths.Length, paths |> Array.distinct |> Array.length)
+            // [DIAG-CONFIG-OWNED-SOURCES] Build output the project compiles is never listed:
+            // the three developer files are the whole enumeration.
+            Assert.DoesNotContain<string>(fixture.Generated, paths)
+            Assert.DoesNotContain(paths, fun path -> NativePaths.IsBuildOutput path)
+            Assert.Equal<string array>(Array.sort [| fixture.Valid; fixture.Extra; fixture.Hints |], Array.sort paths)
+            // Opened directly, the generated file still gets its own diagnostics: the unused open.
+            let! direct = fixture.Diagnostics(fixture.Generated)
+            Assert.Contains(direct, fun diagnostic -> diagnostic.Code = "SLSPF0102")
+            Assert.DoesNotContain(direct, fun diagnostic -> diagnostic.Severity = "Error")
         }
 
     [<Fact>]

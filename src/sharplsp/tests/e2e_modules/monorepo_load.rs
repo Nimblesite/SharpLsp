@@ -274,3 +274,56 @@ fn solution_still_loads_csharp_project_it_does_not_list() {
     assert_no_push(&traffic);
     client.shutdown_and_exit();
 }
+
+/// [DIAG-CONFIG-OWNED-SOURCES] F# first: workspace diagnostics report the
+/// developer's files only. Build output the project compiles and projects under
+/// a gitignored folder have no report at all, while either still answers its
+/// own diagnostics once opened.
+#[test]
+fn workspace_pull_reports_neither_build_output_nor_gitignored_projects() {
+    require_dotnet();
+    let workspace = create_repository_with_unowned_sources();
+    let mut client = monorepo_client(&workspace);
+    let mut traffic = Vec::new();
+    let stats = workspace.root.join("apps/stats");
+    let stats_uri = path_to_file_uri(&stats.join("Stats.fs"));
+
+    // Interaction 1 — the developer's closed file is reported: the workspace loaded.
+    let response = poll_closed_error(
+        &mut client,
+        &stats_uri,
+        "FS0001",
+        "sharplsp-fsharp",
+        &mut traffic,
+    );
+    let uris: Vec<&str> = workspace_reports(&response)
+        .iter()
+        .filter_map(|report| report["uri"].as_str())
+        .collect();
+
+    // Interaction 2 — nothing under `obj/` or the gitignored `vendor/` has a report.
+    assert!(
+        uris.iter().all(|uri| !uri.contains("/obj/")),
+        "build output is never reported: {uris:?}"
+    );
+    assert!(
+        uris.iter().all(|uri| !uri.contains("/vendor/")),
+        "gitignored projects are never reported: {uris:?}"
+    );
+    assert_eq!(uris, [stats_uri.as_str()], "the one owned source file");
+
+    // Interaction 3 — opened on purpose, the generated file answers for itself.
+    let generated_uri = path_to_file_uri(&stats.join("obj/Generated.fs"));
+    client.notify(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": generated_uri, "languageId": "fsharp", "version": 1,
+               "text": GENERATED_FS}}),
+    );
+    let generated = document_diagnostics(&mut client, &generated_uri, "obj/Generated.fs pull");
+    assert!(
+        generated.iter().any(|item| item["code"] == "FS0001"),
+        "an opened generated file still gets its diagnostics: {generated:?}"
+    );
+
+    client.shutdown_and_exit();
+}

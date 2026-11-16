@@ -38,7 +38,12 @@ let projectDocuments (state: FSharpWorkspace.FSharpWorkspaceState) : DiagnosticD
 /// Every source document of every loaded project, the workspace's first, each once —
 /// by the one path identity, so a multi-framework build and a file two projects
 /// compile are answered once, by their first owner, matching who checks them.
+/// Generated sources in build output (`obj/…AssemblyInfo.fs`) are the build's, not
+/// the developer's: they are never listed. [DIAG-CONFIG-OWNED-SOURCES]
 let sourceDocuments (state: FSharpWorkspace.FSharpWorkspaceState) : DiagnosticDocument array =
     FSharpWorkspace.projectOptions state
-    |> Seq.collect (fun options -> options.SourceFiles |> Array.map (documentOf options))
+    |> Seq.collect (fun options ->
+        options.SourceFiles
+        |> Array.filter (NativePaths.IsBuildOutput >> not)
+        |> Array.map (documentOf options))
     |> distinctDocuments

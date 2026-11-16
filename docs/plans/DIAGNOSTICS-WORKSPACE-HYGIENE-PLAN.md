@@ -23,10 +23,10 @@ test diagnostics. Specs: [DIAG-CONFIG], [DIAG-TRUTH-RECOVERY], [SHARPLSP-ARCHITE
 
 Workspace-wide diagnostics must not report files no developer owns. Rider/VS never lint `obj/`.
 
-- [ ] Failing E2E test: open the repo-shaped fixture with a gitignored nested repo and an `obj/*.AssemblyInfo.fs`; assert workspace pull returns zero reports for both while an opened file there still gets direct-document diagnostics
-- [ ] Exclude `bin/`/`obj/` generated sources from workspace pulls in both engines via the tier path modules (`paths.rs`, `NativePaths`) — reuse `paths/inputs.rs` obj/bin detection, no new path code
-- [ ] Exclude gitignored paths from workspace pulls (folder-workspace discovery skips projects under ignored dirs; `real-world-fixtures/` disappears)
-- [ ] Spec the rule under [DIAG-CONFIG] in `docs/specs/DIAGNOSTICS-SPEC.md` with an ID and cite it in code/tests
+- [x] Failing E2E test: open the repo-shaped fixture with a gitignored nested repo and an `obj/*.AssemblyInfo.fs`; assert workspace pull returns zero reports for both while an opened file there still gets direct-document diagnostics
+- [x] Exclude `bin/`/`obj/` generated sources from workspace pulls in both engines via the tier path modules (`paths.rs`, `NativePaths`) — reuse `paths/inputs.rs` obj/bin detection, no new path code
+- [x] Exclude gitignored paths from workspace pulls (folder-workspace discovery skips projects under ignored dirs; `real-world-fixtures/` disappears)
+- [x] Spec the rule under [DIAG-CONFIG] in `docs/specs/DIAGNOSTICS-SPEC.md` with an ID and cite it in code/tests
 - [ ] If IDE0001/IDE0002 are false positives (`dotnet build` with `EnforceCodeStyleInBuild` is clean on the same lines, e.g. `CSharpSidecar.cs:172` `Outcome.Result` qualification), file a GitHub bug and fix via the bug-fix process; otherwise fix the code
 
 ## [DIAG-HYGIENE-CODE] Our code to fix

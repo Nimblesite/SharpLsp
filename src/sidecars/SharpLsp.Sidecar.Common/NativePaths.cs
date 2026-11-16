@@ -275,7 +275,8 @@ public static partial class NativePaths
     /// Every file under <paramref name="root"/> ending in one of <paramref name="extensions"/>
     /// (dot included, by the case rule). Build output, JS packages and dot-directories
     /// (<c>.git</c>, <c>.vs</c>, <c>.vscode-test</c>) are never entered, nor is a directory
-    /// reparse point, so a link cycle cannot loop the walk.
+    /// reparse point, so a link cycle cannot loop the walk. Files git ignores are left out
+    /// ([DIAG-CONFIG-OWNED-SOURCES]).
     /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
     /// </summary>
     public static string[] WorkspaceFiles(string root, params string[] extensions)
@@ -297,7 +298,17 @@ public static partial class NativePaths
             ShouldRecursePredicate = static (ref entry) =>
                 IsWalked(entry.FileName, entry.Attributes),
         };
-        return [.. files];
+        return GitIgnore.Kept(root, [.. files]);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="path"/> lies in build output: under a directory named
+    /// <c>obj</c> or <c>bin</c>. Generated sources there belong to the build, not the
+    /// developer. Implements [DIAG-CONFIG-OWNED-SOURCES].
+    /// </summary>
+    public static bool IsBuildOutput(string path)
+    {
+        return HasDirectory(path, "obj") || HasDirectory(path, "bin");
     }
 
     private static bool EndsInAny(ReadOnlySpan<char> name, string[] extensions)
