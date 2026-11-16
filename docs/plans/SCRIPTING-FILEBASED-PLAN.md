@@ -153,14 +153,14 @@ remaining gaps are explicit rather than implied.
 
 ### Phase 2 — tier 1 references
 
-- [ ] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
-      never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
-      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
-      [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
-- [ ] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
-      — [SCRIPT-FILEBASED-REFERENCES-MSBUILD]
+- [x] Synthesize the virtual project via `Microsoft.Build.Construction.ProjectRootElement` (XML DOM,
+      never string concatenation) — implements [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `WriteProject`
+- [x] Cache directory keyed by hash of the root file's full path, mirroring the SDK's
+      `<temp>/dotnet/runfile/<appname>-<appfilesha>/` scheme — [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `WorkDirectory`
+- [x] Run `dotnet restore`, then load through the existing `MSBuildWorkspace` path —
+      [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `RestoreAsync`, `LoadReferencesAsync`
+- [x] Apply SDK defaults (`ImplicitUsings`, `Nullable`, `TargetFramework`, `PublishAot`, `PackAsTool`)
+      — [SCRIPT-FILEBASED-REFERENCES-MSBUILD] — `FileBasedPackageResolver.cs` `DefaultProperties`
 - [x] Automatic tier 2 → tier 1 upgrade when restore completes — [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
 - [x] The upgrade reaches the editor: the tier-2 notice carries `SLSPC0002` while the restore runs
       and `SLSPC0001` once it terminally fails, and the host republishes a document's diagnostics
@@ -219,8 +219,8 @@ Still to write:
 - [x] Host-level: opening a `.cs` does not spawn the F# sidecar, and vice versa — [SCRIPT-ROUTE-LAZY] — `lazy_routing.rs`,
       counting the host's compiler children by apphost; it found both #554 (the workspace scan started FCS) and #553
       (hover on an F# token right after another token was dropped as whitespace)
-- [ ] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS]
-- [ ] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET]
+- [x] `.cs` file-based app with `#:package`: package symbols bind after restore (phase 2) — [SCRIPT-TESTS] — VSIX `filebased-package-e2e.test.ts`, sidecar `FileBasedPackageSpecEndToEndTests.cs`
+- [x] `.fsx` with `#r "nuget:"` resolves after dependency resolution — [SCRIPT-FSX-NUGET] — `fsharp_script_packages.rs` `an_fsharp_script_binds_the_symbols_of_its_nuget_reference` (a packed local feed; hover, namespace, FS0039 on an undeclared member)
 
 ### Test debt inherited from PR #188
 
