@@ -69,6 +69,27 @@ pub fn project_ambient_inputs(project_directory: &Path) -> impl Iterator<Item = 
         .chain([project_directory.join("obj").join("project.assets.json")])
 }
 
+/// What a rescan compares for the workspace a compiler opened: the solution or
+/// folder itself and, for a folder, each directory between it and the `files` it
+/// loaded. An edited solution changes the first; a project created in a new
+/// directory of the folder changes one of the others. [DIAG-LSP-REFRESH]
+pub fn opened_workspace_inputs<'a>(
+    target: &'a str,
+    files: &'a [String],
+) -> impl Iterator<Item = PathBuf> + 'a {
+    let between = files
+        .iter()
+        .filter_map(super::directory_of)
+        .flat_map(|directory| {
+            directory
+                .ancestors()
+                .map(Path::to_path_buf)
+                .collect::<Vec<_>>()
+        })
+        .filter(move |directory| super::path_within(target, &directory.to_string_lossy()));
+    std::iter::once(PathBuf::from(target)).chain(between)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

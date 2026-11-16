@@ -154,9 +154,10 @@ impl LoadedGraph {
         }
     }
 
-    /// Whether anything it loaded changed after its last open: a source or project
-    /// file, the directory holding one (a file added or removed beside it), or
-    /// configuration and restore assets around its projects. A compiler that
+    /// Whether anything it opened or loaded changed after its last open: a source or
+    /// project file, the directory holding one (a file added or removed beside it),
+    /// configuration and restore assets around its projects, or the solution or folder
+    /// it opened. A compiler that
     /// loaded nothing has nothing to compare and reloads.
     fn changed_since_open(&self) -> bool {
         let directories = self.files.iter().filter_map(paths::directory_of);
@@ -167,6 +168,10 @@ impl LoadedGraph {
                 paths::project_ambient_inputs(Path::new(project)).collect::<Vec<_>>()
             })
             .filter(|path| path.exists());
+        let opened = self
+            .target
+            .iter()
+            .flat_map(|target| paths::opened_workspace_inputs(target, &self.files));
         self.files.is_empty()
             || self
                 .files
@@ -174,6 +179,7 @@ impl LoadedGraph {
                 .any(|file| written_after(file, self.settled))
             || directories
                 .chain(ambient)
+                .chain(opened)
                 .any(|path| written_after(&path, self.settled))
     }
 

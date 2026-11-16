@@ -16,7 +16,10 @@ mod inherited;
 mod inputs;
 mod nuget;
 pub use family::family_siblings;
-pub use inherited::{diagnostic_input_in_scope, diagnostic_watch_scopes, project_ambient_inputs};
+pub use inherited::{
+    diagnostic_input_in_scope, diagnostic_watch_scopes, opened_workspace_inputs,
+    project_ambient_inputs,
+};
 pub use inputs::{
     diagnostic_requires_reload, diagnostic_restore_output, exists, is_diagnostic_input,
     is_diagnostic_source, is_directory, is_fsharp_diagnostic_input, is_project_graph_file,
