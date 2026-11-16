@@ -122,7 +122,6 @@ let private withoutParameters (signature: string) =
     | at -> signature[.. at - 1]
 
 /// The types enclosing `name`, innermost first.
-[<TailCall>]
 let rec private enclosingTypes (name: string) =
     match name.LastIndexOf '.' with
     | -1 -> []
