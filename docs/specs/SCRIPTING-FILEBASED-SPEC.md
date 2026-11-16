@@ -223,9 +223,13 @@ Per [SIDECAR-HEALTH-ACTIVITY](SIDECAR-LIFECYCLE-SPEC.md), the per-language super
 
 Editing a `#:package`, `#:project`, `#:sdk`, or `#:include` directive changes the compilation closure and reference set. On `didChange`, the sidecar re-parses directives from the in-memory text and, if the directive set changed, schedules a workspace reload debounced by `sharplsp.toml`'s `server.debounce_ms`. Text-only edits never trigger reload.
 
+The project falls back to its tier-2 references at once, and the package restore waits out the window: a later directive edit inside it supersedes the earlier one, whose packages are never restored. The host sends the window to the sidecar as the fourth field of `diagnostics/configure`; an older host sends none and the reload is immediate.
+
 ### Closure membership changes `[SCRIPT-RELOAD-CLOSURE]`
 
 A file entering or leaving the `#:include` / `#:load` closure adds or removes a Roslyn document. Removal must also clear published diagnostics for that file, otherwise stale squiggles persist in files no longer part of the app.
+
+The sidecar raises `diagnostics/refresh` when a closure's membership changes. For a client served by `textDocument/publishDiagnostics`, the host then reconciles what it published with the documents the compiler lists: a file that left and that the editor does not hold open is published empty, and a file that entered is published. The app's implicit usings are a synthetic document: it is never listed, so nothing is published for it.
 
 A `didChange` can arrive for **any** member of a closure, not just its root: the host re-syncs on-disk text for every file it has published diagnostics against, and an `#:include`d file the editor never opened is one of them. The refresh is therefore always re-expanded from the **root** recorded on the project, with the changed file's in-memory text substituted wherever it appears in the closure. Re-expanding from the changed file instead treats a member as if it were a root, yields a closure that does not contain the real root, and prunes the root out of its own project — leaving the document the user is editing with no Roslyn document at all.
 

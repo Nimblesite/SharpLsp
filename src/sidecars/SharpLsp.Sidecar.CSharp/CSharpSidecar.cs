@@ -139,6 +139,9 @@ internal sealed partial class CSharpSidecar : SidecarHost
             );
             _workspace.ConfigureDiagnostics(request.AnalyzersEnabled);
             _workspace.AutoRestoreOnOpen = request.AutoRestoreOnOpen ?? true;
+            _workspace.DirectiveReloadDebounce = TimeSpan.FromMilliseconds(
+                request.ReloadDebounceMs ?? 0
+            );
             _refreshSupported = request.RefreshSupported;
             var bytes = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
             return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));

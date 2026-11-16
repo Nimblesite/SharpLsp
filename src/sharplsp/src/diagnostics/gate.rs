@@ -68,3 +68,11 @@ pub(super) fn mark_published(uri: &Uri, provisional: bool) {
 pub fn published_set_is_provisional(uri: &Uri) -> bool {
     PROVISIONAL_PUBLISHED.contains(uri.as_str())
 }
+
+/// Every document with a push generation: published, or being fetched.
+pub(super) fn tracked() -> Vec<String> {
+    PUSH_GENERATIONS
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect()
+}

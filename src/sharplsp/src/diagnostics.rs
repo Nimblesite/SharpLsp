@@ -17,6 +17,7 @@ use crate::vfs::Vfs;
 
 mod convert;
 mod gate;
+mod membership;
 mod msbuild;
 mod policy;
 mod restored;
@@ -28,6 +29,7 @@ pub use gate::published_set_is_provisional;
 #[cfg(test)]
 use gate::PROVISIONAL_PUBLISHED;
 use gate::{current_generation, is_current, next_generation, PUSH_GENERATIONS};
+pub use membership::reconcile;
 pub(crate) use restored::publish_after_restore;
 
 /// Delay between retries of a failed push fetch. [DIAG-PUSH-GATE]
@@ -268,6 +270,17 @@ pub fn request_solution_in_background(
     }));
 }
 
+/// Publish one document a compiler has just started listing.
+async fn publish_entered(
+    sidecar: &SidecarManager,
+    sender: &crossbeam_channel::Sender<Message>,
+    uri: &Uri,
+    path: &str,
+) {
+    let (tag, generation) = (source_tag_for_path(path), next_generation(uri));
+    fetch_and_publish_gated(sidecar, sender, uri, path, tag, generation).await;
+}
+
 /// Legacy editors use the same per-document truth with generation-gated pushes.
 async fn publish_solution(
     sidecar: &SidecarManager,
@@ -276,16 +289,7 @@ async fn publish_solution(
 ) -> Result<()> {
     for path in crate::pull_diagnostics::paths_for_sidecar(sidecar, filter).await? {
         let uri = crate::paths::path_to_lsp_uri(&path)?;
-        let generation = next_generation(&uri);
-        fetch_and_publish_gated(
-            sidecar,
-            sender,
-            &uri,
-            &path,
-            source_tag_for_path(&path),
-            generation,
-        )
-        .await;
+        publish_entered(sidecar, sender, &uri, &path).await;
     }
     Ok(())
 }

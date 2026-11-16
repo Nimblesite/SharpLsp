@@ -17,4 +17,11 @@ public sealed class DiagnosticsConfiguration
     /// <summary>Null preserves the default for older two-field hosts. [DIAG-RESTORE]</summary>
     [Key(2)]
     public bool? AutoRestoreOnOpen { get; set; }
+
+    /// <summary>
+    /// <c>server.debounce_ms</c>: how long a directive edit waits before its reload. Null, from
+    /// an older host, reloads at once. [SCRIPT-RELOAD]
+    /// </summary>
+    [Key(3)]
+    public int? ReloadDebounceMs { get; set; }
 }

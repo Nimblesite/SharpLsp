@@ -272,6 +272,7 @@ fn run_server() -> Result<()> {
         [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
         &runtime,
         &connection.sender,
+        &vfs,
     );
 
     let csharp_event_pump =

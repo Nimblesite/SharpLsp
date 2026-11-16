@@ -178,7 +178,9 @@ pub(crate) async fn configure_diagnostics(
     analyzers_enabled: bool,
     auto_restore_on_open: bool,
 ) -> Result<()> {
-    let payload = rmp_serde::to_vec(&(analyzers_enabled, true, auto_restore_on_open))?;
+    // The fourth field is `server.debounce_ms`, the directive reload window. [SCRIPT-RELOAD]
+    let debounce_ms = crate::semantic::requests::debounce_ms();
+    let payload = rmp_serde::to_vec(&(analyzers_enabled, true, auto_restore_on_open, debounce_ms))?;
     let _response = sidecar.request("diagnostics/configure", payload).await?;
     Ok(())
 }

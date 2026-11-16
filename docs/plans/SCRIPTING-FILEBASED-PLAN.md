@@ -148,9 +148,13 @@ remaining gaps are explicit rather than implied.
 
 ### Lifecycle
 
-- [ ] Re-parse directives on `didChange`; reload only when the directive set changed, debounced by
-      `server.debounce_ms` — implements [SCRIPT-RELOAD]
-- [ ] Clear published diagnostics for files leaving the closure — implements [SCRIPT-RELOAD-CLOSURE]
+- [x] Re-parse directives on `didChange`; reload only when the directive set changed, debounced by
+      `server.debounce_ms` — implements [SCRIPT-RELOAD]: the host sends the window in
+      `diagnostics/configure`, and a directive typed keystroke by keystroke restores once —
+      `Directive_edits_restore_once_after_the_debounce_and_text_edits_never_do`
+- [x] Clear published diagnostics for files leaving the closure — implements [SCRIPT-RELOAD-CLOSURE]:
+      the sidecar signals a membership change and the host reconciles what it published —
+      `file_based_closure.rs` `a_file_leaving_the_include_closure_has_its_published_diagnostics_cleared`
 
 ### Phase 2 — tier 1 references
 
