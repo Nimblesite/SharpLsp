@@ -450,6 +450,15 @@ When a file changes:
 - The host's debounced refresh queue collapses bursts; the LSP `workspace/diagnostic/refresh` notification fires once per debounce window.
 - The editor re-pulls. Files whose salsa inputs did not change return `{ kind: "unchanged" }` because their `resultId` remains valid.
 
+## [DIAG-HYGIENE-GUARD] The Repository's Own Diagnostics
+
+SharpLsp is its own first user: opened on this repository, its Problems panel shows nothing but the fixtures that exist to demonstrate diagnostics. A guard keeps it so.
+
+- **The guard.** `tools/ci/workspace-diagnostics.mjs` starts the real host over stdio on a folder (this checkout by default), initializes as an editor does, waits for `workspace/projectInitializationComplete`, pulls `workspace/diagnostic` until two pulls agree with no refresh between them, and fails when any diagnostic of any severity lies outside the allow-list. `make _check-workspace-diagnostics` runs it; CI runs that in the Tooling job with the prebuilt host and sidecars, after a Debug build that gives every project the design-time references its compilers read.
+- **The allow-list** is path parts, not codes: `/diagnostic-lint`, `/diagnostic-tags`, `/diagnostic-cancellation`, and `/test-fixtures/workspace/fsharp/CodeFixes.fs`, the file the code-fix suites remove an unused open and a redundant qualifier from. Nothing else may carry a diagnostic.
+- **What keeps it at zero.** Build output and gitignored projects are never reported ([DIAG-CONFIG-OWNED-SOURCES]). The repository's `fsharplint.json` is FSharpLint's default configuration, which the linter requires in full, with one rule off: `ensureTailCallDiagnosticsInRecursiveFunctions` asks for `[<TailCall>]` on every `rec`, which a local function cannot carry and tree or task recursion cannot honour. The functions that are tail-recursive carry the attribute, and the F# projects turn on FS3569, so the compiler fails a build whose `[<TailCall>]` function is not. Six fixture lines whose names and positions tests assert suppress their one finding with a trailing `fsharplint:disable-line`, which moves no position; three synchronous bridges keep `Async.RunSynchronously` with the reason stated above them.
+- **Fixing at the compilers' ranges.** `tools/debug/fix-diagnostics.mjs` runs the same pull and repairs one code at a time without searching source text: `--code` edits each reported range (parenthesise a single-tuple list element, drop the qualifier Roslyn marks unnecessary), `--fix-all` applies the server's own *Fix all in solution* action, and `--rename` renames each identifier a naming rule reports through `textDocument/rename`. The clean-up from 4,460 diagnostics to zero was done with it, and found four product bugs on the way: quick fixes missing for promoted IDE rules ([DIAG-CATEGORIES-ANALYZER]), a class holding only a `[ModuleInitializer]` reported dead, an F# rename that accepted a name its module already declared ([RENAME-ERRORS]), and string contents escaping the tree-sitter pre-validation ([DEFINITION-PERFORMANCE]).
+
 ## [DIAG-TRUTH] Truth Guarantees
 
 ### [DIAG-TRUTH-GUARANTEES] Guarantees
