@@ -11,7 +11,7 @@ open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
 
 /// A project's referenced assemblies, grouped by the file each one is read from.
-let private referencedFiles (context: FSharpProjectContext) =
+let internal referencedFiles (context: FSharpProjectContext) =
     context.GetReferencedAssemblies() |> List.groupBy _.FileName
 
 /// One referenced assembly file's public entities, from the workspace's cache once built.
@@ -39,11 +39,3 @@ let warm state (context: FSharpProjectContext) (ct: CancellationToken) =
     |> List.iter (fun reference ->
         ct.ThrowIfCancellationRequested()
         contentOf state reference |> ignore)
-
-/// Whether the entities of every assembly file `context` references are built. FCS's
-/// cache entry type is internal, so its option's members cannot be called from here: an
-/// entry is told apart by presence alone, since a missing one is the null option.
-let internal isBuilt (state: FSharpWorkspace.FSharpWorkspaceState) (context: FSharpProjectContext) =
-    let cache = state.Entities :> IAssemblyContentCache
-    referencedFiles context
-    |> List.forall (fun (fileName, _) -> fileName |> Option.forall (fun file -> not (obj.ReferenceEquals(cache.TryGet file, null))))

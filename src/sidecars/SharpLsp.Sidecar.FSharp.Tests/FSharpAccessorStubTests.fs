@@ -143,7 +143,7 @@ let ``a get-and-set member is implemented, so only the missing member is offered
             let! text = stubTextAt state paths 7 15
 
             match text with
-            | None -> failwith "no interface stub offered for the get/set implementation"
+            | None -> failwith "no interface stub offered when the get/set implementation is applied"
             | Some text ->
                 Assert.Contains("Reset", text)
                 Assert.DoesNotContain("Value", text)

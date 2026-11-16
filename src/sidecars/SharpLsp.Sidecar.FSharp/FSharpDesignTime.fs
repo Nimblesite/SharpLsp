@@ -184,7 +184,7 @@ let private propertyOf (document: JsonDocument) (name: string) =
 /// Whether the project file itself declares `<TargetFrameworks>`: the cheap test that
 /// decides whether MSBuild is asked at all.
 let declaresTargetFrameworks (fsprojPath: string) =
-    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get "TargetFrameworks")
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), raise).Descendants(XName.Get "TargetFrameworks")
     |> Seq.isEmpty
     |> not
 

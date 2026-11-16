@@ -1,6 +1,6 @@
-/// MessagePack wire-contract types for diagnostics and the code actions that
-/// fix them, shared by the analyzers, the quick fixes and the sidecar's
-/// handlers. Positional [<Key(n)>] layouts mirror the C# sidecar's.
+// MessagePack wire-contract types for diagnostics and the code actions that
+// fix them, shared by the analyzers, the quick fixes and the sidecar's
+// handlers. Positional [<Key(n)>] layouts mirror the C# sidecar's.
 namespace SharpLsp.Sidecar.FSharp
 
 open MessagePack

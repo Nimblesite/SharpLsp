@@ -1,6 +1,6 @@
-/// MessagePack wire-contract types for completion and its resolve: positional
-/// [<Key(n)>] layouts mirror the Rust host's `SidecarCompletionItem` and its
-/// resolve request and result.
+// MessagePack wire-contract types for completion and its resolve: positional
+// [<Key(n)>] layouts mirror the Rust host's `SidecarCompletionItem` and its
+// resolve request and result.
 namespace SharpLsp.Sidecar.FSharp
 
 open MessagePack

@@ -245,7 +245,7 @@ let deadCodeFor (symbol: string) (diags: DiagnosticResult array) =
 type SidecarFixture() =
     let dir = createTestProject ()
     let sock = NativePaths.Temp($"sharplsp-e2e-{Guid.NewGuid():N}.sock")
-    let sidecar = new FSharpSidecar()
+    let sidecar = FSharpSidecar()
     let mutable transport: FramedTransport option = None
     let mutable nextId = 0
     // A single FramedTransport multiplexes every request from this shared
@@ -275,7 +275,7 @@ type SidecarFixture() =
     interface IAsyncLifetime with
         member this.InitializeAsync() = task {
             if File.Exists(sock) then File.Delete(sock)
-            let _ = Task.Run(fun () -> sidecar.RunAsync(sock))
+            Task.Run(fun () -> sidecar.RunAsync(sock)) |> ignore
 
             let mutable ok = false
             for _ in 1..100 do
@@ -283,10 +283,10 @@ type SidecarFixture() =
                     do! Task.Delay(50)
                     let! result = IpcConnection.ConnectAsync(sock)
                     let stream =
-                        result.Match((fun value -> Some value), (fun _ -> None))
+                        result.Match(Some, (fun _ -> None))
                     match stream with
                     | Some value ->
-                        transport <- Some(new FramedTransport(value))
+                        transport <- Some(FramedTransport(value))
                         ok <- true
                     | None -> ()
             if not ok then failwith "Cannot connect to F# sidecar"

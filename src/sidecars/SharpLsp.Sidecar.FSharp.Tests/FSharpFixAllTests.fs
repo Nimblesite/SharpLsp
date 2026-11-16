@@ -66,7 +66,7 @@ let private editsFor file (edits: FSharpCodeFixes.DocumentEdit list) =
 
 /// Apply several edits to a whole-file source, back-to-front.
 let private applyEdits (src: string) (edits: FSharpCodeFixes.TextEdit list) =
-    (src, edits) ||> List.fold (fun text edit -> applyEdit text edit)
+    (src, edits) ||> List.fold applyEdit
 
 /// One fix-all anchored on `anchor`, analyzers off, cancellations unused.
 let private fixAll state anchor fixKey scope =
@@ -253,10 +253,10 @@ let ``fix all add-new prefixes every construction in the project`` () =
             let! outcome = fixAll state paths[0] FSharpCodeFixes.FixAllKeys.AddNewForDisposable "project"
             let edits = editsOf outcome
             Assert.Equal<(string * int) array>([| ("A.fs", 1); ("B.fs", 1) |], countsByFile edits)
-            for path, module_ in [ (paths[0], "Alpha"); (paths[1], "Beta") ] do
+            for path, moduleName in [ (paths[0], "Alpha"); (paths[1], "Beta") ] do
                 let name = NativePaths.NameOf path |> string
                 let edited = applyEdits (File.ReadAllText path) (editsFor name edits)
-                Assert.Equal($"let reader = new System.IO.StringReader(\"{module_}\")", edited.Split('\n')[2])
+                Assert.Equal($"let reader = new System.IO.StringReader(\"{moduleName}\")", edited.Split('\n')[2])
                 let! check = recheck state path edited
                 Assert.Empty(check.Diagnostics |> Array.filter (fun d -> d.ErrorNumber = 760))
 

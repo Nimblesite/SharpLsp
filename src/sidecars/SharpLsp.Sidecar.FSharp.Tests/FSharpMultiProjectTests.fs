@@ -17,6 +17,15 @@ open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 
 /// `Core`, its function named `name`: the function at line 3, an interface at line 5 (0-based).
+/// Whether the entities of every assembly file `context` references are built. FCS's
+/// cache entry type is internal, so its option's members cannot be called from here: an
+/// entry is told apart by presence alone, since a missing one is the null option.
+let private entitiesBuilt (state: FSharpWorkspace.FSharpWorkspaceState) (context: FSharp.Compiler.CodeAnalysis.FSharpProjectContext) =
+    let cache = state.Entities :> FSharp.Compiler.EditorServices.IAssemblyContentCache
+
+    FSharpEntityIndex.referencedFiles context
+    |> List.forall (fun (fileName, _) -> fileName |> Option.forall (fun file -> not (obj.ReferenceEquals(cache.TryGet file, null))))
+
 let private coreDefining (name: string) =
     String.Join(
         "\n",
@@ -393,18 +402,18 @@ let ``warming builds each project's referenced entities ahead of its first compl
             let! checkedProjects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state core) CancellationToken.None
             let contexts = checkedProjects |> List.map _.ProjectContext
             Assert.Equal(2, contexts.Length)
-            Assert.All(contexts, fun context -> Assert.False(FSharpEntityIndex.isBuilt state context))
+            Assert.All(contexts, fun context -> Assert.False(entitiesBuilt state context))
 
             // 2. A cancelled build builds nothing.
             use cancelled = new CancellationTokenSource()
             cancelled.Cancel()
             Assert.Throws<OperationCanceledException>(fun () -> FSharpEntityIndex.warm state contexts.Head cancelled.Token) |> ignore
-            Assert.False(FSharpEntityIndex.isBuilt state contexts.Head)
+            Assert.False(entitiesBuilt state contexts.Head)
 
             // 3. Warming both projects builds every reference of each.
             let! _ = FSharpWarmUp.warmProject state 0 CancellationToken.None
             let! _ = FSharpWarmUp.warmProject state 1 CancellationToken.None
-            Assert.All(contexts, fun context -> Assert.True(FSharpEntityIndex.isBuilt state context))
+            Assert.All(contexts, fun context -> Assert.True(entitiesBuilt state context))
         finally
             cleanup root
     }

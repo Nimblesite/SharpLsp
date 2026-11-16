@@ -30,7 +30,7 @@ let private directReferences (state: FSharpWorkspace.FSharpWorkspaceState) (proj
     | _ -> []
 
 /// Whether `from` reaches `target` through loaded F# project references.
-let rec private reaches state (from: string) (target: string) =
+let private reaches state (from: string) (target: string) =
     let rec walk trail current =
         if NativePaths.AreEqual(current, target) then true
         elif trail |> List.exists (fun seen -> NativePaths.AreEqual(seen, current)) then false

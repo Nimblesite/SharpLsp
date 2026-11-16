@@ -1,5 +1,5 @@
-/// MessagePack wire-contract types and serialization helpers for the F#
-/// sidecar. Positional [<Key(n)>] layouts mirror the Rust host's structs.
+// MessagePack wire-contract types and serialization helpers for the F#
+// sidecar. Positional [<Key(n)>] layouts mirror the Rust host's structs.
 namespace SharpLsp.Sidecar.FSharp
 
 open System

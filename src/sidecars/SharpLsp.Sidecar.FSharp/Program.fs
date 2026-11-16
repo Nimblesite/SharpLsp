@@ -24,7 +24,7 @@ let private usageError (error: string) : int =
 /// [DIST-FAILURE-UX] (GitHub #150), [SIDECAR-PROCESS-PARENT] (GitHub #163)
 let private runSidecar (options: SidecarStartupOptions) : int =
     try
-        let sidecar = new FSharpSidecar()
+        let sidecar = FSharpSidecar()
         use _budget = sidecar.StartMemoryBudget()
         task {
             try
@@ -46,7 +46,7 @@ let internal run (args: string[]) : int =
         printfn $"sharplsp-sidecar-fsharp {versionString ()}"
         0
     else
-        SidecarStartupOptions.Parse(args).Match((fun options -> runSidecar options), (fun error -> usageError error))
+        SidecarStartupOptions.Parse(args).Match(runSidecar, usageError)
 
 [<EntryPoint>]
 let main (args: string[]) = run args

@@ -50,7 +50,7 @@ let private unix path saved = task {
     Assert.Equal(0, command.ExitCode)
     let opened, requested = signal(), signal()
     let owner = Task.Run(Action(fun () -> unixOwner path saved opened requested))
-    return new HeldSource(opened.Task, owner, fun () -> release requested owner)
+    return HeldSource(opened.Task, owner, fun () -> release requested owner)
 }
 
 /// The shared NTFS owner signals kernel oplock progress as structured data.
@@ -79,7 +79,7 @@ let private windows path = task {
         do! state child "ready"
         let opened, requested = signal(), signal()
         let owner = windowsOwner child opened requested
-        return new HeldSource(opened.Task, owner, fun () -> release requested owner)
+        return HeldSource(opened.Task, owner, fun () -> release requested owner)
     with error ->
         child.StandardInput.Close()
         return raise error

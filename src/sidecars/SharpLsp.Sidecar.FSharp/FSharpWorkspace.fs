@@ -190,7 +190,7 @@ let private otherProjectOptions (state: FSharpWorkspaceState) =
 
 /// Each file once, in the order given.
 let private distinctFiles (files: string seq) =
-    Linq.Enumerable.DistinctBy(files, (fun file -> NativePaths.NormalizeFullPath file), NativePaths.Comparer)
+    Linq.Enumerable.DistinctBy(files, Func<_, _>(NativePaths.NormalizeFullPath), NativePaths.Comparer)
     |> Array.ofSeq
 
 /// Every loaded project's options, the workspace's first — the ordered owners of
@@ -320,9 +320,6 @@ let internal parseAndCheckOnceWithCancellation (state: FSharpWorkspaceState) fil
 
         return parseResults, checkAnswer, source
     }
-
-let internal parseAndCheckOnce state filePath options =
-    parseAndCheckOnceWithCancellation state filePath options CancellationToken.None
 
 let private interpretAnswer
     (parseResults: FSharpParseFileResults)
@@ -463,16 +460,6 @@ let internal buildProjectOptions (state: FSharpWorkspaceState) (fsprojPath: stri
 let getHover state filePath line character =
     FSharpSemanticNavigation.getHover (checkFileWithParse state) filePath line character
 
-/// Whole-project results of the workspace's own project; none until one loads.
-let internal checkProject (state: FSharpWorkspaceState) =
-    task {
-        if not state.IsLoaded then
-            return None
-        else
-            let! results = state.Checker.ParseAndCheckProject(wired state state.ProjectOptions.Value)
-            return Some results
-    }
-
 /// Whole-project results for `projects` — a query's scope, or its head alone — one after
 /// another: checking them concurrently starved the thread pool and took five times as
 /// long once the builders were warm. Empty until a workspace loads.
@@ -487,9 +474,6 @@ let internal checkAllWithCancellation (state: FSharpWorkspaceState) (projects: F
 
         return List.ofSeq results
     }
-
-let internal checkAll state projects =
-    checkAllWithCancellation state projects CancellationToken.None
 
 let internal isSymbolInProject (state: FSharpWorkspaceState) (symbol: FSharpSymbol) =
     FSharpSemanticNavigation.isSymbolInProject state.ProjectOptions symbol

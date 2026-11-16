@@ -14,7 +14,7 @@ open SharpLsp.Sidecar.Common.Solutions
 let parseFsprojOtherFlags (fsprojPath: string) : string array =
     let separators = [| ' '; '\t'; '\r'; '\n' |]
 
-    ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("OtherFlags"))
+    ProjectXml.Read(fsprojPath).Match((fun document -> document), raise).Descendants(XName.Get("OtherFlags"))
     |> Seq.collect (fun element -> element.Value.Split(separators, StringSplitOptions.RemoveEmptyEntries))
     |> Seq.filter (fun value -> not (value.StartsWith("$(", StringComparison.Ordinal)))
     |> Seq.toArray
@@ -24,7 +24,7 @@ let parseFsprojOtherFlags (fsprojPath: string) : string array =
 /// compiles `../Source/Main.fs` from `.vscode/mod.fsproj` (#493). Read from the XML, so an
 /// ordinary project never waits on MSBuild to be listed. [SE-FSHARP-SYMBOLS]
 let linksSources (fsprojPath: string) : bool =
-    let document = ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error))
+    let document = ProjectXml.Read(fsprojPath).Match((fun document -> document), raise)
     let directory = NativePaths.DirectoryOf fsprojPath
 
     let defaultsOff =
@@ -51,7 +51,7 @@ let private validAssemblyName (value: string) =
 
 let parseFsprojAssemblyName (fsprojPath: string) =
     let explicitName =
-        ProjectXml.Read(fsprojPath).Match((fun document -> document), (fun error -> raise error)).Descendants(XName.Get("AssemblyName"))
+        ProjectXml.Read(fsprojPath).Match((fun document -> document), raise).Descendants(XName.Get("AssemblyName"))
         |> Seq.choose (_.Value >> validAssemblyName)
         |> Seq.tryLast
 
@@ -80,7 +80,7 @@ let private outcomeError (result: Outcome.Result<SolutionFileModel, string>) =
     result.Match((fun _ -> String.Empty), (fun error -> error))
 
 let private outcomeValue (result: Outcome.Result<SolutionFileModel, string>) : SolutionFileModel =
-    result.Match((fun value -> value), (fun error -> invalidOp error))
+    result.Match((fun value -> value), invalidOp)
 
 let private solutionProjects (model: SolutionFileModel) =
     model.Projects

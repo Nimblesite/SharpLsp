@@ -1,5 +1,5 @@
-/// F# sidecar: hosts FSharp.Compiler.Service.
-/// Registers handlers for workspace loading, hover, etc.
+// F# sidecar: hosts FSharp.Compiler.Service.
+// Registers handlers for workspace loading, hover, etc.
 namespace SharpLsp.Sidecar.FSharp
 
 open System
@@ -84,7 +84,7 @@ type FSharpSidecar() as this =
                     if result.IsError then
                         return ByteResult.Failure(result.Match((fun _ -> String.Empty), (fun err -> err)))
                     else
-                        let model = result.Match((fun value -> value), (fun err -> invalidOp err))
+                        let model = result.Match((fun value -> value), invalidOp)
                         return Helpers.serializeOk model ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
