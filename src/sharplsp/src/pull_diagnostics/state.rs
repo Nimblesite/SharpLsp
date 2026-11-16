@@ -173,7 +173,8 @@ pub fn load_started() {
 /// revision moves first, so a refusal computed during the load can never reply
 /// as settled in the gap before the load's own invalidation. [DIAG-TRUTH-GUARANTEES]
 pub async fn load_finished() {
-    match tokio::task::spawn_blocking(invalidate).await {
+    // The previous solution's documents are released, not just invalidated. (#566)
+    match tokio::task::spawn_blocking(release).await {
         Ok(Err(error)) => warn!(%error, "Diagnostic inputs not invalidated after a solution load"),
         Err(error) => warn!(%error, "Diagnostic load completion task failed"),
         Ok(Ok(())) => {}
@@ -197,7 +198,7 @@ pub fn engine_loaded() {
 /// Compiler callbacks never block Tokio's reader workers behind a synchronous Salsa query.
 fn refresh_after(operation: fn(&PullStore)) {
     drop(tokio::task::spawn_blocking(move || {
-        if let Err(error) = change_store(operation).and_then(|()| refresh_inputs()) {
+        if let Err(error) = change_store(unfailing(operation)).and_then(|()| refresh_inputs()) {
             warn!(%error, "Compiler diagnostic inputs could not refresh");
         }
     }));
@@ -240,19 +241,40 @@ pub fn begin_change() {
     }
 }
 
+/// A closed document's Salsa input and memo are released, not just invalidated;
+/// otherwise every document ever pulled stays resident for the host's life.
+/// [LSPKIT-MEM-ADOPT] (#566)
+pub fn release_closed() {
+    if let Err(error) = release() {
+        warn!(%error, "Closed document diagnostic memos could not be released");
+    }
+}
+
+/// Drop every Salsa input and memo; the next pulls recompute what is still live.
+fn release() -> Result<()> {
+    change_store(|store| Ok(store.clear()?))
+}
+
 /// Apply one store change and retain the standard debounced refresh.
-fn change_store(operation: impl FnOnce(&PullStore)) -> Result<()> {
-    let store = store()?;
-    operation(&store);
+fn change_store(operation: impl FnOnce(&PullStore) -> Result<()>) -> Result<()> {
+    operation(&store()?)?;
     with_session(|session| {
         schedule_refresh(session);
         Ok(())
     })
 }
 
+/// Lift a store operation that cannot fail into the fallible change shape.
+fn unfailing(operation: fn(&PullStore)) -> impl FnOnce(&PullStore) -> Result<()> {
+    move |store| {
+        operation(store);
+        Ok(())
+    }
+}
+
 /// Invalidate dependencies after a completed compiler-workspace mutation.
 pub fn invalidate() -> Result<()> {
-    change_store(PullStore::invalidate)
+    change_store(unfailing(PullStore::invalidate))
 }
 
 /// Clone query ownership without holding the session lock during compiler work.
@@ -346,6 +368,10 @@ fn analyzer(
             .map_err(|error| AnalysisError(format!("{error:#}")))
     })
 }
+
+#[cfg(test)]
+#[path = "release_tests.rs"]
+mod release_tests;
 
 #[cfg(test)]
 mod load_completion_tests {

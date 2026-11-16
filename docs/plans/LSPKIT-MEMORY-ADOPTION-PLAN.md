@@ -9,35 +9,38 @@ adoption is the SharpLsp agent on the open `fix/*` branch. They coordinate on To
 
 ## [LSPKIT-MEM-UPSTREAM] lspkit side (release first)
 
-- [ ] The five proven leaks are fixed with their red/green heap proofs unchanged:
+- [x] The five proven leaks are fixed with their red/green heap proofs unchanged:
   - correlator request ownership
   - inbound reader shutdown
   - ingress registration release
   - reference-server `didClose` buffers
   - handler cycle
-- [ ] `PullStore` (lspkit-server `pull`): `QueryState.documents` keeps a Salsa `DocumentInput` and its `analyze` memo
+- [x] `PullStore` (lspkit-server `pull`): `QueryState.documents` keeps a Salsa `DocumentInput` and its `analyze` memo
       for every URI ever pulled, so files deleted, renamed or left by a solution switch stay resident for the host's
       life. Add a release API, for example `PullStore::forget(uri)`, or prune to a caller-supplied live set. Prove it
-      with a red/green test that pulls N URIs, forgets them, and asserts no input or memo remains
+      with a red/green test that pulls N URIs, forgets them, and asserts no input or memo remains. Shipped in 0.5.0 as
+      `PullStore::clear()`, which drops the whole Salsa database because inputs can't be deleted one at a time.
 - [ ] `live/watcher.rs`: a lost-event `ChangeEvent::Rescan` carries the affected root paths, not an empty set. SharpLsp
       can then reload only the projects under them instead of re-checking every loaded compiler. File this as an lspkit
-      issue if it is out of scope for the leak plan.
-- [ ] Release lspkit `0.4.1` (or `0.5.0` if the `Rescan` shape changes) to crates.io, and tag `v<version>` so
+      issue if it is out of scope for the leak plan. Not in 0.5.0: still open.
+- [x] Release lspkit `0.4.1` (or `0.5.0` if the `Rescan` shape changes) to crates.io, and tag `v<version>` so
       `make _fetch-lspkit` can unpack the source
-- [ ] Post the release version on TMC to the SharpLsp agent
+- [x] Post the release version on TMC to the SharpLsp agent
 
 ## [LSPKIT-MEM-ADOPT] SharpLsp side (after the release)
 
-- [ ] Bump `lspkit` / `lspkit-server` in `src/sharplsp/Cargo.toml` and `LSPKIT_VERSION` in `Makefile` together, then
+- [x] Bump `lspkit` / `lspkit-server` in `src/sharplsp/Cargo.toml` and `LSPKIT_VERSION` in `Makefile` together, then
       `cargo update -p lspkit -p lspkit-server`
-- [ ] Bump `@nimblesite/lsp-profiler-ui` if lspkit released it in the same train
+- [x] Bump `@nimblesite/lsp-profiler-ui` if lspkit released it in the same train
 - [ ] If `Rescan` carries paths: in `pull_diagnostics/relevance.rs`, scope `rescanned` to the loaded graphs whose
       projects sit under those paths. Keep the `changed_since_open` mtime check as the fallback for a pathless rescan.
       Add the permutation to `a_rescan_reloads_only_a_compiler_whose_inputs_changed_since_its_open`.
-- [ ] Call the `PullStore` release API when a document closes and is no longer in the loaded graph, when a file is
-      deleted or renamed, and for every URI the old graph owned on a solution switch. Add a host test that fails if a
-      retired URI is still held. The host-side leaks in the push gate, restore lanes and feed cache are already fixed,
+- [x] Call `PullStore::clear()` when a document closes (`state::release_closed`) and when a solution load finishes
+      (`state::load_finished`). Because `clear()` drops every input, a deleted or renamed file's memo goes on the next
+      close or solution switch. The host-side leaks in the push gate, restore lanes and feed cache are already fixed,
       each with a test that failed on the leak (efa9446c)
+- [x] Host test that fails if a closed document's memo is still held:
+      `release_tests::closing_a_document_or_loading_a_solution_frees_every_pulled_memo` (red with invalidate only: 5/5 held)
 - [ ] Delete any SharpLsp scaffolding the release makes redundant. Don't keep a copy.
 - [ ] `make ci` locally. Open a PR with `gh pr merge --auto --squash`, then own it until it's green.
 - [ ] Measure the F# sidecar RSS on this repo for 30 minutes of idle plus editing. It must stay under the #566 soft budget

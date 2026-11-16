@@ -122,7 +122,7 @@ fn trigger(uri: &Uri, ctx: &DocumentContext<'_>) {
 /// diagnostics under the pull model, or clear what the push model published.
 fn closed(uri: Uri, ctx: &mut DocumentContext<'_>) {
     info!("Closed: {}", uri.as_str());
-    pull_diagnostics::state::begin_change();
+    pull_diagnostics::state::release_closed();
     ctx.vfs.close(&uri);
     let _ = ctx.trees.remove(&uri);
     semantic_tokens::forget(uri.as_str());
