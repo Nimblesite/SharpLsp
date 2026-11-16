@@ -25,7 +25,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Add New File to project | Yes | Yes | **DONE** |
 | Project templates (console, web, class lib) | Yes | Yes | **DONE** |
 | View/edit .csproj from tree | Yes | Yes | **DONE** |
-| Build/Rebuild/Clean from context menu | Yes | No | **MISSING** |
+| Build/Rebuild/Clean from context menu | Yes | Yes (`sharplsp.build` / `rebuild` / `clean` on solution and project nodes, [SE-ACTIONS-BUILD]) | **DONE** |
 | Dependencies folder | Yes | Yes | **DONE** |
 | NuGet package display with versions | Yes | Yes | **DONE** |
 | Project reference display | Yes | Yes | **DONE** |
@@ -45,7 +45,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Import suggestions in completion | Yes | No | **MISSING** |
 | Snippet completion | Yes | No | **MISSING** |
 | Hover / Quick Info | Yes | Yes | **DONE** |
-| Signature help | Yes | No | **MISSING** |
+| Signature help | Yes | Yes (`signatureHelpProvider`, both languages) | **DONE** |
 | Inlay hints (parameter names) | Yes | Yes | **DONE** |
 | Inlay hints (type inference) | Yes | Yes | **DONE** |
 | Semantic highlighting | Yes | Yes | **DONE** |
@@ -87,7 +87,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Convert between string forms | Yes | Yes | **DONE** |
 | Encapsulate field | Yes | Yes | **DONE** |
 | Use var / explicit type | Yes | Yes | **DONE** |
-| Rename symbol (all code elements) | Yes | No | **MISSING** |
+| Rename symbol (all code elements) | Yes | Yes | **DONE** |
 | Sort members | No | Yes | **AHEAD** |
 | All Roslyn quick fixes | Yes | Yes | **DONE** |
 | All Roslyn refactorings | Yes | Yes | **DONE** |
@@ -109,9 +109,9 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Compiler diagnostics (per-document pull) | Yes | Yes | **DONE** |
 | LSP 3.17 pull diagnostics (`textDocument/diagnostic`) | Yes | Yes (handlers wired; `previousResultId`/`unchanged` reporting in [DIAGNOSTICS-PLAN Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path)) | **PARTIAL** |
 | Workspace pull diagnostics (`workspace/diagnostic`) | Yes (server side; UX gap in CDK extension) | Yes (server + extension surfaces in Problems panel) | **PARTIAL** |
-| `workspace/diagnostic/refresh` (debounced workspace event → editor re-pull) | Yes (2000ms `AsyncBatchingWorkQueue`) | In [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) (matches Roslyn LSP 2000ms debounce) | **MISSING** |
+| `workspace/diagnostic/refresh` (debounced workspace event → editor re-pull) | Yes (2000ms `AsyncBatchingWorkQueue`) | In [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) (matches Roslyn LSP 2000ms debounce) | **DONE** — the host sends `workspace/diagnostic/refresh` ([DIAG-LSP-REFRESH]) |
 | NuGet restore gate before workspace open | Yes (`ProjectDependencyHelper`) | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); critical for eliminating phantom CS0246 | **MISSING** |
-| `workspace/projectInitializationComplete` notification | Yes | In [Phase 5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0) | **MISSING** |
+| `workspace/projectInitializationComplete` notification | Yes | Yes (`pull_diagnostics/events.rs`; the diagnostics guard waits on it, [DIAG-HYGIENE-GUARD]) | **DONE** |
 | Solution-wide analysis surfaced in Problems panel without opening files | UX gap (server supports it; extension doesn't drive the pull) | Yes (SharpLsp VS Code extension drives `workspace/diagnostic` pull) | **DIFFERENTIATOR** |
 | No phantom CS0246 during workspace load | Yes (because pull-only + restore gate) | Yes (after [Phase 5](DIAGNOSTICS-PLAN.md#phase-5-pull-diagnostics--refresh-cycle-p0--primary-path) + [5.6](DIAGNOSTICS-PLAN.md#phase-56-nuget-restore-gate-p0); previous push+verification model removed because it lied) | **IN PROGRESS** |
 | Roslyn analyzer diagnostics | Yes | Partial | **PARTIAL** |
