@@ -75,6 +75,7 @@ public static class WorkspaceRestore
             return new RestoreResult.Ok<Outcome.Unit, string>(Outcome.Unit.Value);
         }
         Log.Information("Restoring stale workspace inputs for {Project}", project);
+        _ = Restores.AddOrUpdate(project, 1, (_, count) => count + 1);
         var result = await DotnetRestore
             .RunAsync(
                 project,
@@ -84,6 +85,17 @@ public static class WorkspaceRestore
             )
             .ConfigureAwait(false);
         return CompletedRestore(project, result);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        string,
+        int
+    > Restores = new(NativePaths.Comparer);
+
+    /// <summary>How many times this process ran the SDK restore of <paramref name="project"/>.</summary>
+    internal static int RestoresOf(string project)
+    {
+        return Restores.GetValueOrDefault(project);
     }
 
     private static bool AssetsCurrent(string project)
@@ -101,9 +113,15 @@ public static class WorkspaceRestore
             return false;
         }
         return File.Exists(assets)
-            && File.GetLastWriteTimeUtc(project) <= File.GetLastWriteTimeUtc(assets)
-            && WorkspaceRestoreInputs.AreCurrent(project, File.GetLastWriteTimeUtc(assets))
-            && packages.Match(missing => missing.Length == 0, _ => false);
+            && packages.Match(missing => missing.Length == 0, _ => false)
+            && (ProvenStatically(project, assets) || WorkspaceRestoreDigest.Matches(project));
+    }
+
+    /// <summary>Static inputs older than the restore output they produced. [DIAG-RESTORE]</summary>
+    private static bool ProvenStatically(string project, string assets)
+    {
+        return File.GetLastWriteTimeUtc(project) <= File.GetLastWriteTimeUtc(assets)
+            && WorkspaceRestoreInputs.AreCurrent(project, File.GetLastWriteTimeUtc(assets));
     }
 
     private static RestoreResult CompletedRestore(string project, RestoreResult result)
@@ -131,6 +149,7 @@ public static class WorkspaceRestore
     {
         // Successful SDK evaluation proves the complete surviving graph. [DIAG-RESTORE]
         WorkspaceRestoreProof.Record(project);
+        WorkspaceRestoreDigest.Record(project);
         return result;
     }
 }
