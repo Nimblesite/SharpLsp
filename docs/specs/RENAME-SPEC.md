@@ -123,6 +123,7 @@ The F# sidecar MUST use FCS symbol resolution and rename support rather than tex
 1. Compute all symbol uses across the project or solution scope required for a safe rename.
 2. Produce file-scoped text edits for every declaration and usage location.
 3. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
+4. **The compiler judges the declaring file.** The edits of the file that declares the symbol are applied to its text and that file is checked again. An error the renamed text has that the original lacked — a name its module already declares (FS0037), a use that no longer binds — refuses the rename as `Invalid F# rename: <FSxxxx>: <message>` and returns no edit ([RENAME-ERRORS]). A later file is never the judge: it would see the new name before its declaration changed.
 
 ## [RENAME-CROSSLANGUAGE] Cross-Language Rename
 

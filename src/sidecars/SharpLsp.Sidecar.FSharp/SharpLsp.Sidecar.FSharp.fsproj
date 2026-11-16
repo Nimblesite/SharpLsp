@@ -113,6 +113,7 @@
     <Compile Include="FSharpCompletion.fs" />
     <Compile Include="FSharpRenameAliases.fs" />
     <Compile Include="FSharpRenameIndexers.fs" />
+    <Compile Include="FSharpRenameVerification.fs" />
     <Compile Include="FSharpRename.fs" />
     <Compile Include="FSharpCodeLens.fs" />
     <Compile Include="FSharpHierarchy.fs" />

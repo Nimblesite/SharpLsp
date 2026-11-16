@@ -68,3 +68,60 @@ let ``non-inline generic parameter refuses a caret rename`` () = task {
     finally
         cleanup dir
 }
+
+/// [RENAME-ERRORS] A name its module already declares would compile to FS0037: the
+/// compiler judges the renamed declaring file, and the rename is refused with its error.
+[<Fact>]
+let ``rename refuses a name its module already declares, and takes a free one`` () = task {
+    let input =
+        source
+            [ "module Names"
+              "let private DOMAIN = \"x\""
+              "let private domain () = DOMAIN.Length"
+              "let total = domain () + DOMAIN.Length" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Names.fs", input) ]
+    try
+        // Interaction 1 — the colliding name is refused, from the declaration and from a use.
+        for (line, character) in [ (1, 12); (3, 24) ] do
+            let! collided = FSharpRename.renameResult state paths[0] line character "domain" System.Threading.CancellationToken.None
+            match collided with
+            | Ok edits -> failwith $"a rename to an existing name returned {edits.Length} edits"
+            | Error message ->
+                // The compiler's own error is the reason: here the later uses no longer
+                // bind to a string (FS0039), in a module that also redeclares the name (FS0037).
+                Assert.StartsWith("Invalid F# rename: FS00", message)
+        // Interaction 2 — a free name renames the declaration and both uses.
+        let! renamed = FSharpRename.renameResult state paths[0] 1 12 "domainSource" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"a rename to a free name was refused: {message}"
+        | Ok edits ->
+            Assert.Equal<string list>(
+                [ "Names.fs:1.12-1.18=>domainSource"; "Names.fs:2.24-2.30=>domainSource"; "Names.fs:3.24-3.30=>domainSource" ],
+                edits |> List.map editKey |> List.sort)
+    finally
+        cleanup dir
+}
+
+/// [RENAME-ERRORS] The declaring file is the one judged: a rename started from a later
+/// file is refused for a collision in the file that declares the name, and a free name
+/// renames across both files without the later file's stale view refusing it.
+[<Fact>]
+let ``rename from a later file is judged in the declaring file`` () = task {
+    let declares = source [ "module Shared"; "let width = 4"; "let height = 3" ]
+    let uses = source [ "module Area"; "let area = Shared.width * Shared.height" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Shared.fs", declares); ("Area.fs", uses) ]
+    try
+        let! collided = FSharpRename.renameResult state paths[1] 1 18 "height" System.Threading.CancellationToken.None
+        match collided with
+        | Ok edits -> failwith $"a cross-file rename to an existing name returned {edits.Length} edits"
+        | Error message -> Assert.Contains("FS0037", message)
+        let! renamed = FSharpRename.renameResult state paths[1] 1 18 "breadth" System.Threading.CancellationToken.None
+        match renamed with
+        | Error message -> failwith $"a cross-file rename to a free name was refused: {message}"
+        | Ok edits ->
+            Assert.Equal<string list>(
+                [ "Area.fs:1.18-1.23=>breadth"; "Shared.fs:1.4-1.9=>breadth" ],
+                edits |> List.map editKey |> List.sort)
+    finally
+        cleanup dir
+}
