@@ -862,7 +862,7 @@ _lint-vsix: _check-vsix-chunks _check-sdk-pin _check-spec-citations _check-struc
 	node --test tools/vsix/model-generators.test.mjs
 	node --test tools/ci/security-gates.test.mjs tools/ci/changed-files.test.mjs tools/ci/vsix-coverage.test.mjs \
 		tools/ci/spec-citations.test.mjs tools/ci/test-host-download.test.mjs tools/vsix/signals-bundle.test.mjs \
-		tools/ci/structured-file-writes.test.mjs
+		tools/ci/structured-file-writes.test.mjs tools/ci/workspace-diagnostics.test.mjs
 	npm run lint:eslint --prefix $(VSCODE_DIR)
 	npm run typecheck --prefix $(VSCODE_DIR)
 
