@@ -116,6 +116,8 @@ The analyzer must also avoid known entry points and convention-bound public surf
 
 The attribute list is configurable so teams can add framework-specific public entry points without changing SharpLsp.
 
+What reaches an attributed member reaches the type that declares it: a class whose only member is a `[ModuleInitializer]`, called by the runtime and named by no code, is not dead.
+
 ## [ANALYZERS-DIAGNOSTICS] Diagnostic Shape
 
 Unused-public-code diagnostics use the normal LSP `Diagnostic` shape:

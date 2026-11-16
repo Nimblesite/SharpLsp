@@ -31,9 +31,6 @@ public static class WellKnownPackages
         return [.. Types.Value.Where(type => type.Name == name)];
     }
 
-    /// <summary>Every type of the embedded table.</summary>
-    internal static IReadOnlyList<WellKnownType> All => Types.Value;
-
     private static IReadOnlyList<WellKnownType> Load()
     {
         using var stream =

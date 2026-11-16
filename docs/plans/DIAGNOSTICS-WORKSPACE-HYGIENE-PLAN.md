@@ -36,7 +36,7 @@ Workspace-wide diagnostics must not report files no developer owns. Rider/VS nev
 - [ ] FL0085/FL0083: add `[<TailCall>]` where truly tail-recursive, drop bogus `rec`
 - [ ] FL0034/FL0035/FL0014/FL0055/FL0072/FL0090: apply the lint fixes (SharpLsp code actions where offered)
 - [x] SLSPF0102/0103 in hand-written sources: remove unused opens and redundant qualifiers — applied with SharpLsp's own "Fix all in solution" through `tools/debug/fix-diagnostics.mjs --fix-all` (25 opens, 67 qualifiers; the fixtures that demonstrate them are left as they are)
-- [ ] SLSPC0101: delete `WellKnownPackages.All` and `DiagnosticWorkspacePulls` if truly unreferenced
+- [x] SLSPC0101: `WellKnownPackages.All` is deleted (nothing references it); `DiagnosticWorkspacePulls` is referenced and no longer reported; the report on `MsBuildRegistration` was a false positive — a class holding only a `[ModuleInitializer]` — fixed in the analyzer with a failing-first test
 - [ ] Non-demo fixtures: fix FL0065/FL0037/FS3886 in `fsharp-profiling` and `workspace/fsharp` unless a test asserts them (grep test suites first)
 
 ## [DIAG-HYGIENE-GUARD] Ratchet
