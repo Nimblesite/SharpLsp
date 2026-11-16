@@ -90,6 +90,7 @@ pub mod navigation_session;
 pub mod nuget_project_contract;
 pub mod nuget_restore;
 pub mod nuget_unused_full_stack;
+pub mod performance_budgets;
 pub mod profiler_shared;
 pub mod pull_diagnostics;
 pub mod razor;

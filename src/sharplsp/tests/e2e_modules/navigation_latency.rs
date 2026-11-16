@@ -9,18 +9,18 @@ use super::*;
 use workspace_diagnostic_protocol::recovery::{owned_apphosts, published_apphost_uri};
 
 /// The shapes the opened document uses, one per line.
-const USED: usize = 40;
+pub const USED: usize = 40;
 /// The shapes that implement `IShape`. [DEFINITION-PERFORMANCE]
 const IMPLEMENTERS: usize = 120;
 
 /// How many shape files the solution holds: each calls `Hub.Touch` once, and
 /// the first [`IMPLEMENTERS`] implement `IShape`.
-fn file_count() -> usize {
+pub fn file_count() -> usize {
     size("SHARPLSP_BENCH_FILES", 1000)
 }
 
 /// A size from the environment, else `default`.
-fn size(variable: &str, default: usize) -> usize {
+pub fn size(variable: &str, default: usize) -> usize {
     std::env::var(variable)
         .ok()
         .and_then(|text| text.parse().ok())
@@ -58,7 +58,7 @@ fn program_source() -> String {
 
 /// A restored one-project solution of `files` shapes; returns its root URI
 /// and the opened document's URI and text.
-fn bench_workspace(files: usize) -> (tempfile::TempDir, String, String, String) {
+pub fn bench_workspace(files: usize) -> (tempfile::TempDir, String, String, String) {
     let tmp = tempfile::tempdir().unwrap();
     let project = tmp.path().join("Bench");
     std::fs::create_dir_all(&project).unwrap();
@@ -89,7 +89,7 @@ fn bench_workspace(files: usize) -> (tempfile::TempDir, String, String, String) 
 }
 
 /// The column of `needle` on `line` of `source`.
-fn column(source: &str, line: usize, needle: &str) -> u32 {
+pub fn column(source: &str, line: usize, needle: &str) -> u32 {
     let text = source.lines().nth(line).expect("line exists");
     u32::try_from(text.find(needle).expect("needle is on the line")).unwrap()
 }
@@ -97,7 +97,7 @@ fn column(source: &str, line: usize, needle: &str) -> u32 {
 /// Ask `method` at a position and return its response. The client pulls
 /// diagnostics, as editors do, so no background publication pass competes for
 /// the compiler; a server request such as a diagnostic refresh is not an answer.
-fn ask(client: &mut LspClient, method: &str, uri: &str, at: (u32, u32)) -> Value {
+pub fn ask(client: &mut LspClient, method: &str, uri: &str, at: (u32, u32)) -> Value {
     let id = i64::from(next_id());
     let mut params = hover_params(uri, at.0, at.1);
     if method == "textDocument/references" {
@@ -113,7 +113,7 @@ fn ask(client: &mut LspClient, method: &str, uri: &str, at: (u32, u32)) -> Value
 }
 
 /// `ask` until the compiler has loaded the solution and answers a location.
-fn ask_until_ready(client: &mut LspClient, uri: &str, at: (u32, u32)) -> Value {
+pub fn ask_until_ready(client: &mut LspClient, uri: &str, at: (u32, u32)) -> Value {
     let deadline = Instant::now() + Duration::from_mins(4);
     loop {
         let response = ask(client, "textDocument/definition", uri, at);
@@ -127,7 +127,7 @@ fn ask_until_ready(client: &mut LspClient, uri: &str, at: (u32, u32)) -> Value {
 }
 
 /// `count` sorted round-trip times of `request`, each answer checked.
-fn timed(count: usize, mut request: impl FnMut(usize) -> Value) -> Vec<Duration> {
+pub fn timed(count: usize, mut request: impl FnMut(usize) -> Value) -> Vec<Duration> {
     let mut times: Vec<Duration> = (0..count)
         .map(|n| {
             let started = Instant::now();
@@ -146,13 +146,13 @@ fn timed(count: usize, mut request: impl FnMut(usize) -> Value) -> Vec<Duration>
 }
 
 /// The `percent`th percentile of sorted `times`.
-fn percentile(times: &[Duration], percent: usize) -> Duration {
+pub fn percentile(times: &[Duration], percent: usize) -> Duration {
     let last = times.len().saturating_sub(1);
     times[(last * percent).div_ceil(100).min(last)]
 }
 
 /// The resident memory of this server's C# compiler, in megabytes.
-fn compiler_megabytes(client: &LspClient) -> u64 {
+pub fn compiler_megabytes(client: &LspClient) -> u64 {
     let apphost = published_apphost_uri("SHARPLSP_CSHARP_SIDECAR_PATH", "published C# apphost");
     let pid = *owned_apphosts(client, &apphost)
         .first()
