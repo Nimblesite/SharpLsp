@@ -390,7 +390,7 @@ let private assertUnavailableContext result =
 let private contextFindings state path =
     FSharpDiagnosticQueries.get
         { Workspace = state; AnalyzersEnabled = false; Analyzers = FSharpAnalyzers.AnalyzerConfig.Default
-          NotifyScopeChanged = fun _ _ -> System.Threading.Tasks.Task.FromResult true }
+          NotifyScopeChanged = fun _ _ -> Task.FromResult true }
         path CancellationToken.None
 
 let private assertContextCompilerError state path = task {

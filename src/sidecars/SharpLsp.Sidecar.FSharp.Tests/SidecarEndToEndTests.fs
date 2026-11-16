@@ -252,7 +252,7 @@ type SidecarFixture() =
     // fixture. Write-frame/read-frame must be atomic per request or concurrent
     // callers interleave frames and mis-correlate responses, so all sends are
     // serialized through this gate.
-    let sendGate = new System.Threading.SemaphoreSlim(1, 1)
+    let sendGate = new SemaphoreSlim(1, 1)
 
     member _.Dir = dir
     member _.Src = NativePaths.Resolve(dir, "Library.fs")
@@ -1293,7 +1293,7 @@ let ``workspace returns None for all queries when not loaded`` () = task {
     Assert.True(t.IsNone)
     let! dc = FSharpWorkspace.getDeclaration st "/x.fs" 0 0
     Assert.True(dc.IsNone)
-    let! im = FSharpImplementations.getImplementations st "/x.fs" 0 0 System.Threading.CancellationToken.None
+    let! im = FSharpImplementations.getImplementations st "/x.fs" 0 0 CancellationToken.None
     Assert.Empty(im)
 }
 

@@ -109,7 +109,7 @@ let private inScope (state: FSharpWorkspace.FSharpWorkspaceState) (identity: Sym
             return []
         else
             let files = scopeOf state identity.AssemblyName
-            let! uses = usesIn state identity.AssemblyName identity.XmlDocSig files System.Threading.CancellationToken.None
+            let! uses = usesIn state identity.AssemblyName identity.XmlDocSig files CancellationToken.None
             return FSharpReferences.nameLocations state (query uses)
     }
 

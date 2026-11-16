@@ -39,7 +39,7 @@ let ``a request path resolves to the overlay key when no project is loaded`` () 
 
     let resolved = FSharpWorkspace.projectFilePath fresh relative
 
-    Assert.Equal(SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath relative, resolved)
+    Assert.Equal(NativePaths.NormalizeFullPath relative, resolved)
     Assert.True(NativePaths.IsRooted(resolved), "overlay keys are absolute so one file has one key")
 
 /// Completion, hover and diagnostics all funnel through a check. Without a

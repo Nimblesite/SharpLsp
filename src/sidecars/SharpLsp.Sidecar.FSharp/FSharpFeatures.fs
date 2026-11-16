@@ -164,7 +164,7 @@ let private extractSemanticTokens
     let sorted = semanticSpans checker source checkResults
     let mutable prevLine = 0
     let mutable prevChar = 0
-    let data = System.Collections.Generic.List<int>()
+    let data = Collections.Generic.List<int>()
 
     for line, character, length, tokenType in sorted do
         let inRange =

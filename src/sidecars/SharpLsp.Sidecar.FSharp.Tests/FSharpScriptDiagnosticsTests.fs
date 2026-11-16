@@ -21,7 +21,7 @@ let internal assertErrors (fixture: EngineDiagnosticsFixture) path code = task {
         Assert.Equal(expected, diagnostic.Code)
         Assert.True(NativePaths.AreEqual(path, diagnostic.FilePath))
         Assert.True(diagnostic.StartLine >= 0 && diagnostic.EndLine >= diagnostic.StartLine)
-        Assert.False(System.String.IsNullOrWhiteSpace(diagnostic.Message))
+        Assert.False(String.IsNullOrWhiteSpace(diagnostic.Message))
     return errors
 }
 

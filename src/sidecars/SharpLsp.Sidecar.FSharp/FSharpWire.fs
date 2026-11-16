@@ -452,7 +452,7 @@ module internal Helpers =
         handle query (fun result ct -> serializeOk (toWire result) ct)
 
     let private resultRequestHandler
-        (query: 'Request -> CancellationToken -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
+        (query: 'Request -> CancellationToken -> Task<Core.Result<'Result, string>>)
         (toWire: 'Result -> 'Wire)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
         handleWithCancellation query (fun result ct ->

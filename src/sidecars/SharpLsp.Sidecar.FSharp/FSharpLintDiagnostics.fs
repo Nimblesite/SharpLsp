@@ -13,10 +13,10 @@ let private gate = new SemaphoreSlim(1, 1)
 /// A source inherits the closest configuration, independent of process working directory.
 let rec private configuration directory =
     if System.String.IsNullOrEmpty directory then
-        ConfigurationParam.Configuration FSharpLint.Framework.Configuration.defaultConfiguration
+        Configuration FSharpLint.Framework.Configuration.defaultConfiguration
     else
         let candidate = NativePaths.Resolve(directory, FSharpLint.Framework.Configuration.SettingsFileName)
-        if System.IO.File.Exists candidate then ConfigurationParam.FromFile candidate
+        if System.IO.File.Exists candidate then FromFile candidate
         else configuration (NativePaths.DirectoryOf directory)
 
 /// Upstream can signal a failed rule and then return Success []; preserve that failure.
@@ -26,7 +26,7 @@ let private execute file information config (ct: CancellationToken) =
         { OptionalLintParameters.Default with
             Configuration = config; CancellationToken = Some ct
             ReportLinterProgress = Some(function
-                | ProjectProgress.Failed(_, error) -> failure <- Some(error.GetType().Name)
+                | Failed(_, error) -> failure <- Some(error.GetType().Name)
                 | _ -> ()) }
     ct.ThrowIfCancellationRequested()
     let result = lintParsedFile parameters information file
