@@ -10,7 +10,6 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Diagnostics
 open Serilog
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
@@ -28,7 +27,7 @@ type FixAllOutcome =
 /// The reason the dead-declaration fix refuses while its analyzer is off:
 /// fixing nothing silently would hide the switch from the user.
 /// [REFACTOR-NEVER-SILENT]
-let private ANALYZER_OFF =
+let private analyzerOff =
     "the dead-code analyzer is off: turn it on in [analyzers] to fix all unused declarations"
 
 // ── Scope resolution ─────────────────────────────────────────────
@@ -182,7 +181,7 @@ let private refusalOf (analyzers: FSharpAnalyzers.AnalyzerConfig option) (fixKey
           FixAllKeys.RemoveUnusedDeclaration ]
 
     if not (List.contains fixKey known) then Some $"no F# fix answers the key '{fixKey}'"
-    elif fixKey = FixAllKeys.RemoveUnusedDeclaration && analyzers.IsNone then Some ANALYZER_OFF
+    elif fixKey = FixAllKeys.RemoveUnusedDeclaration && analyzers.IsNone then Some analyzerOff
     else None
 
 // ── The fix-all itself ───────────────────────────────────────────

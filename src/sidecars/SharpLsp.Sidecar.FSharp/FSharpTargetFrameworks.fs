@@ -3,7 +3,6 @@
 module SharpLsp.Sidecar.FSharp.FSharpTargetFrameworks
 
 open System.Collections.Generic
-open System.IO
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp.FSharpDesignTime

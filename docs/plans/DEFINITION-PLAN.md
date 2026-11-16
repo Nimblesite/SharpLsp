@@ -172,5 +172,5 @@ See `[DEFINITION-CROSSLANG]`.
 - [ ] Benchmark definition latency on a warm salsa query (repeated request on the same position)
 - [ ] Benchmark definition latency on large solution (~2M LOC)
 - [ ] Benchmark find-implementations latency with 100+ implementations
-- [ ] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms
+- [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs` measures the median over a 20,000-line file and pins every comment and string shape of both grammars (the test found and fixed all F# comments and strings slipping through; C# string contents deliberately reach the compiler, where a module path is navigable)
 - [ ] Profile sidecar memory usage during sustained definition requests

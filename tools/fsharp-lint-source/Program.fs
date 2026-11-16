@@ -55,7 +55,7 @@ let private finish destination archiveFile sha targetRelative targetPath fileCou
         sha256File (ruleStatePath destination)
         |> Result.bind (fun stateSha ->
             writeProvenance destination archiveFile sha
-            |> Result.bind (fun () -> Incremental.write destination (Incremental.build sha targetRelative targetSha stateSha)))
+            |> Result.bind (fun () -> write destination (build sha targetRelative targetSha stateSha)))
         |> Result.map (fun () ->
             emit
                 [| "status", "ok"

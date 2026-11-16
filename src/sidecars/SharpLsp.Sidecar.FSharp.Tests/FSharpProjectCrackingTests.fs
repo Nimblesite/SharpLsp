@@ -72,14 +72,14 @@ let private writeBuiltCsharpReference (root: string) =
     assembly
 
 /// Unexpanded MSBuild properties must be dropped, real flags must survive.
-let private FLAGS_WITHOUT_OUTPUT = "--nowarn:52 $(UnexpandedExtraFlags) --warnon:1182"
+let private flagsWithoutOutput = "--nowarn:52 $(UnexpandedExtraFlags) --warnon:1182"
 
 [<Fact>]
 let ``cracking a real fsproj carries OtherFlags to FCS and drops unexpanded properties`` () =
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
-        let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
+        let fsproj = writeProject dir "CrackedA" flagsWithoutOutput [||]
         let flags = FSharpProjectLoading.parseFsprojOtherFlags fsproj
 
         Assert.Equal<string array>([| "--nowarn:52"; "--warnon:1182" |], flags)
@@ -92,7 +92,7 @@ let ``an AssemblyName MSBuild never expanded falls back to the project file stem
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
-        let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
+        let fsproj = writeProject dir "CrackedA" flagsWithoutOutput [||]
 
         // "$(MSBuildProjectName)" is not a usable assembly name; the stem is.
         Assert.Equal("CrackedA", FSharpWorkspace.parseFsprojAssemblyName fsproj)
@@ -104,7 +104,7 @@ let ``compile items become the FCS source list in declaration order`` () = task 
     let dir = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
 
     try
-        let fsproj = writeProject dir "CrackedA" FLAGS_WITHOUT_OUTPUT [||]
+        let fsproj = writeProject dir "CrackedA" flagsWithoutOutput [||]
         let state = FSharpWorkspace.create ()
         let! evaluated = FSharpWorkspace.compileSources state fsproj CancellationToken.None
         let sources = ok evaluated
@@ -138,7 +138,7 @@ let ``a referenced C# project arrives on the compiler line as its built assembly
             writeProject
                 dir
                 "CrackedA"
-                FLAGS_WITHOUT_OUTPUT
+                flagsWithoutOutput
                 [| node "ProjectReference" [| attr "Include" "Neighbour/Neighbour.csproj" |] |]
 
         let state = FSharpWorkspace.create ()
@@ -209,7 +209,7 @@ let ``hand-built options name each source once, so FCS never sees a file twice``
         Assert.DoesNotContain(library, options.OtherOptions)
         Assert.All(options.OtherOptions, fun option -> Assert.StartsWith("-", option))
 
-        let checkedProject = state.Checker.ParseAndCheckProject(options) |> Async.RunSynchronously
+        let! checkedProject = state.Checker.ParseAndCheckProject(options)
 
         // FS3551: "The source file ... already appeared in the compilation list".
         Assert.DoesNotContain(checkedProject.Diagnostics, fun diagnostic -> diagnostic.ErrorNumber = 3551)
@@ -257,7 +257,7 @@ let ``project metadata remains accurate across editor saves with a write handle 
     try
         writeBuiltCsharpReference root |> ignore
         let items: obj array = [| node "ProjectReference" [| attr "Include" "Neighbour/Neighbour.csproj" |] |]
-        let project = writeProject root "Editable" FLAGS_WITHOUT_OUTPUT items
+        let project = writeProject root "Editable" flagsWithoutOutput items
         let document = XDocument.Load project
         let state = FSharpWorkspace.create ()
         do! task {
@@ -283,7 +283,7 @@ let ``an edited project is evaluated afresh without waiting for a reload`` () = 
     let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
     try
         let dir = NativePaths.Resolve(root, ".vscode")
-        let project = writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [||]
+        let project = writeProject dir "Edited" flagsWithoutOutput [||]
         let state = FSharpWorkspace.create ()
         let! first = FSharpWorkspace.compileSources state project CancellationToken.None
         Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs") |], ok first)
@@ -292,7 +292,7 @@ let ``an edited project is evaluated afresh without waiting for a reload`` () = 
         Directory.CreateDirectory(NativePaths.DirectoryOf linked) |> ignore
         File.WriteAllText(linked, "module Extra\n")
         let stamp = File.GetLastWriteTimeUtc project
-        writeProject dir "Edited" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |] |> ignore
+        writeProject dir "Edited" flagsWithoutOutput [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |] |> ignore
         File.SetLastWriteTimeUtc(project, stamp.AddSeconds 2.0)
         let! edited = FSharpWorkspace.compileSources state project CancellationToken.None
         Assert.Equal<string array>([| NativePaths.Resolve(dir, "Library.fs"); linked |], ok edited)
@@ -311,10 +311,10 @@ let ``only a project compiling more than its own folder is evaluated for the Sol
     let root = NativePaths.Temp($"sharplsp-crack-{Guid.NewGuid():N}")
     try
         let dir = NativePaths.Resolve(root, ".vscode")
-        let ordinary = writeProject (NativePaths.Resolve(root, "Ordinary")) "Ordinary" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "Sub/More.fs" |] |]
-        let linked = writeProject dir "Linked" FLAGS_WITHOUT_OUTPUT [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |]
+        let ordinary = writeProject (NativePaths.Resolve(root, "Ordinary")) "Ordinary" flagsWithoutOutput [| node "Compile" [| attr "Include" "Sub/More.fs" |] |]
+        let linked = writeProject dir "Linked" flagsWithoutOutput [| node "Compile" [| attr "Include" "../Source/Extra.fs" |] |]
         let defaultsOff =
-            writeProject (NativePaths.Resolve(root, "Off")) "Off" FLAGS_WITHOUT_OUTPUT [| node "PropertyGroup" [| node "EnableDefaultCompileItems" [| "False" |] |] |]
+            writeProject (NativePaths.Resolve(root, "Off")) "Off" flagsWithoutOutput [| node "PropertyGroup" [| node "EnableDefaultCompileItems" [| "False" |] |] |]
 
         Assert.False(FSharpProjectLoading.linksSources ordinary)
         Assert.True(FSharpProjectLoading.linksSources linked)

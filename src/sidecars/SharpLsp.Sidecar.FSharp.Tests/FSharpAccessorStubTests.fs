@@ -24,7 +24,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionSemanticTests
 //   7 -> BothAccessors' interface block
 //  13 -> GetterOnly's
 //  18 -> SetterOnly's
-let private ACCESSOR_SOURCE =
+let private accessorSource =
     source
         [ "module Accessors"
           "type IStore ="
@@ -47,7 +47,7 @@ let private ACCESSOR_SOURCE =
           "    interface IStore with"
           "        member _.Value with set value = current <- value" ]
 
-let private accessorProject () = loadWorkspace [ "Accessors.fs", ACCESSOR_SOURCE ]
+let private accessorProject () = loadWorkspace [ ("Accessors.fs", accessorSource) ]
 
 /// Text of the stub offered at an interface position, or None if none is.
 let private stubTextAt state (paths: string list) line col =
@@ -143,7 +143,7 @@ let ``a get-and-set member is implemented, so only the missing member is offered
             let! text = stubTextAt state paths 7 15
 
             match text with
-            | None -> failwith "no interface stub offered for the get/set implementation"
+            | None -> failwith "no interface stub offered when the get/set implementation is applied"
             | Some text ->
                 Assert.Contains("Reset", text)
                 Assert.DoesNotContain("Value", text)

@@ -11,14 +11,13 @@ open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
-open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDeclarationKindTests
 open SharpLsp.Sidecar.Common
 
 /// Caret two characters into `needle` on the fixture line that contains `anchor`.
 let private caretAt (anchor: string) (needle: string) =
     let line = kindLineOf anchor
-    let text = KIND_SOURCE.Split('\n')[line]
+    let text = kindSource.Split('\n')[line]
     (line, text.IndexOf(needle, StringComparison.Ordinal) + 2)
 
 // ── Declaration versus definition on an overridden member ─────────
@@ -35,7 +34,7 @@ let ``declaration climbs to the interface member while definition lands on the o
 
     try
         let appended = "let described = widget.Describe()"
-        let text = KIND_SOURCE + appended + "\n"
+        let text = kindSource + appended + "\n"
         FSharpWorkspace.applyDidChange state paths[0] text
         let line = text.Split('\n') |> Array.findIndex (fun l -> l = appended)
         let character = appended.IndexOf("Describe", StringComparison.Ordinal) + 2
@@ -80,7 +79,7 @@ let ``definition of an unresolved identifier returns no location`` () = task {
 
     try
         let appended = "let broken = notARealSymbolAnywhere"
-        let text = KIND_SOURCE + appended + "\n"
+        let text = kindSource + appended + "\n"
         FSharpWorkspace.applyDidChange state paths[0] text
         let line = text.Split('\n') |> Array.findIndex (fun l -> l = appended)
         let! location = FSharpWorkspace.getDefinition state paths[0] line (appended.IndexOf("notARealSymbol") + 2)
@@ -118,7 +117,7 @@ let ``definition of a BCL property lands on the member in decompiled source`` ()
 [<Fact>]
 let ``formatting a CRLF document keeps CRLF line endings`` () = task {
     let crlf = "module Crlf.Doc\r\n\r\nlet   value =    1\r\n"
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Doc.fs", "module Crlf.Doc\n\nlet value = 1\n" ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Doc.fs", "module Crlf.Doc\n\nlet value = 1\n") ]
 
     try
         FSharpWorkspace.applyDidChange state paths[0] crlf
@@ -165,7 +164,7 @@ let ``renaming to an illegal F# identifier is refused`` () = task {
 
     try
         let (line, character) = caretAt "let sample =" "sample"
-        let! renamed = FSharpRename.renameResult state paths[0] line character "9not-an-identifier" System.Threading.CancellationToken.None
+        let! renamed = FSharpRename.renameResult state paths[0] line character "9not-an-identifier" Threading.CancellationToken.None
 
         match renamed with
         | Ok edits -> failwith $"an illegal identifier must be refused, got {List.length edits} edits"
@@ -191,7 +190,7 @@ let ``renaming a binding inside a loaded script rewrites its uses`` () = task {
         match loaded with
         | Error message -> failwith $"script failed to load: {message}"
         | Ok() ->
-            let! renamed = FSharpRename.renameResult state script 0 6 "cubed" System.Threading.CancellationToken.None
+            let! renamed = FSharpRename.renameResult state script 0 6 "cubed" Threading.CancellationToken.None
 
             match renamed with
             | Error message -> failwith $"script rename failed: {message}"

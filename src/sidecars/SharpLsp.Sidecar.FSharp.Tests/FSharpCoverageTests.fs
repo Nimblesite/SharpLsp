@@ -77,7 +77,7 @@ let ``loadProject carries every compile item into the FCS source file set`` () =
             |> Array.map (fun (path: string) -> NativePaths.NameOf path |> string)
         Assert.Equal<string array>([| "Defs.fs"; "Uses.fs" |], sourceFileNames)
         // And the project-wide usage search must find the cross-file use.
-        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5 System.Threading.CancellationToken.None
+        let! uses = FSharpReferences.getProjectUsages state paths[0] 1 5 CancellationToken.None
         Assert.True(
             uses.Length >= 2,
             $"references on `helper` must span both files (decl + use), got {uses.Length}")
@@ -104,7 +104,7 @@ let ``project usages resolve through a request path with different drive casing`
             let defsPath: string = paths[0]
             let flipped = NativePaths.FlipCase defsPath
             Assert.NotEqual<string>(defsPath, flipped)
-            let! uses = FSharpReferences.getProjectUsages state flipped 1 5 System.Threading.CancellationToken.None
+            let! uses = FSharpReferences.getProjectUsages state flipped 1 5 CancellationToken.None
             Assert.True(
                 uses.Length >= 2,
                 $"references through the flipped-casing path must span both files, got {uses.Length}")
@@ -112,12 +112,19 @@ let ``project usages resolve through a request path with different drive casing`
             cleanup dir
 }
 
-// ── FSharpFileOrder tests ────────────────────────────────────────
+// ── Compile order tests ──────────────────────────────────────────
+
+/// The project's evaluated Compile items in order; none when MSBuild cannot evaluate it.
+let private compileOrder state (fsproj: string) = task {
+    match! FSharpWorkspace.compileSources state fsproj CancellationToken.None with
+    | Ok files -> return files
+    | Error _ -> return [||]
+}
 
 [<Fact>]
 let ``getCompileOrder returns empty for missing fsproj`` () = task {
     let state = FSharpWorkspace.create ()
-    let! result = FSharpFileOrder.getCompileOrder state "/definitely/not/a/real/path.fsproj"
+    let! result = compileOrder state "/definitely/not/a/real/path.fsproj"
     Assert.Empty(result)
 }
 
@@ -130,111 +137,11 @@ let ``getCompileOrder returns files in declared order`` () = task {
               "C.fs", "module C\nlet c = 3\n" ]
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsproj
+        let! order = compileOrder state fsproj
         Assert.Equal(3, order.Length)
         Assert.EndsWith("A.fs", order[0])
         Assert.EndsWith("B.fs", order[1])
         Assert.EndsWith("C.fs", order[2])
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty when not loaded`` () = task {
-    let state = FSharpWorkspace.create ()
-    let! issues = FSharpFileOrder.analyzeFileOrder state "/nonexistent.fsproj"
-    Assert.Empty(issues)
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty for single file project`` () = task {
-    let! (state, dir, fsproj, _) =
-        loadWorkspace [ "Only.fs", "module Only\nlet x = 1\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder returns empty for well-ordered project`` () = task {
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Defs.fs", "module Defs\nlet helper (x: int) = x + 1\n"
-              "Uses.fs", "module Uses\nlet result = Defs.helper 5\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // Correctly ordered — no issues expected.
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``generateReorderEdit returns None when files already in correct order`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "First.fs", "module First\nlet a = 1\n"
-              "Second.fs", "module Second\nlet b = 2\n" ]
-    try
-        // First.fs is already before Second.fs — no reorder needed.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[0] paths[1]
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit produces edit when dependency is out of order`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Uses.fs", "module Uses\nlet x = 1\n"
-              "Defs.fs", "module Defs\nlet y = 2\n" ]
-    try
-        // Defs.fs comes after Uses.fs but should come before.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[1] paths[0]
-        Assert.True(result.IsSome)
-        let edit = result.Value
-        Assert.Equal(fsproj, edit.FilePath)
-        Assert.Contains("Defs.fs", edit.NewText)
-        Assert.Contains("Uses.fs", edit.NewText)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit returns None when files not in fsproj`` () =
-    let (dir, fsproj, _) =
-        makeProject [ "Only.fs", "module Only\nlet a = 1\n" ]
-    try
-        let result =
-            FSharpFileOrder.generateReorderEdit fsproj
-                (NativePaths.Resolve(dir, "Ghost.fs"))
-                (NativePaths.Resolve(dir, "Phantom.fs"))
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``generateReorderEdit returns None for malformed fsproj path`` () =
-    let result =
-        FSharpFileOrder.generateReorderEdit
-            "/not/real/path.fsproj" "/a.fs" "/b.fs"
-    Assert.True(result.IsNone)
-
-[<Fact>]
-let ``analyzeFileOrder detects misordered dependency`` () = task {
-    // Reversed: file using a symbol declared in a later file.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Uses.fs", "module Uses\nlet result = Defs.theThing\n"
-              "Defs.fs", "module Defs\nlet theThing = 42\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // The analyzer may or may not detect it depending on FCS check
-        // flow; either way we exercise the code paths.
-        for issue in issues do
-            Assert.NotNull(issue.FilePath)
-            Assert.NotNull(issue.Message)
     finally
         cleanup dir
 }
@@ -266,7 +173,7 @@ let ``getCodeActions returns empty when workspace not loaded`` () = task {
 [<Fact>]
 let ``getCodeActions handles read failure gracefully`` () = task {
     let! (wsState, dir, _, _) =
-        loadWorkspace [ "File.fs", "module File\nlet x = 1\n" ]
+        loadWorkspace [ ("File.fs", "module File\nlet x = 1\n") ]
     try
         let cfState = FSharpCodeFixes.createState ()
         // Non-existent file → File.ReadAllText throws → handler returns [].
@@ -285,7 +192,7 @@ let ``getCodeActions produces fix for unused value (FS1182)`` () = task {
     // code path through getCodeActions still executes.
     let src = "module M\nlet unusedVar = 42\nlet main () = ()\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -302,7 +209,7 @@ let ``getCodeActions produces fix for implicitly ignored (FS0020)`` () = task {
     // let _ = "stuff" produces FS0020 when expression result ignored.
     let src = "module M\nlet foo () =\n    printfn \"hi\"\n    42\n    ()\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -327,7 +234,7 @@ let ``getCodeActions handles incomplete match (FS0025)`` () = task {
         "    match s with\n" +
         "    | Circle r -> r * r\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -349,7 +256,7 @@ let ``getCodeActions handles undefined name (FS0039)`` () = task {
     // Reference to an identifier not in scope triggers FS0039.
     let src = "module M\nlet x = SomeUnknownThing\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -367,7 +274,7 @@ let ``getCodeActions handles undefined name matching List heuristic`` () = task 
     // Trigger the "List"/"map" branch of tryFixUndefinedName suggestions.
     let src = "module M\nlet ys = MyList 1\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -382,7 +289,7 @@ let ``getCodeActions handles undefined name matching List heuristic`` () = task 
 let ``getCodeActions handles undefined name Path heuristic`` () = task {
     let src = "module M\nlet p = MyPath 1\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -397,7 +304,7 @@ let ``getCodeActions handles undefined name Path heuristic`` () = task {
 let ``getCodeActions handles undefined name Regex heuristic`` () = task {
     let src = "module M\nlet r = MyRegex 1\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -412,7 +319,7 @@ let ``getCodeActions handles undefined name Regex heuristic`` () = task {
 let ``getCodeActions handles undefined name Task heuristic`` () = task {
     let src = "module M\nlet t = MyTask 1\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -428,7 +335,7 @@ let ``getCodeActions handles type mismatch (FS0001)`` () = task {
     // int vs float mismatch.
     let src = "module M\nlet (x: float) = 42\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -444,7 +351,7 @@ let ``resolveCodeAction removes entry once taken`` () = task {
     // Trigger a fix, resolve it, try again — second resolve must be None.
     let src = "module M\ntype Shape = A | B\nlet area s =\n    match s with\n    | A -> 0\n"
     let! (wsState, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -480,7 +387,7 @@ let private parseAndCheck (state: FSharpWorkspace.FSharpWorkspaceState) (filePat
 let ``tryGenerateUnionStubs returns None for non-match position`` () = task {
     let src = "module M\nlet x = 1\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -503,7 +410,7 @@ let ``tryGenerateUnionStubs returns Some for incomplete match`` () = task {
         "    match s with\n" +
         "    | Circle -> 1\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -525,7 +432,7 @@ let ``tryGenerateUnionStubs returns Some for incomplete match`` () = task {
 let ``tryGenerateRecordStubs returns None for non-record position`` () = task {
     let src = "module M\nlet x = 1\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -546,7 +453,7 @@ let ``tryGenerateRecordStubs may produce stub for incomplete record`` () = task 
         "type Person = { Name: string; Age: int; Email: string }\n" +
         "let p = { Name = \"x\" }\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -571,7 +478,7 @@ let ``tryGenerateRecordStubs handles various field types for defaults`` () = tas
         "type Everything = { S: string; I: int; F: float; B: bool; L: int list; A: int array; O: int option }\n" +
         "let e = { S = \"\" }\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -592,7 +499,7 @@ let ``tryGenerateRecordStubs handles various field types for defaults`` () = tas
 [<Fact>]
 let ``loadProject succeeds for a real fsproj`` () = task {
     let! (state, dir, _, _) =
-        loadWorkspace [ "Hello.fs", "module Hello\nlet h = 1\n" ]
+        loadWorkspace [ ("Hello.fs", "module Hello\nlet h = 1\n") ]
     try
         Assert.True(state.IsLoaded)
         Assert.True(state.ProjectOptions.IsSome)
@@ -603,7 +510,7 @@ let ``loadProject succeeds for a real fsproj`` () = task {
 [<Fact>]
 let ``getHover on non-existent file returns None`` () = task {
     let! (state, dir, _, _) =
-        loadWorkspace [ "H.fs", "module H\nlet x = 1\n" ]
+        loadWorkspace [ ("H.fs", "module H\nlet x = 1\n") ]
     try
         let! h = FSharpWorkspace.getHover state "/bogus/path.fs" 0 0
         Assert.True(h.IsNone)
@@ -614,7 +521,7 @@ let ``getHover on non-existent file returns None`` () = task {
 [<Fact>]
 let ``getDefinition on non-existent file returns None`` () = task {
     let! (state, dir, _, _) =
-        loadWorkspace [ "D.fs", "module D\nlet x = 1\n" ]
+        loadWorkspace [ ("D.fs", "module D\nlet x = 1\n") ]
     try
         let! d = FSharpWorkspace.getDefinition state "/bogus/path.fs" 0 0
         Assert.True(d.IsNone)
@@ -625,9 +532,9 @@ let ``getDefinition on non-existent file returns None`` () = task {
 [<Fact>]
 let ``getImplementations on non-existent file returns empty`` () = task {
     let! (state, dir, _, _) =
-        loadWorkspace [ "I.fs", "module I\nlet x = 1\n" ]
+        loadWorkspace [ ("I.fs", "module I\nlet x = 1\n") ]
     try
-        let! i = FSharpImplementations.getImplementations state "/bogus/path.fs" 0 0 System.Threading.CancellationToken.None
+        let! i = FSharpImplementations.getImplementations state "/bogus/path.fs" 0 0 CancellationToken.None
         Assert.Empty(i)
     finally
         cleanup dir
@@ -689,7 +596,7 @@ let ``getSemanticTokensRange filters by range`` () = task {
         "let b = 2\n" +
         "let c = 3\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! tokens = FSharpFeatures.getSemanticTokensRange state paths[0] 0 1
         Assert.NotNull(tokens :> obj)
@@ -712,7 +619,7 @@ let ``getInlayHints returns list for loaded file`` () = task {
         "let r = add 1 2\n" +
         "let piped = [1;2;3] |> List.map (fun x -> x + 1)\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
@@ -765,7 +672,7 @@ let private wsRichSource =
 
 [<Fact>]
 let ``WS getHover on a let binding returns markdown with the type`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "greeting" identifier on line 6, the 'g' is at column 4.
         let! hover = FSharpWorkspace.getHover state paths[0] 6 5
@@ -784,7 +691,7 @@ let ``WS getHover on a let binding returns markdown with the type`` () = task {
 
 [<Fact>]
 let ``WS getHover on a function binding mentions int`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "add" function on line 8, 'a' at column 4.
         let! hover = FSharpWorkspace.getHover state paths[0] 8 5
@@ -797,7 +704,7 @@ let ``WS getHover on a function binding mentions int`` () = task {
 
 [<Fact>]
 let ``WS getHover on a record type returns Some`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "Person" type name on line 4, 'P' at column 5.
         let! hover = FSharpWorkspace.getHover state paths[0] 4 7
@@ -810,7 +717,7 @@ let ``WS getHover on a record type returns Some`` () = task {
 
 [<Fact>]
 let ``WS getHover at whitespace returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // Blank line 1 — no identifier island.
         let! hover = FSharpWorkspace.getHover state paths[0] 1 0
@@ -821,7 +728,7 @@ let ``WS getHover at whitespace returns None`` () = task {
 
 [<Fact>]
 let ``WS getHover with line past end of file returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // Line index well beyond the file's last line.
         let! hover = FSharpWorkspace.getHover state paths[0] 999 0
@@ -832,7 +739,7 @@ let ``WS getHover with line past end of file returns None`` () = task {
 
 [<Fact>]
 let ``WS getDefinition on a call site jumps to the declaration`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // The "add" call site on line 10: "let computed = add 3 4".
         // 'a' of "add" is at column 15.
@@ -849,7 +756,7 @@ let ``WS getDefinition on a call site jumps to the declaration`` () = task {
 
 [<Fact>]
 let ``WS getDefinition on a DU case usage resolves`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "Red" usage on line 14: "let favorite = Red"; 'R' at column 15.
         let! def = FSharpWorkspace.getDefinition state paths[0] 14 16
@@ -864,7 +771,7 @@ let ``WS getDefinition on a DU case usage resolves`` () = task {
 
 [<Fact>]
 let ``WS getDefinition at whitespace returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! def = FSharpWorkspace.getDefinition state paths[0] 1 0
         Assert.True(def.IsNone)
@@ -874,7 +781,7 @@ let ``WS getDefinition at whitespace returns None`` () = task {
 
 [<Fact>]
 let ``WS getDefinition past end of file returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! def = FSharpWorkspace.getDefinition state paths[0] 999 0
         Assert.True(def.IsNone)
@@ -884,7 +791,7 @@ let ``WS getDefinition past end of file returns None`` () = task {
 
 [<Fact>]
 let ``WS getTypeDefinition on a record value points at the type`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "person" binding on line 12; 'p' at column 4. Its type is Person.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 12 5
@@ -899,7 +806,7 @@ let ``WS getTypeDefinition on a record value points at the type`` () = task {
 
 [<Fact>]
 let ``WS getTypeDefinition on a DU value points at the DU type`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "favorite" binding on line 14; type is Color.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 14 6
@@ -912,7 +819,7 @@ let ``WS getTypeDefinition on a DU value points at the DU type`` () = task {
 
 [<Fact>]
 let ``WS getTypeDefinition at whitespace returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 1 0
         Assert.True(tdef.IsNone)
@@ -922,7 +829,7 @@ let ``WS getTypeDefinition at whitespace returns None`` () = task {
 
 [<Fact>]
 let ``WS getTypeDefinition on non-existent file returns None`` () = task {
-    let! (state, dir, _, _) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, _) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! tdef = FSharpWorkspace.getTypeDefinition state "/no/such/file.fs" 0 0
         Assert.True(tdef.IsNone)
@@ -932,7 +839,7 @@ let ``WS getTypeDefinition on non-existent file returns None`` () = task {
 
 [<Fact>]
 let ``WS getDeclaration on a value returns its own declaration`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "add" call site on line 10; declaration is on line 8.
         let! decl = FSharpWorkspace.getDeclaration state paths[0] 10 16
@@ -946,7 +853,7 @@ let ``WS getDeclaration on a value returns its own declaration`` () = task {
 
 [<Fact>]
 let ``WS getDeclaration on a type falls back to definition`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "Red" usage on line 14 — a DU case (non-MFV path → extractDefinition).
         let! decl = FSharpWorkspace.getDeclaration state paths[0] 14 16
@@ -958,7 +865,7 @@ let ``WS getDeclaration on a type falls back to definition`` () = task {
 
 [<Fact>]
 let ``WS getDeclaration at whitespace returns None`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! decl = FSharpWorkspace.getDeclaration state paths[0] 1 0
         Assert.True(decl.IsNone)
@@ -968,7 +875,7 @@ let ``WS getDeclaration at whitespace returns None`` () = task {
 
 [<Fact>]
 let ``WS getDeclaration on non-existent file returns None`` () = task {
-    let! (state, dir, _, _) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, _) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         let! decl = FSharpWorkspace.getDeclaration state "/no/such/file.fs" 0 0
         Assert.True(decl.IsNone)
@@ -978,10 +885,10 @@ let ``WS getDeclaration on non-existent file returns None`` () = task {
 
 [<Fact>]
 let ``WS getImplementations on a value returns its location`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "add" call site on line 10 → implementation list with one location.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 10 16 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 10 16 CancellationToken.None
         Assert.NotEmpty(impls)
         let loc = List.head impls
         Assert.EndsWith("Sample.fs", loc.FilePath)
@@ -992,11 +899,11 @@ let ``WS getImplementations on a value returns its location`` () = task {
 
 [<Fact>]
 let ``WS getImplementations on a type returns its location`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "Person" type usage in the record literal on line 12 — resolve via
         // the field; ensure the implementations path runs and returns a list.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 14 16 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 14 16 CancellationToken.None
         Assert.NotEmpty(impls)
         Assert.Equal(2, (List.head impls).Line)
     finally
@@ -1005,9 +912,9 @@ let ``WS getImplementations on a type returns its location`` () = task {
 
 [<Fact>]
 let ``WS getImplementations at whitespace returns empty`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 0 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 0 CancellationToken.None
         Assert.Empty(impls)
     finally
         cleanup dir
@@ -1015,7 +922,7 @@ let ``WS getImplementations at whitespace returns empty`` () = task {
 
 [<Fact>]
 let ``WS re-query after rewriting the file reflects new content`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // First confirm a hover on the original "greeting" binding.
         let! before = FSharpWorkspace.getHover state paths[0] 6 5
@@ -1038,7 +945,7 @@ let ``WS re-query after rewriting the file reflects new content`` () = task {
 
 [<Fact>]
 let ``WS getHover on a record field mentions its type`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Sample.fs", wsRichSource ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Sample.fs", wsRichSource) ]
     try
         // "Name" field reference inside the record literal on line 12.
         // "let person = { Name = ..." → 'N' of Name at column 15.
@@ -1057,7 +964,7 @@ let ``WS getTypeDefinition on a record field declaration resolves field type`` (
         "module M\n" +
         "type Wrapper = { Inner: System.String }\n" +
         "let w = { Inner = \"x\" }\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Inner" field declaration on line 1; 'I' at column 15.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 1 17
@@ -1076,7 +983,7 @@ let ``WS getTypeDefinition on a type name resolves the entity`` () = task {
         "module M\n" +
         "type Widget = { Size: int }\n" +
         "let make (w: Widget) = w\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Widget" annotation on line 2: "let make (w: Widget) = w".
         // 'W' of Widget at column 13.
@@ -1099,7 +1006,7 @@ let ``WS getDeclaration on an interface override resolves the base member`` () =
         "type Impl() =\n" +
         "    interface IGreeter with\n" +
         "        member _.Greet() = \"hi\"\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Greet" on the implementation line 5; 'G' at column 17.
         let! decl = FSharpWorkspace.getDeclaration state paths[0] 5 18
@@ -1120,10 +1027,10 @@ let ``WS getImplementations on a function declaration returns its own location``
         "module M\n" +
         "let square (n: int) = n * n\n" +
         "let r = square 4\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "square" at its declaration on line 1; 's' at column 4.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 6 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 6 CancellationToken.None
         Assert.NotEmpty(impls)
         Assert.Equal(1, (List.head impls).Line)
     finally
@@ -1139,7 +1046,7 @@ let ``WS getTypeDefinition on a function value returns None for function type`` 
         "module M\n" +
         "let add (a: int) (b: int) = a + b\n" +
         "let r = add 1 2\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "add" function binding on line 1; 'a' at column 4.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 1 5
@@ -1156,7 +1063,7 @@ let ``WS getTypeDefinition on an external field type resolves through field bran
     let src =
         "module M\n" +
         "let z = System.String.Empty\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Empty" field access on line 1; 'E' at column 22.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 1 24
@@ -1174,10 +1081,10 @@ let ``WS getImplementations on an external symbol may return empty`` () = task {
     let src =
         "module M\n" +
         "let z = System.String.Empty\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Empty" field on line 1 — external symbol.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 1 24 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 1 24 CancellationToken.None
         // Either empty (no in-source location) or a list; the path runs.
         Assert.NotNull(impls :> obj)
     finally
@@ -1192,7 +1099,7 @@ let ``WS getTypeDefinition on a union case usage returns None`` () = task {
         "module M\n" +
         "type Color = Red | Green\n" +
         "let f = Red\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Red" usage on line 2: "let f = Red"; 'R' at column 8.
         let! tdef = FSharpWorkspace.getTypeDefinition state paths[0] 2 9
@@ -1209,7 +1116,7 @@ let ``WS getDefinition on an external library symbol resolves to metadata-as-sou
     let src =
         "module M\n" +
         "let s = System.String.Empty\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // "Empty" on line 1; external — resolves into decompiled System.String.
         let! def = FSharpWorkspace.getDefinition state paths[0] 1 24
@@ -1232,7 +1139,7 @@ let private fixFindByTitle (actions: FSharpCodeFixes.CodeActionItem list) (needl
 let ``FIX getCodeActions adds open for the exact generic Dictionary type`` () = task {
     // Only an exact unresolved generic type maps to System.Collections.Generic.
     let src = "module M\nlet ys = Dictionary<int, string>()\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1260,7 +1167,7 @@ let ``FIX getCodeActions adds open for the exact generic Dictionary type`` () = 
 let ``FIX getCodeActions returns no fix for undefined name without namespace hint`` () = task {
     // FS0039 'SomeUnknownThing' matches no heuristic → empty suggestion list.
     let src = "module M\nlet x = SomeUnknownThing\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1273,7 +1180,7 @@ let ``FIX getCodeActions returns no fix for undefined name without namespace hin
 [<Fact>]
 let ``FIX getCodeActions adds open System.IO for exact Path name`` () = task {
     let src = "module M\nlet p = Path.GetTempPath()\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1292,7 +1199,7 @@ let ``FIX getCodeActions adds open System.IO for exact Path name`` () = task {
 [<Fact>]
 let ``FIX getCodeActions adds open System.Text.RegularExpressions for exact Regex name`` () = task {
     let src = "module M\nlet r = Regex.IsMatch(\"abc\", \"a\")\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1311,7 +1218,7 @@ let ``FIX getCodeActions adds open System.Text.RegularExpressions for exact Rege
 [<Fact>]
 let ``FIX getCodeActions adds open System.Threading.Tasks for exact Task name`` () = task {
     let src = "module M\nlet t = Task.Delay(1)\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1331,7 +1238,7 @@ let ``FIX getCodeActions adds open System.Threading.Tasks for exact Task name`` 
 let ``FIX getCodeActions adds pipe-ignore for implicitly ignored expression FS0020`` () = task {
     // '1 + 1' on its own line in a sequence triggers FS0020.
     let src = "module M\nlet f () =\n    1 + 1\n    ()\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1361,7 +1268,7 @@ let ``FIX getCodeActions adds wildcard case for incomplete match FS0025`` () = t
         "let area s =\n" +
         "    match s with\n" +
         "    | Circle r -> r\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1390,7 +1297,7 @@ let ``FIX getCodeActions removes redundant pattern case FS0026`` () = task {
         "    | A -> 1\n" +
         "    | B -> 2\n" +
         "    | A -> 3\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1419,7 +1326,7 @@ let ``FIX getCodeActions ignores diagnostics outside the requested range`` () = 
         "    | A -> 1\n" +
         "    | B -> 2\n" +
         "    | A -> 3\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         // Range entirely before the redundant rule on line 6.
@@ -1435,7 +1342,7 @@ let ``FIX getCodeActions ignores diagnostics outside the requested range`` () = 
 [<Fact>]
 let ``FIX getCodeActions returns empty for a clean file`` () = task {
     let src = "module M\nlet x = 1\nlet y = x + 1\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         let! actions =
@@ -1454,7 +1361,7 @@ let ``FIX getCodeActions union stubs surfaced through the action pipeline`` () =
         "let area (s: Shape) =\n" +
         "    match s with\n" +
         "    | Circle -> 1\n"
-    let! (wsState, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (wsState, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let cfState = FSharpCodeFixes.createState ()
         // Position the request cursor on the 'match s with' line.
@@ -1483,7 +1390,7 @@ let ``FIX tryGenerateUnionStubs formats single-field and tuple-field case stubs`
         "let area (s: Shape) =\n" +
         "    match s with\n" +
         "    | Triangle -> 1.0\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -1515,7 +1422,7 @@ let ``FIX tryGenerateUnionStubs returns None when match is already exhaustive`` 
         "    match s with\n" +
         "    | Circle -> 1\n" +
         "    | Square -> 2\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -1535,7 +1442,7 @@ let ``FIX tryGenerateRecordStubs produces defaults for missing fields`` () = tas
         "module M\n" +
         "type Person = { Name: string; Age: int; Email: string }\n" +
         "let p = { Name = \"x\" }\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -1565,7 +1472,7 @@ let ``FIX tryGenerateRecordStubs returns None when record is complete`` () = tas
         "module M\n" +
         "type Point = { X: int; Y: int }\n" +
         "let p = { X = 1; Y = 2 }\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -1595,7 +1502,7 @@ let ``FEAT getSemanticTokens emits LSP token data for a loaded file`` () = task 
         "let add a b = a + b\n" +
         "let result = add value 1\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! tokens = FSharpFeatures.getSemanticTokens state paths[0]
         Assert.NotNull(tokens :> obj)
@@ -1623,7 +1530,7 @@ let ``FEAT getSemanticTokensRange restricts tokens to first line`` () = task {
         "let beta = 2\n" +
         "let gamma = 3\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! full = FSharpFeatures.getSemanticTokens state paths[0]
         let! ranged = FSharpFeatures.getSemanticTokensRange state paths[0] 0 0
@@ -1647,7 +1554,7 @@ let ``FEAT getInlayHints produces type and parameter hints`` () = task {
         "let total = greet \"hi\" 3\n" +
         "let piped = [ 1; 2; 3 ] |> List.length\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
@@ -1655,7 +1562,7 @@ let ``FEAT getInlayHints produces type and parameter hints`` () = task {
         Assert.NotEmpty(hints)
         // Every hint has a non-empty label and a Type(1) or Parameter(2) kind.
         for h in hints do
-            Assert.False(System.String.IsNullOrEmpty(h.Label))
+            Assert.False(String.IsNullOrEmpty(h.Label))
             Assert.True(h.Kind = 1 || h.Kind = 2)
             Assert.True(h.Line >= 0)
         // A Type hint label always begins with the ": " prefix.
@@ -1750,7 +1657,7 @@ let ``FEAT getCompileOrder resolves nested and relative include paths`` () = tas
     File.WriteAllText(fsprojPath, fsproj)
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Equal(2, order.Length)
         // Paths are absolute (rooted) and point inside the project dir.
         Assert.True(NativePaths.IsRooted(order[0]))
@@ -1778,7 +1685,7 @@ let ``FEAT getCompileOrder skips Compile items without Include`` () = task {
     File.WriteAllText(fsprojPath, fsproj)
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Single(order) |> ignore
         Assert.EndsWith("Real.fs", order[0])
     finally
@@ -1794,67 +1701,13 @@ let ``FEAT getCompileOrder returns empty for malformed xml`` () = task {
     File.WriteAllText(fsprojPath, "<Project><ItemGroup><Compile Include=\"X.fs\"></Project>")
     try
         let state = FSharpWorkspace.create ()
-        let! order = FSharpFileOrder.getCompileOrder state fsprojPath
+        let! order = compileOrder state fsprojPath
         Assert.Empty(order)
     finally
         cleanup dir
 }
 
 // ── FEAT FSharpFileOrder: generateReorderEdit branches ───────────
-
-[<Fact>]
-let ``FEAT generateReorderEdit moves dependency above a three-file project`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Top.fs", "module Top\nlet t = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n"
-              "Defs.fs", "module Defs\nlet d = 3\n" ]
-    try
-        // Defs.fs (index 2) should move before Uses.fs (index 1).
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[2] paths[1]
-        Assert.True(result.IsSome)
-        let edit = result.Value
-        Assert.Equal(fsproj, edit.FilePath)
-        Assert.Equal(0, edit.StartLine)
-        Assert.Equal(0, edit.StartCharacter)
-        // In the rewritten fsproj, Defs.fs precedes Uses.fs.
-        let defIdx = edit.NewText.IndexOf("Defs.fs", StringComparison.Ordinal)
-        let usesIdx = edit.NewText.IndexOf("Uses.fs", StringComparison.Ordinal)
-        Assert.True(defIdx >= 0 && usesIdx >= 0)
-        Assert.True(defIdx < usesIdx)
-        // The end position covers the whole original document.
-        Assert.True(edit.EndLine > 0)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT generateReorderEdit returns None when dependency already precedes`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Defs.fs", "module Defs\nlet d = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n" ]
-    try
-        // Defs.fs already comes before Uses.fs → depLineIdx < beforeLineIdx,
-        // so no reorder edit is produced.
-        let result = FSharpFileOrder.generateReorderEdit fsproj paths[0] paths[1]
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
-
-[<Fact>]
-let ``FEAT generateReorderEdit returns None when before file missing`` () =
-    let (dir, fsproj, paths) =
-        makeProject
-            [ "Defs.fs", "module Defs\nlet d = 1\n"
-              "Uses.fs", "module Uses\nlet u = 2\n" ]
-    try
-        // The "before" target is not in the fsproj → beforeLineIdx stays -1.
-        let result =
-            FSharpFileOrder.generateReorderEdit fsproj paths[1]
-                (NativePaths.Resolve(dir, "Absent.fs"))
-        Assert.True(result.IsNone)
-    finally
-        cleanup dir
 
 // ── FEAT FSharpReferences: getReferences ─────────────────────────
 
@@ -1865,10 +1718,10 @@ let ``FEAT getReferences finds all uses including the declaration`` () = task {
         "let counter = 10\n" +
         "let doubled = counter + counter\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         // 'counter' is declared on line 1 (0-based) and used twice on line 2.
-        let! refs = FSharpReferences.getReferences state paths[0] 1 6 true System.Threading.CancellationToken.None
+        let! refs = FSharpReferences.getReferences state paths[0] 1 6 true CancellationToken.None
         Assert.NotEmpty(refs)
         // With the declaration included there should be >= 3 occurrences.
         Assert.True(refs.Length >= 3)
@@ -1887,10 +1740,10 @@ let ``FEAT getReferences excludes declaration when not requested`` () = task {
         "let counter = 10\n" +
         "let doubled = counter + counter\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
-        let! withDecl = FSharpReferences.getReferences state paths[0] 1 6 true System.Threading.CancellationToken.None
-        let! noDecl = FSharpReferences.getReferences state paths[0] 1 6 false System.Threading.CancellationToken.None
+        let! withDecl = FSharpReferences.getReferences state paths[0] 1 6 true CancellationToken.None
+        let! noDecl = FSharpReferences.getReferences state paths[0] 1 6 false CancellationToken.None
         // Excluding the declaration drops at least one occurrence.
         Assert.True(noDecl.Length < withDecl.Length)
         // None of the remaining references sit on the declaration line.
@@ -1906,9 +1759,9 @@ let ``FEAT getReferences returns empty for whitespace position`` () = task {
     // getSymbolUse returns None and getReferences yields [].
     let src = "module M\nlet x = 1\n\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
-        let! refs = FSharpReferences.getReferences state paths[0] 2 0 true System.Threading.CancellationToken.None
+        let! refs = FSharpReferences.getReferences state paths[0] 2 0 true CancellationToken.None
         Assert.Empty(refs)
     finally
         cleanup dir
@@ -1923,7 +1776,7 @@ let ``FEAT getDocumentHighlights marks definition write and uses read`` () = tas
         "let total = 5\n" +
         "let plus = total + 1\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! highlights = FSharpReferences.getDocumentHighlights state paths[0] 1 6
         Assert.NotEmpty(highlights)
@@ -1947,7 +1800,7 @@ let ``FEAT getDocumentHighlights returns empty for non-symbol position`` () = ta
     // and the highlight list is empty.
     let src = "module M\nlet x = 1\n\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! highlights = FSharpReferences.getDocumentHighlights state paths[0] 2 0
         Assert.Empty(highlights)
@@ -1961,7 +1814,7 @@ let ``FEAT getDocumentHighlights returns empty for non-symbol position`` () = ta
 let ``FEAT hover renders fsharp code block for a let binding`` () = task {
     let src = "module M\nlet myValue = 123\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         // Hover on 'myValue' renders a tooltip through FSharpHoverBuilder.
         let! hover = FSharpWorkspace.getHover state paths[0] 1 6
@@ -1982,7 +1835,7 @@ let ``FEAT hover renders type info for a record field`` () = task {
         "let p = { Name = \"Ada\"; Age = 36 }\n" +
         "let n = p.Name\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         // Hover on the 'Name' field access on line 3.
         let! hover = FSharpWorkspace.getHover state paths[0] 3 10
@@ -2001,7 +1854,7 @@ let ``FEAT hover renders generic function signature`` () = task {
         "let identity x = x\n" +
         "let used = identity 5\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         // Hover on the generic 'identity' use on line 2.
         let! hover = FSharpWorkspace.getHover state paths[0] 2 11
@@ -2021,7 +1874,7 @@ let ``FEAT hover renders xml doc summary for documented value`` () = task {
         "let answer = 42\n" +
         "let echo = answer\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         // Hover on 'answer' use renders the XML doc via XmlDocRenderer path.
         let! hover = FSharpWorkspace.getHover state paths[0] 3 11
@@ -2042,7 +1895,7 @@ let ``FEAT renderToolTip returns None for an empty tooltip`` () =
     let tip =
         FSharp.Compiler.EditorServices.ToolTipText([])
     let result =
-        SharpLsp.Sidecar.FSharp.Hover.FSharpHoverBuilder.renderToolTip tip
+        Hover.FSharpHoverBuilder.renderToolTip tip
     Assert.True(result.IsNone)
 
 [<Fact>]
@@ -2053,7 +1906,7 @@ let ``FEAT renderToolTip renders a CompositionError element`` () =
     let tip =
         FSharp.Compiler.EditorServices.ToolTipText([ element ])
     let result =
-        SharpLsp.Sidecar.FSharp.Hover.FSharpHoverBuilder.renderToolTip tip
+        Hover.FSharpHoverBuilder.renderToolTip tip
     Assert.True(result.IsSome)
     Assert.Contains("Error", result.Value)
     Assert.Contains("boom", result.Value)
@@ -2066,7 +1919,7 @@ let ``FEAT renderToolTip returns None for a None element`` () =
         FSharp.Compiler.EditorServices.ToolTipText(
             [ FSharp.Compiler.EditorServices.ToolTipElement.None ])
     let result =
-        SharpLsp.Sidecar.FSharp.Hover.FSharpHoverBuilder.renderToolTip tip
+        Hover.FSharpHoverBuilder.renderToolTip tip
     Assert.True(result.IsNone)
 
 // ── FEAT FSharpFeatures: field-kind semantic token ───────────────
@@ -2083,7 +1936,7 @@ let ``FEAT getSemanticTokens covers record field and union case kinds`` () = tas
         "let w = b.Width\n" +
         "let t = First\n"
     let! (state, dir, _, paths) =
-        loadWorkspace [ "M.fs", src ]
+        loadWorkspace [ ("M.fs", src) ]
     try
         let! tokens = FSharpFeatures.getSemanticTokens state paths[0]
         Assert.True(tokens.Length > 0)
@@ -2118,7 +1971,7 @@ let ``ACT2 record stubs emit a default for every missing field`` () = task {
         "module M\n" +
         "type Bag = { S: string; I: int; L: int64; F: float; B: bool; Other: System.Guid }\n" +
         "let b = { S = \"x\" }\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -2151,7 +2004,7 @@ let ``ACT2 record stubs emit a default for every missing field`` () = task {
 let ``ACT2 record stubs return None when cursor is not on a record`` () = task {
     // A non-record position drives findRecordExpr's None branch.
     let src = "module M\nlet x = [ 1; 2; 3 ]\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! data = parseAndCheck state paths[0]
         match data with
@@ -2165,77 +2018,6 @@ let ``ACT2 record stubs return None when cursor is not on a record`` () = task {
 }
 
 [<Fact>]
-let ``ACT2 union stubs return None when match subject is not a union`` () = task {
-    // A match over an int has no FSharpUnionCase patterns, so resolveMatchType
-    // returns None and tryGenerateUnionStubs takes its None branch.
-    let src =
-        "module M\n" +
-        "let f (n: int) =\n" +
-        "    match n with\n" +
-        "    | 0 -> \"zero\"\n" +
-        "    | _ -> \"other\"\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
-    try
-        let! data = parseAndCheck state paths[0]
-        match data with
-        | Some (parse, check, source) ->
-            let result =
-                FSharpCodeActions.tryGenerateUnionStubs check parse source paths[0] 2 4
-            Assert.True(result.IsNone)
-        | None -> Assert.Fail("Check failed")
-    finally
-        cleanup dir
-}
-
-// ----- ORD2 -----
-// ══ ORD2: FSharpFileOrder.analyzeFileOrder detection path ══════════
-// A two-file project where the earlier file references a symbol defined in the
-// later file drives collectDefinitions, collectUndefinedErrors, and the
-// issue-construction branch (defIdx > currentIdx).
-
-[<Fact>]
-let ``ORD2 analyzeFileOrder reports a cross-file out-of-order dependency`` () = task {
-    // 'Uses.fs' (compiled first) references Defs.theValue, which is defined in
-    // 'Defs.fs' (compiled second). In F# this is an FS0039 because the symbol
-    // is not yet in scope — exactly the mis-order the analyzer detects.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Uses.fs", "module Uses\nlet consumer = Defs.theValue + 1\n"
-              "Defs.fs", "module Defs\nlet theValue = 41\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        // Every returned issue is well-formed and points back at the offending
-        // file with a human-readable reorder message.
-        for issue in issues do
-            Assert.EndsWith("Uses.fs", issue.FilePath)
-            Assert.EndsWith("Defs.fs", issue.DependencyFile)
-            Assert.Contains("compile order", issue.Message)
-            Assert.True(issue.Line >= 0)
-            Assert.True(issue.Character >= 0)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``ORD2 analyzeFileOrder returns no issues for a correctly ordered project`` () = task {
-    // Defs precedes Uses → no undefined-symbol errors → no issues. Drives the
-    // happy path through collectDefinitions / collectUndefinedErrors with an
-    // empty error list.
-    let! (state, dir, fsproj, _) =
-        loadWorkspace
-            [ "Defs.fs", "module Defs\nlet theValue = 41\n"
-              "Uses.fs", "module Uses\nlet consumer = Defs.theValue + 1\n" ]
-    try
-        let! issues = FSharpFileOrder.analyzeFileOrder state fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
-
-// ----- FEAT2 -----
-// ══ FEAT2: FSharpFeatures pipeline hints and idempotent formatting ══
-
-[<Fact>]
 let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
     // A line containing '|>' drives extractPipelineHints, which calls GetToolTip
     // before the pipe and, on a Group tooltip, yields a Type(1) hint.
@@ -2243,14 +2025,14 @@ let ``FEAT2 getInlayHints emits a pipeline type hint`` () = task {
         "module M\n" +
         "let total = [ 1; 2; 3 ] |> List.sum\n" +
         "let again = total |> string\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         let! hints = FSharpInlayHints.getInlayHints state paths[0] 0 10
         Assert.NotNull(hints :> obj)
         // The pipeline path may or may not resolve a tooltip depending on FCS,
         // but every hint produced is well-formed.
         for h in hints do
-            Assert.False(System.String.IsNullOrEmpty(h.Label))
+            Assert.False(String.IsNullOrEmpty(h.Label))
             Assert.True(h.Kind = 1 || h.Kind = 2)
     finally
         cleanup dir
@@ -2294,7 +2076,7 @@ let ``FEAT2 formatDocument returns empty when content is already canonical`` () 
 let ``WS2 getHover returns None for a file that cannot be read`` () = task {
     // File.ReadAllText throws on a directory path → the try/with branch of
     // getHover swallows the exception and returns None.
-    let! (state, dir, _, _) = loadWorkspace [ "M.fs", "module M\nlet x = 1\n" ]
+    let! (state, dir, _, _) = loadWorkspace [ ("M.fs", "module M\nlet x = 1\n") ]
     try
         // dir is a directory, not a file → ReadAllText throws.
         let! hover = FSharpWorkspace.getHover state dir 0 0
@@ -2305,7 +2087,7 @@ let ``WS2 getHover returns None for a file that cannot be read`` () = task {
 
 [<Fact>]
 let ``WS2 getDefinition returns None for a file that cannot be read`` () = task {
-    let! (state, dir, _, _) = loadWorkspace [ "M.fs", "module M\nlet x = 1\n" ]
+    let! (state, dir, _, _) = loadWorkspace [ ("M.fs", "module M\nlet x = 1\n") ]
     try
         let! def = FSharpWorkspace.getDefinition state dir 0 0
         Assert.True(def.IsNone)
@@ -2315,9 +2097,9 @@ let ``WS2 getDefinition returns None for a file that cannot be read`` () = task 
 
 [<Fact>]
 let ``WS2 getReferences returns empty for a file that cannot be read`` () = task {
-    let! (state, dir, _, _) = loadWorkspace [ "M.fs", "module M\nlet x = 1\n" ]
+    let! (state, dir, _, _) = loadWorkspace [ ("M.fs", "module M\nlet x = 1\n") ]
     try
-        let! refs = FSharpReferences.getReferences state dir 0 0 true System.Threading.CancellationToken.None
+        let! refs = FSharpReferences.getReferences state dir 0 0 true CancellationToken.None
         Assert.Empty(refs)
     finally
         cleanup dir
@@ -2325,7 +2107,7 @@ let ``WS2 getReferences returns empty for a file that cannot be read`` () = task
 
 [<Fact>]
 let ``WS2 getDocumentHighlights returns empty for a file that cannot be read`` () = task {
-    let! (state, dir, _, _) = loadWorkspace [ "M.fs", "module M\nlet x = 1\n" ]
+    let! (state, dir, _, _) = loadWorkspace [ ("M.fs", "module M\nlet x = 1\n") ]
     try
         let! hl = FSharpReferences.getDocumentHighlights state dir 0 0
         Assert.Empty(hl)
@@ -2371,10 +2153,10 @@ let ``WS2 getImplementations on an interface override returns its location`` () 
         "type Circle(r: float) =\n" +
         "    interface IShape with\n" +
         "        member _.Area() = 3.14 * r * r\n"
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
     try
         // 'Area' impl on line 5 (0-based); 'A' at column 17.
-        let! impls = FSharpImplementations.getImplementations state paths[0] 5 18 System.Threading.CancellationToken.None
+        let! impls = FSharpImplementations.getImplementations state paths[0] 5 18 CancellationToken.None
         Assert.NotEmpty(impls)
         for loc in impls do
             Assert.EndsWith("M.fs", loc.FilePath)
@@ -2402,10 +2184,10 @@ let ``record stub action fills missing fields with typed defaults`` () = task {
     // fields, exercising defaultValue's string/int/bool/list arms.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "type Rec = { S: string; I: int; B: bool; L: int list }\n"
-              + "let r : Rec = { S = \"x\" }\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "type Rec = { S: string; I: int; B: bool; L: int list }\n"
+               + "let r : Rec = { S = \"x\" }\n") ]
     try
         let cf = FSharpCodeFixes.createState ()
         let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 2 14 2 25 CancellationToken.None
@@ -2430,11 +2212,11 @@ let ``record stub resolver skips a value-use before the record field`` () = task
     // order BEFORE the field label → resolveRecordType's `| _ -> None` arm.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "type Person = { Name: string; Age: int }\n"
-              + "let basePerson = { Name = \"a\"; Age = 1 }\n"
-              + "let p = { basePerson with Name = \"b\" }\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "type Person = { Name: string; Age: int }\n"
+               + "let basePerson = { Name = \"a\"; Age = 1 }\n"
+               + "let p = { basePerson with Name = \"b\" }\n") ]
     try
         let cf = FSharpCodeFixes.createState ()
         // Must not throw; the copy-update record is complete so no stub is forced,
@@ -2451,12 +2233,12 @@ let ``union stub generation returns nothing for an enum match`` () = task {
     // FSharpField, not an FSharpUnionCase → tryGenerateUnionStubs `| _ -> None`.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "type Color = Red = 0 | Green = 1 | Blue = 2\n"
-              + "let f (c: Color) =\n"
-              + "    match c with\n"
-              + "    | Color.Red -> 1\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "type Color = Red = 0 | Green = 1 | Blue = 2\n"
+               + "let f (c: Color) =\n"
+               + "    match c with\n"
+               + "    | Color.Red -> 1\n") ]
     try
         let cf = FSharpCodeFixes.createState ()
         // Position over the `match c with` line; no union-stub action results.
@@ -2472,11 +2254,11 @@ let ``code fix offers a conversion for a numeric type mismatch`` () = task {
     // tryFixTypeMismatch, which builds an int/float conversion action.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "let g (x: int) = x + 1\n"
-              + "let n : float = 5.0\n"
-              + "let y = g n\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "let g (x: int) = x + 1\n"
+               + "let n : float = 5.0\n"
+               + "let y = g n\n") ]
     try
         let cf = FSharpCodeFixes.createState ()
         let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 3 0 3 12 CancellationToken.None
@@ -2492,7 +2274,7 @@ let ``code fix offers a conversion for a numeric type mismatch`` () = task {
 let ``code fix converts a decimal passed where a float is expected`` () = task {
     // [ANALYZERS-FSAC-PARITY] FS0001 on `actualValue` in the editor's unsaved buffer offers
     // exactly one `float` conversion that wraps the argument, and nothing on the next line.
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", "module M\n\nlet sentinel = 48\n" ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", "module M\n\nlet sentinel = 48\n") ]
     try
         FSharpWorkspace.applyDidChange
             state
@@ -2524,11 +2306,11 @@ let ``code fix prefixes an unused value with underscore`` () = task {
     // live project options, then the unused-value fix (FS1182 dispatch arm) fires.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "let f () =\n"
-              + "    let unusedVar = 42\n"
-              + "    ()\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "let f () =\n"
+               + "    let unusedVar = 42\n"
+               + "    ()\n") ]
     try
         let opts = state.ProjectOptions.Value
         state.ProjectOptions <-
@@ -2550,7 +2332,7 @@ let ``code fix ignores a diagnostic with no registered handler`` () = task {
     // getFixesForDiagnostic `| _ -> []`. getCodeActions must not throw.
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs", "module M\nlet f x = match x with | Y -> 1 | _ -> 2\n" ]
+            [ ("M.fs", "module M\nlet f x = match x with | Y -> 1 | _ -> 2\n") ]
     try
         let cf = FSharpCodeFixes.createState ()
         let! actions = FSharpCodeFixes.getCodeActions cf state None paths[0] 1 0 1 40 CancellationToken.None
@@ -2640,50 +2422,11 @@ let ``loadProjectWithCancellation reports an error for an invalid path`` () = ta
     let ws = FSharpWorkspace.create ()
     // An embedded NUL makes NativePaths.NormalizeFullPath throw before any guarded branch.
     let! result =
-        FSharpWorkspaceLoading.loadProjectWithCancellation ws "bad path" System.Threading.CancellationToken.None
+        FSharpWorkspaceLoading.loadProjectWithCancellation ws "bad path" CancellationToken.None
     Assert.True(match result with | Error _ -> true | Ok _ -> false)
 }
 
 // ── File-order edges ─────────────────────────────────────────────
-
-[<Fact>]
-let ``analyzeFileOrder skips a compile entry whose file is absent`` () = task {
-    let dir = NativePaths.Temp($"slsp-ghost-{Guid.NewGuid():N}")
-    Directory.CreateDirectory(dir) |> ignore
-    let fsproj = NativePaths.Resolve(dir, "Order.fsproj")
-    File.WriteAllText(
-        fsproj,
-        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup>"
-        + "<TargetFramework>net10.0</TargetFramework>"
-        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>"
-        + "</PropertyGroup><ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"Ghost.fs\" /></ItemGroup></Project>")
-    File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module A\nlet x = 1\n")
-    // Ghost.fs is intentionally NOT created → collectUndefinedErrors returns [].
-    try
-        let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspaceLoading.loadProject ws dir
-        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
-        Assert.NotNull(issues :> obj)
-    finally
-        cleanup dir
-}
-
-[<Fact>]
-let ``analyzeFileOrder swallows a missing-options inconsistency`` () = task {
-    // IsLoaded forced true but ProjectOptions left None → the loop dereferences
-    // ProjectOptions.Value and throws → the analyzer's catch returns [].
-    let (dir, fsproj, _) =
-        makeProject
-            [ "A.fs", "module A\nlet x = 1\n"
-              "B.fs", "module B\nlet y = 2\n" ]
-    try
-        let ws = FSharpWorkspace.create ()
-        ws.IsLoaded <- true
-        let! issues = FSharpFileOrder.analyzeFileOrder ws fsproj
-        Assert.Empty(issues)
-    finally
-        cleanup dir
-}
 
 // ── Feature extractors: generic params, active patterns, no-op format ──
 
@@ -2691,11 +2434,11 @@ let ``analyzeFileOrder swallows a missing-options inconsistency`` () = task {
 let ``semantic tokens classify a generic parameter`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "let identity<'T> (x: 'T) : 'T = x\n"
-              + "type Container<'A> = { Value: 'A }\n"
-              + "let c = identity 5\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "let identity<'T> (x: 'T) : 'T = x\n"
+               + "type Container<'A> = { Value: 'A }\n"
+               + "let c = identity 5\n") ]
     try
         let! tokens = FSharpFeatures.getSemanticTokens state paths[0]
         Assert.NotEmpty(tokens)
@@ -2710,10 +2453,10 @@ let ``semantic tokens classify a generic parameter`` () = task {
 let ``semantic tokens tolerate active-pattern symbol kinds`` () = task {
     let! (state, dir, _, paths) =
         loadWorkspace
-            [ "M.fs",
-              "module M\n"
-              + "let (|Even|Odd|) n = if n % 2 = 0 then Even else Odd\n"
-              + "let describe n = match n with | Even -> \"e\" | Odd -> \"o\"\n" ]
+            [ ("M.fs",
+               "module M\n"
+               + "let (|Even|Odd|) n = if n % 2 = 0 then Even else Odd\n"
+               + "let describe n = match n with | Even -> \"e\" | Odd -> \"o\"\n") ]
     try
         // Active-pattern-case uses drive mapFcsSymbolKind's `_ -> -1` arm; the
         // function still returns a well-formed token array.

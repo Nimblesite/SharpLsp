@@ -98,9 +98,7 @@ internal sealed partial class WorkspaceManager
     /// <summary>One source-visibility predicate for metadata and generated-error ownership.</summary>
     private static bool IsUserDiagnosticPath(string filePath)
     {
-        return filePath.Length > 0
-            && !NativePaths.HasDirectory(filePath, "obj")
-            && !NativePaths.HasDirectory(filePath, "bin");
+        return filePath.Length > 0 && !NativePaths.IsBuildOutput(filePath);
     }
 
     /// <summary>

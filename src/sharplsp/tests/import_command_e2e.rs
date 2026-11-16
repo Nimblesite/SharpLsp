@@ -186,7 +186,9 @@ fn a_reference_that_cannot_be_added_fails_naming_its_cause_and_changes_nothing()
 
     let unknown = error_message(&run(&mut client, &app, "assembly", "Lib.dll", ""));
     assert!(
-        unknown.contains("unknown reference kind \"assembly\": expected project or package"),
+        unknown.contains(
+            "unknown reference kind \"assembly\": expected project, package or compileOrder"
+        ),
         "{unknown}"
     );
 

@@ -14,7 +14,7 @@ module Geometry =
 
     /// Sum the areas of many shapes using a pipeline.
     let totalArea (shapes: Shape list) : float =
-        shapes
+        shapes // fsharplint:disable-line Hints
         |> List.map area
         |> List.sum
 

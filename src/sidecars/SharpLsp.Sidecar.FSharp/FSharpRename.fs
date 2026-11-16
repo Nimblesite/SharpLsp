@@ -5,10 +5,8 @@ module SharpLsp.Sidecar.FSharp.FSharpRename
 open System
 open System.Threading
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Symbols
 open FSharp.Compiler.Tokenization
 open Serilog
-open SharpLsp.Sidecar.FSharp.FSharpRenameAliases
 open SharpLsp.Sidecar.FSharp.FSharpRenameIndexers
 open SharpLsp.Sidecar.FSharp.FSharpRenameNames
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken
@@ -265,7 +263,13 @@ let private standardRename state newName (resolved: ResolvedRename) ct =
             | None -> return Error "F# rename could not classify every semantic use"
             | Some edits ->
                 let! metadata = planMetadata state symbol newName ct
-                return metadata |> Result.map (combineEdits edits)
+                match metadata |> Result.map (combineEdits edits) with
+                | Error message -> return Error message
+                | Ok planned ->
+                    // [RENAME-ERRORS] The compiler judges the renamed declaring file.
+                    match! FSharpRenameVerification.introducedError state symbol planned ct with
+                    | Some error -> return Error $"Invalid F# rename: {error}"
+                    | None -> return Ok planned
     }
 
 let private renameChecked state parseResults checkResults source line character newName ct =

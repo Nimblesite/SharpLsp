@@ -12,7 +12,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
 // Line indices (0-based): 3 = flat call, 4 = nested, 5 = comma in a string.
-let private SIGNATURE_SOURCE =
+let private signatureSource =
     source
         [ "module Signatures"
           "type Calc ="
@@ -21,7 +21,7 @@ let private SIGNATURE_SOURCE =
           "let nested = Calc.Add(1, Calc.Add(4, 5, 6), 3)"
           "let text = Calc.Add(\"x,y\".Length, 2, 3)" ]
 
-let private EDITED_SOURCE =
+let private editedSource =
     source
         [ "module Signatures"
           "type Calc ="
@@ -61,34 +61,34 @@ let private assertActive state path text lineIdx needle expected =
 [<Fact>]
 let ``signature help reports the parameter the caret sits on`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", signatureSource) ]
 
         try
             // Flat call: each argument position, in order.
-            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "1," 0
-            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "2," 1
-            do! assertActive state paths[0] SIGNATURE_SOURCE 3 "3)" 2
+            do! assertActive state paths[0] signatureSource 3 "1," 0
+            do! assertActive state paths[0] signatureSource 3 "2," 1
+            do! assertActive state paths[0] signatureSource 3 "3)" 2
 
             // Nested call: the outer call keeps its own parameter index.
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "1, Calc" 0
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "Calc.Add(4" 1
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "3)" 2
+            do! assertActive state paths[0] signatureSource 4 "1, Calc" 0
+            do! assertActive state paths[0] signatureSource 4 "Calc.Add(4" 1
+            do! assertActive state paths[0] signatureSource 4 "3)" 2
 
             // Inner call: the innermost call wins, again from argument 0.
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "4, 5" 0
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "5, 6" 1
-            do! assertActive state paths[0] SIGNATURE_SOURCE 4 "6)" 2
+            do! assertActive state paths[0] signatureSource 4 "4, 5" 0
+            do! assertActive state paths[0] signatureSource 4 "5, 6" 1
+            do! assertActive state paths[0] signatureSource 4 "6)" 2
 
             // A comma inside a string literal is part of argument 0, not a separator.
-            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "y\"." 0
-            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "2," 1
-            do! assertActive state paths[0] SIGNATURE_SOURCE 5 "3)" 2
+            do! assertActive state paths[0] signatureSource 5 "y\"." 0
+            do! assertActive state paths[0] signatureSource 5 "2," 1
+            do! assertActive state paths[0] signatureSource 5 "3)" 2
 
             // Unsaved edits: the overlay text is what the caret is resolved against.
-            FSharpWorkspace.applyDidChange state paths[0] EDITED_SOURCE
-            do! assertActive state paths[0] EDITED_SOURCE 3 "7," 0
-            do! assertActive state paths[0] EDITED_SOURCE 3 "8," 1
-            do! assertActive state paths[0] EDITED_SOURCE 3 "9)" 2
+            FSharpWorkspace.applyDidChange state paths[0] editedSource
+            do! assertActive state paths[0] editedSource 3 "7," 0
+            do! assertActive state paths[0] editedSource 3 "8," 1
+            do! assertActive state paths[0] editedSource 3 "9)" 2
         finally
             cleanup dir
     }
@@ -97,7 +97,7 @@ let ``signature help reports the parameter the caret sits on`` () =
 /// an out-of-order named call must report declaration indices (2, 0, 1) rather
 /// than argument positions (0, 1, 2). Line indices: 3 = out-of-order named,
 /// 4 = mixed positional + named. The unsaved overlay appends a new call at line 6.
-let private NAMED_SOURCE =
+let private namedSource =
     source
         [ "module Signatures"
           "type Calc ="
@@ -108,21 +108,21 @@ let private NAMED_SOURCE =
 [<Fact>]
 let ``signature help resolves named arguments out of declaration order`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", NAMED_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", namedSource) ]
 
         try
             // Out-of-order named call: each name selects its declaration index.
-            do! assertActive state paths[0] NAMED_SOURCE 3 "c = 3" 2
-            do! assertActive state paths[0] NAMED_SOURCE 3 "a = 1" 0
-            do! assertActive state paths[0] NAMED_SOURCE 3 "b = 2" 1
+            do! assertActive state paths[0] namedSource 3 "c = 3" 2
+            do! assertActive state paths[0] namedSource 3 "a = 1" 0
+            do! assertActive state paths[0] namedSource 3 "b = 2" 1
 
             // Mixed positional + named: positional fills `a`, then names win.
-            do! assertActive state paths[0] NAMED_SOURCE 4 "1, c" 0
-            do! assertActive state paths[0] NAMED_SOURCE 4 "c = 3" 2
-            do! assertActive state paths[0] NAMED_SOURCE 4 "b = 2" 1
+            do! assertActive state paths[0] namedSource 4 "1, c" 0
+            do! assertActive state paths[0] namedSource 4 "c = 3" 2
+            do! assertActive state paths[0] namedSource 4 "b = 2" 1
 
             // Unsaved overlay permutation: resolution follows the overlay text.
-            let edited = SIGNATURE_SOURCE + "let overlay = Calc.Add(b = 8, c = 9, a = 7)\n"
+            let edited = signatureSource + "let overlay = Calc.Add(b = 8, c = 9, a = 7)\n"
             FSharpWorkspace.applyDidChange state paths[0] edited
             do! assertActive state paths[0] edited 6 "b = 8" 1
             do! assertActive state paths[0] edited 6 "c = 9" 2
@@ -133,13 +133,13 @@ let ``signature help resolves named arguments out of declaration order`` () =
 
 [<Fact>]
 let ``signature help keeps the current parameter while the closing parenthesis is missing`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", SIGNATURE_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", signatureSource) ]
     try
         for call, expected in
             [ "Calc.Add(", 0; "Calc.Add(1", 0; "Calc.Add(1,", 1
               "Calc.Add(1, 2", 1; "Calc.Add(1, 2,", 2; "Calc.Add(1, 2, 3", 2 ] do
             let pending = "let pending = " + call
-            FSharpWorkspace.applyDidChange state paths[0] (SIGNATURE_SOURCE + pending)
+            FSharpWorkspace.applyDidChange state paths[0] (signatureSource + pending)
             let! result = FSharpSignature.signatureHelp state paths[0] 6 pending.Length
             match result with
             | None -> failwith $"no signature help while typing {call}"
@@ -155,7 +155,7 @@ let ``signature help keeps the current parameter while the closing parenthesis i
 /// Line indices: 4 = call opener, 5-7 = arguments, 10 = punctuated opener,
 /// 11-13 = punctuation-bearing arguments. The overlay appends a second call
 /// starting at line 15.
-let private MULTILINE_SOURCE =
+let private multilineSource =
     source
         [ "module Signatures"
           "type Calc ="
@@ -175,23 +175,23 @@ let private MULTILINE_SOURCE =
 
 [<Fact>]
 let ``multilineStaticSignatureHelp tracks active parameters and string punctuation`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", MULTILINE_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", multilineSource) ]
     try
         // The callee's own line carries no argument text, so the caret line alone
         // cannot identify the enclosing call or the parameter the caret sits on.
-        do! assertActive state paths[0] MULTILINE_SOURCE 5 "1," 0
-        do! assertActive state paths[0] MULTILINE_SOURCE 6 "2," 1
-        do! assertActive state paths[0] MULTILINE_SOURCE 7 "3" 2
+        do! assertActive state paths[0] multilineSource 5 "1," 0
+        do! assertActive state paths[0] multilineSource 6 "2," 1
+        do! assertActive state paths[0] multilineSource 7 "3" 2
 
         // Parentheses and a comma inside a string literal are data, not call
         // structure: they must not hide the enclosing signature or shift indices.
-        do! assertActive state paths[0] MULTILINE_SOURCE 11 "\"(a,b)\"." 0
-        do! assertActive state paths[0] MULTILINE_SOURCE 12 "2," 1
-        do! assertActive state paths[0] MULTILINE_SOURCE 13 "3" 2
+        do! assertActive state paths[0] multilineSource 11 "\"(a,b)\"." 0
+        do! assertActive state paths[0] multilineSource 12 "2," 1
+        do! assertActive state paths[0] multilineSource 13 "3" 2
 
         // Unsaved multiline overlay: resolution follows the edited buffer.
         let overlay =
-            MULTILINE_SOURCE
+            multilineSource
             + "let overlay =\n    Calc.Add(\n        4,\n        5,\n        6\n    )\n"
         FSharpWorkspace.applyDidChange state paths[0] overlay
         do! assertActive state paths[0] overlay 17 "4," 0
@@ -204,7 +204,7 @@ let ``multilineStaticSignatureHelp tracks active parameters and string punctuati
 /// A `[<ParamArray>]` rest parameter absorbs every trailing argument, so all of
 /// them must report the rest parameter's declaration index, never the raw
 /// argument position. Line indices: 3 = full call, 4 = unfinished overlay.
-let private VARIADIC_SOURCE =
+let private variadicSource =
     source
         [ "module Signatures"
           "type Calc ="
@@ -213,19 +213,19 @@ let private VARIADIC_SOURCE =
 
 [<Fact>]
 let ``signature help maps every rest argument to the ParamArray parameter`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Signatures.fs", VARIADIC_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Signatures.fs", variadicSource) ]
     try
         let labels = [ "first"; "rest" ]
 
         // The mandatory argument is parameter 0; every following argument is the rest parameter.
-        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "1," 0
-        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "2," 1
-        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "3," 1
-        do! assertActiveWith labels state paths[0] VARIADIC_SOURCE 3 "4)" 1
+        do! assertActiveWith labels state paths[0] variadicSource 3 "1," 0
+        do! assertActiveWith labels state paths[0] variadicSource 3 "2," 1
+        do! assertActiveWith labels state paths[0] variadicSource 3 "3," 1
+        do! assertActiveWith labels state paths[0] variadicSource 3 "4)" 1
 
         // Unfinished call: the caret stays on the rest parameter while more arguments arrive.
         let pending = "let pending = Calc.Variadic(1, 2, 3"
-        FSharpWorkspace.applyDidChange state paths[0] (VARIADIC_SOURCE + pending)
+        FSharpWorkspace.applyDidChange state paths[0] (variadicSource + pending)
         let! result = FSharpSignature.signatureHelp state paths[0] 4 pending.Length
         match result with
         | None -> failwith $"no signature help while typing {pending}"

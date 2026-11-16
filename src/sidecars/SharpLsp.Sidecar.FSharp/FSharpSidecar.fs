@@ -1,5 +1,5 @@
-/// F# sidecar: hosts FSharp.Compiler.Service.
-/// Registers handlers for workspace loading, hover, etc.
+// F# sidecar: hosts FSharp.Compiler.Service.
+// Registers handlers for workspace loading, hover, etc.
 namespace SharpLsp.Sidecar.FSharp
 
 open System
@@ -62,7 +62,7 @@ type FSharpSidecar() as this =
                     // Extended-length (`\\?\`) spellings from canonicalizing
                     // callers break MSBuild-style project resolution —
                     // normalize at the boundary. [GitHub #110]
-                    let path = SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath path
+                    let path = NativePaths.NormalizeFullPath path
                     let! result = FSharpWorkspaceLoading.loadWorkspaceWithCancellation workspace path autoRestoreOnOpen ct
                     match result with
                     | Ok () ->
@@ -84,16 +84,16 @@ type FSharpSidecar() as this =
                     if result.IsError then
                         return ByteResult.Failure(result.Match((fun _ -> String.Empty), (fun err -> err)))
                     else
-                        let model = result.Match((fun value -> value), (fun err -> invalidOp err))
+                        let model = result.Match((fun value -> value), invalidOp)
                         return Helpers.serializeOk model ct
                 with ex ->
                     return ByteResult.Failure(ex.Message)
             }))
 
         // The active target framework of a multi-targeted project. [NETFX-CONTEXT]
-        base.Register("workspace/targetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+        base.Register("workspace/targetFramework", Helpers.handle (fun (request: TargetFrameworkRequest) ->
             Task.FromResult(FSharpTargetFrameworks.current workspace request.FilePath)) Helpers.resultOf)
-        base.Register("workspace/setTargetFramework", Helpers.handle (fun (request: Messages.TargetFrameworkRequest) ->
+        base.Register("workspace/setTargetFramework", Helpers.handle (fun (request: TargetFrameworkRequest) ->
             FSharpTargetFrameworks.switch workspace request.FilePath (string request.TargetFramework) CancellationToken.None) Helpers.resultOf)
 
         base.Register("workspace/status", Func<byte[], CancellationToken, Task<ByteResult>>(fun _payload ct ->

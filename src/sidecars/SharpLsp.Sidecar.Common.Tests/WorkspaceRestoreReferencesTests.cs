@@ -166,7 +166,7 @@ public sealed class WorkspaceRestoreReferencesTests : IDisposable
         WriteFrameworkProject(state, "TargetFrameworks", "netstandard2.1;net10.0");
         AssertFrameworks(state, "netstandard2.1;net10.0");
         await EnsureRestoredAsync(state.Project);
-        Assert.Equal<byte>(before, await ReadBytesAsync(assets));
+        Assert.Equal(before, await ReadBytesAsync(assets));
     }
 
     private static void WriteFrameworkProject(ReferenceProject state, string property, string value)

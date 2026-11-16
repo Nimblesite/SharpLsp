@@ -24,7 +24,7 @@ let private projectsIn (directory: string) =
 /// True when `project` lists `filePath` among its MSBuild-evaluated Compile items.
 let private compiles (state: FSharpWorkspaceState) (filePath: string) (project: string) =
     task {
-        match! FSharpWorkspace.compileSources state project CancellationToken.None with
+        match! compileSources state project CancellationToken.None with
         | Ok sources -> return sources |> Array.exists (fun source -> NativePaths.AreEqual(source, filePath))
         | Error reason ->
             Log.Debug("F# project {Project} compile items unavailable: {Reason}", project, reason)

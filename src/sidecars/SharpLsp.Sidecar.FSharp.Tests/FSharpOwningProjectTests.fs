@@ -84,7 +84,7 @@ let private opened (fixture: SidecarFixture) file =
 [<Fact>]
 let ``a file outside the loaded workspace answers hover from the project that owns it`` () =
     task {
-        let fixture = new SidecarFixture()
+        let fixture = SidecarFixture()
         let lifetime = fixture :> IAsyncLifetime
         let loneDir, shapes = writeLoneProject ()
 
@@ -133,7 +133,7 @@ let private writeEmptiedProject () =
 [<Fact>]
 let ``a file whose project lost its restored packages answers hover once they are restored`` () =
     task {
-        let fixture = new SidecarFixture()
+        let fixture = SidecarFixture()
         let lifetime = fixture :> IAsyncLifetime
         let loneDir, shapes = writeEmptiedProject ()
 

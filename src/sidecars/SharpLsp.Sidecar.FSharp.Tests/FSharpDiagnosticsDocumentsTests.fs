@@ -30,6 +30,9 @@ let private extraSource =
 let private hintsSource =
     "module TestProject.Hints\n\nopen System.Text\n\nlet hintValue = 1\n"
 
+/// Generated build output, with an unused open a developer would be told about.
+let private generatedSource = "module TestProject.Generated\n\nopen System.Text\n\nlet generated = 1\n"
+
 /// A file with a real F# syntax error that the loaded project does NOT compile.
 let private orphanSource = "module TestProject.Orphan\n\nlet broken = (\n"
 
@@ -47,11 +50,17 @@ let private createFixtureProject () =
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="obj/Generated.fs" />
     <Compile Include="Valid.fs" />
     <Compile Include="Extra.fs" />
     <Compile Include="Hints.fs" />
   </ItemGroup>
 </Project>""")
+
+    // Build output the project compiles, as the SDK's obj/…AssemblyInfo.fs is: its unused
+    // open is a real finding nobody owns. [DIAG-CONFIG-OWNED-SOURCES]
+    Directory.CreateDirectory(NativePaths.Resolve(dir, "obj")) |> ignore
+    File.WriteAllText(NativePaths.Resolve(dir, "obj", "Generated.fs"), generatedSource)
 
     File.WriteAllText(NativePaths.Resolve(dir, "Valid.fs"), validSource)
     File.WriteAllText(NativePaths.Resolve(dir, "Extra.fs"), extraSource)
@@ -67,7 +76,7 @@ let private deserialize<'T> (payload: byte array) : 'T =
 type EngineDiagnosticsFixture() =
     let dir = createFixtureProject ()
     let sock = NativePaths.Temp($"sharplsp-engdiag-{Guid.NewGuid():N}.sock")
-    let sidecar = new FSharpSidecar()
+    let sidecar = FSharpSidecar()
     let mutable transport: FramedTransport option = None
     let mutable nextId = 0
     let notifications = ResizeArray<Envelope>()
@@ -78,12 +87,13 @@ type EngineDiagnosticsFixture() =
     member _.Extra = NativePaths.Resolve(dir, "Extra.fs")
     member _.Hints = NativePaths.Resolve(dir, "Hints.fs")
     member _.Orphan = NativePaths.Resolve(dir, "Orphan.fs")
+    member _.Generated = NativePaths.Resolve(dir, "obj", "Generated.fs")
     member _.Notifications = notifications.ToArray()
 
     member private _.ReadEnvelope(transport: FramedTransport, ct: CancellationToken) : Task<Envelope> = task {
         let! raw = transport.ReadFrameAsync(ct)
         match raw with
-        | null -> return failwith "Connection closed"
+        | null -> return failwith "The engine fixture's connection closed"
         | bytes -> return deserialize<Envelope>(bytes)
     }
 
@@ -107,7 +117,7 @@ type EngineDiagnosticsFixture() =
         | Some response -> return response
         | None ->
             match transport with
-            | None -> return failwith "sidecar transport is not connected"
+            | None -> return failwith "the engine fixture's transport is not connected (request)"
             | Some connected ->
                 let! response = this.ReadEnvelope(connected, ct)
                 this.RecordNotification(response)
@@ -119,7 +129,7 @@ type EngineDiagnosticsFixture() =
 
     member private _.WriteEnvelope(envelope: Envelope) : Task = task {
         match transport with
-        | None -> return failwith "sidecar transport is not connected"
+        | None -> return failwith "the engine fixture's transport is not connected (notification)"
         | Some connected -> do! connected.WriteFrameAsync(MessagePackSerializer.Serialize(envelope))
     }
 
@@ -164,22 +174,22 @@ type EngineDiagnosticsFixture() =
     interface IAsyncLifetime with
         member this.InitializeAsync() = task {
             if File.Exists(sock) then File.Delete(sock)
-            let _ = Task.Run(fun () -> sidecar.RunAsync(sock))
+            Task.Run(fun () -> sidecar.RunAsync(sock)) |> ignore
             let mutable connected = false
 
             for _ in 1..100 do
                 if not connected then
                     do! Task.Delay(50)
                     let! result = IpcConnection.ConnectAsync(sock)
-                    let stream = result.Match((fun value -> Some value), (fun _ -> None))
+                    let stream = result.Match(Some, (fun _ -> None))
 
                     match stream with
                     | Some value ->
-                        transport <- Some(new FramedTransport(value))
+                        transport <- Some(FramedTransport(value))
                         connected <- true
                     | None -> ()
 
-            if not connected then failwith "Cannot connect to F# sidecar"
+            if not connected then failwith "Cannot connect to the engine fixture's F# sidecar"
 
             let! opened = this.Send("workspace/open", MessagePackSerializer.Serialize(this.Project))
             if not (isNull opened.Error) then failwith $"workspace/open: {opened.Error}"
@@ -241,6 +251,15 @@ type EngineDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
             // Not part of the loaded workspace's source set.
             Assert.DoesNotContain<string>(fixture.Orphan, paths)
             Assert.Equal(paths.Length, paths |> Array.distinct |> Array.length)
+            // [DIAG-CONFIG-OWNED-SOURCES] Build output the project compiles is never listed:
+            // the three developer files are the whole enumeration.
+            Assert.DoesNotContain<string>(fixture.Generated, paths)
+            Assert.DoesNotContain(paths, NativePaths.IsBuildOutput)
+            Assert.Equal<string array>(Array.sort [| fixture.Valid; fixture.Extra; fixture.Hints |], Array.sort paths)
+            // Opened directly, the generated file still gets its own diagnostics: the unused open.
+            let! direct = fixture.Diagnostics(fixture.Generated)
+            Assert.Contains(direct, fun diagnostic -> diagnostic.Code = "SLSPF0102")
+            Assert.DoesNotContain(direct, fun diagnostic -> diagnostic.Severity = "Error")
         }
 
     [<Fact>]
@@ -313,29 +332,29 @@ type EngineDiagnosticsTests(fixture: EngineDiagnosticsFixture) =
 type UnloadedDocumentsTests() =
     let dir = createFixtureProject ()
     let sock = NativePaths.Temp($"sharplsp-engdiag-{Guid.NewGuid():N}.sock")
-    let sidecar = new FSharpSidecar()
+    let sidecar = FSharpSidecar()
     let mutable transport: FramedTransport option = None
 
     interface IAsyncLifetime with
         member _.InitializeAsync() =
             task {
                 if File.Exists(sock) then File.Delete(sock)
-                let _ = Task.Run(fun () -> sidecar.RunAsync(sock))
+                Task.Run(fun () -> sidecar.RunAsync(sock)) |> ignore
                 let mutable connected = false
 
                 for _ in 1..100 do
                     if not connected then
                         do! Task.Delay(50)
                         let! result = IpcConnection.ConnectAsync(sock)
-                        let stream = result.Match((fun value -> Some value), (fun _ -> None))
+                        let stream = result.Match(Some, (fun _ -> None))
 
                         match stream with
                         | Some value ->
-                            transport <- Some(new FramedTransport(value))
+                            transport <- Some(FramedTransport(value))
                             connected <- true
                         | None -> ()
 
-                if not connected then failwith "Cannot connect to F# sidecar"
+                if not connected then failwith "Cannot connect to the unloaded F# sidecar"
             }
 
         member _.DisposeAsync() =
@@ -353,7 +372,7 @@ type UnloadedDocumentsTests() =
     member _.``workspace diagnostics documents answers empty before a workspace loads``() =
         task {
             match transport with
-            | None -> return failwith "sidecar transport is not connected"
+            | None -> return failwith "the unloaded sidecar's transport is not connected"
             | Some t ->
                 let request =
                     Envelope(Id = Nullable(uint32 1), Method = "workspace/diagnostics/documents", Payload = [||])
@@ -362,7 +381,7 @@ type UnloadedDocumentsTests() =
                 let! raw = t.ReadFrameAsync()
 
                 match raw with
-                | null -> return failwith "Connection closed"
+                | null -> return failwith "The unloaded sidecar's connection closed"
                 | bytes ->
                     let response = deserialize<Envelope>(bytes)
                     Assert.Null(response.Error)

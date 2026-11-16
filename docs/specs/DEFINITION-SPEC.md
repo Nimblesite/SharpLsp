@@ -159,11 +159,17 @@ Implementation: [DefinitionResolver.cs](../../src/sidecars/SharpLsp.Sidecar.CSha
 | Record field | Navigate to the field declaration in the record type |
 | Active pattern | Navigate to the active pattern function definition |
 | Computation expression keyword (`let!`, `do!`) | Navigate to the CE builder method |
-| Type provider generated type | Navigate to the type provider definition (P2) |
+| Type provider generated type | Navigate to the declaration that instantiates the provider ([DEFINITION-FSHARP-PROVIDED]) |
 | Module function | Navigate to the `let` binding |
 | Pattern binding (`let (x, y) = ...`) | Navigate to the binding site |
 
 Implementation: [FSharpWorkspace.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpWorkspace.fs).
+
+### Type Provider Symbols `[DEFINITION-FSHARP-PROVIDED]`
+
+A provided type and its members have no source of their own: FCS reports their declaration in a file named `unknown` or `startup`, which is not a place. Their definition is the declaration that instantiates the provider — `type Weather = JsonProvider<...>` — found among the project's entities up to the current file: the type abbreviation whose provided type is, or nests, the symbol's declaring type. So `Weather.Parse`, `sample.City` (declared by the nested `Root`) and the type definition of `sample` all land on `Weather`, and with two providers in one file each symbol lands on its own. A provided symbol with no such declaration (`JsonProvider<...>.GetSamples()` inline) answers nothing. No definition ever names a file that does not exist: every location FCS returns, the identifier fallback included, must be on disk (#220).
+
+Implementation: `fromProvider` in [FSharpSemanticNavigation.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpSemanticNavigation.fs); `FSharpTypeProviderNavigationTests.fs` runs FSharp.Data's `JsonProvider`.
 
 ## Cross-Language Navigation `[DEFINITION-CROSSLANG]`
 

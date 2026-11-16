@@ -115,7 +115,7 @@ let private errorsIn state file =
                 |> Array.filter (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error)
                 |> Array.map (fun diagnostic -> diagnostic.StartLine - 1, diagnostic.Message)
                 |> List.ofArray)
-            |> Option.defaultValue [ -1, $"{file} was never checked" ]
+            |> Option.defaultValue [ (-1, $"{file} was never checked") ]
     }
 
 /// Where `file`'s definition at `line`/`column` lands: its file and 0-based line and column.
@@ -126,7 +126,7 @@ let private definitionOf state file line column =
         return definition.Value.FilePath, definition.Value.Line, definition.Value.Character
     }
 
-let private switched (result: Result<SharpLsp.Sidecar.Common.Messages.TargetFrameworkResult, string>) =
+let private switched (result: Result<Messages.TargetFrameworkResult, string>) =
     match result with
     | Ok answer -> answer.Active
     | Error reason -> failwith reason
@@ -162,7 +162,7 @@ let ``a multi-targeted project reads the build MSBuild picked of the F# project 
             Assert.Equal((2, 4), (line, column))
 
             // A project-wide query from Lib counts the use App makes through that build.
-            let! uses = FSharpReferences.getProjectUsages state lib 2 4 System.Threading.CancellationToken.None
+            let! uses = FSharpReferences.getProjectUsages state lib 2 4 CancellationToken.None
             let place (used: FSharpSymbolUse) =
                 let range = used.Range
                 range.FileName, range.StartLine - 1
@@ -246,7 +246,7 @@ let private openFanOut () =
 /// project, so the same value coming back is the builder being reused, not rebuilt.
 let private declaredIn state (scope: FSharpProjectOptions list) =
     task {
-        let! results = FSharpWorkspace.checkAll state scope
+        let! results = FSharpWorkspace.checkAllWithCancellation state scope CancellationToken.None
 
         return
             results
@@ -283,7 +283,7 @@ let ``a query over many readers checks each once, and the next identical query r
 
             let! second = titles ()
             Assert.Equal<(int * string) list>(first, second)
-            let! uses = FSharpReferences.getProjectUsages state lib 2 4 System.Threading.CancellationToken.None
+            let! uses = FSharpReferences.getProjectUsages state lib 2 4 CancellationToken.None
 
             let fileOf (used: FSharpSymbolUse) =
                 let range = used.Range

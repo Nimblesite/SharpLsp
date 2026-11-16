@@ -206,3 +206,62 @@ EndGlobal"#,
     let root = std::fs::canonicalize(root).unwrap();
     MonorepoWorkspace { tmp, root }
 }
+
+/// Complete F# build output with one compiler-confirmed FS0001 error on line 2.
+pub const GENERATED_FS: &str = "module App.Generated\n\nlet generated: int = \"oops\"\n";
+
+/// Run `git` in `dir`, which the owned-sources fixture needs to be a real repository.
+fn git(dir: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("git must start");
+    assert!(
+        status.success(),
+        "git {args:?} must succeed in {}",
+        dir.display()
+    );
+}
+
+/// A real git repository shaped like this one ([DIAG-CONFIG-OWNED-SOURCES]): the
+/// developer's F# `Stats` project also compiles a generated file under `obj/`,
+/// and a gitignored `vendor/` holds a cloned F# project and a C# one. Every
+/// source carries a compiler error, so anything listed is unmistakable.
+pub fn create_repository_with_unowned_sources() -> MonorepoWorkspace {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let stats = root.join("apps/stats");
+    std::fs::create_dir_all(stats.join("obj")).unwrap();
+    let project = fsharp_library_project("Stats.fs").replace(
+        "<Compile Include=\"Stats.fs\" />",
+        "<Compile Include=\"obj/Generated.fs\" />\n    <Compile Include=\"Stats.fs\" />",
+    );
+    std::fs::write(stats.join("Stats.fsproj"), project).unwrap();
+    std::fs::write(stats.join("Stats.fs"), EXCLUDED_STATS_FS).unwrap();
+    std::fs::write(stats.join("obj/Generated.fs"), GENERATED_FS).unwrap();
+
+    let clone = root.join("vendor/clone");
+    std::fs::create_dir_all(&clone).unwrap();
+    std::fs::write(
+        clone.join("Clone.fsproj"),
+        fsharp_library_project("Clone.fs"),
+    )
+    .unwrap();
+    std::fs::write(clone.join("Clone.fs"), EXCLUDED_STATS_FS).unwrap();
+    let tool = root.join("vendor/tool");
+    std::fs::create_dir_all(&tool).unwrap();
+    std::fs::write(tool.join("Tool.csproj"), csharp_library_project()).unwrap();
+    std::fs::write(tool.join("Tool.cs"), EXCLUDED_TOOL_CS).unwrap();
+
+    std::fs::write(root.join(".gitignore"), "vendor/\n").unwrap();
+    git(root, &["init", "-q"]);
+    // The vendored F# project is its own clone, as a gitignored checkout is.
+    git(&clone, &["init", "-q"]);
+    restore_project(&stats);
+    restore_project(&clone);
+    restore_project(&tool);
+
+    let root = std::fs::canonicalize(root).unwrap();
+    MonorepoWorkspace { tmp, root }
+}

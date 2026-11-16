@@ -103,6 +103,13 @@ internal static class DeadCodeAnalyzer
             return false;
         }
 
+        // What reaches an attributed member reaches its type: the runtime calls a
+        // [ModuleInitializer] in a class no code names.
+        if (symbol is INamedTypeSymbol type && type.GetMembers().Any(HasDeclaredAttribute))
+        {
+            return false;
+        }
+
         if (symbol is IMethodSymbol method)
         {
             if (method.IsStatic && method.Name == "Main")
@@ -117,6 +124,11 @@ internal static class DeadCodeAnalyzer
         }
 
         return Visibility(symbol) is not null;
+    }
+
+    private static bool HasDeclaredAttribute(ISymbol member)
+    {
+        return !member.IsImplicitlyDeclared && member.GetAttributes().Length > 0;
     }
 
     /// <summary>

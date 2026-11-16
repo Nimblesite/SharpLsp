@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- FS3569: a [<TailCall>] function whose recursive call is not in tail position fails the build. -->
+    <WarnOn>$(WarnOn);3569</WarnOn>
     <IsPackable>false</IsPackable>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <WarningLevel>5</WarningLevel>
@@ -62,6 +64,7 @@
     <Compile Include="FSharpInlayHintTests.fs" />
     <Compile Include="FSharpFixAllTests.fs" />
     <Compile Include="FSharpFixAllIpcTests.fs" />
+    <Compile Include="FSharpTypeProviderNavigationTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

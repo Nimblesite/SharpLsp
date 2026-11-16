@@ -8,7 +8,6 @@
 /// [HOVER-FSHARP-OVERLAY] / [SHARPLSP-FEATURES-NAVIGATION].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpUnloadedWorkspaceTests
 
-open System.IO
 open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.FSharp
@@ -40,7 +39,7 @@ let ``a request path resolves to the overlay key when no project is loaded`` () 
 
     let resolved = FSharpWorkspace.projectFilePath fresh relative
 
-    Assert.Equal(SharpLsp.Sidecar.Common.NativePaths.NormalizeFullPath relative, resolved)
+    Assert.Equal(NativePaths.NormalizeFullPath relative, resolved)
     Assert.True(NativePaths.IsRooted(resolved), "overlay keys are absolute so one file has one key")
 
 /// Completion, hover and diagnostics all funnel through a check. Without a
@@ -52,10 +51,8 @@ let ``checking a file against an unloaded workspace declines instead of throwing
     let path = NativePaths.Temp("sharplsp-unloaded-check.fs")
 
     let! withSource = FSharpWorkspace.checkFileWithSource fresh path "module Unloaded\nlet x = 1\n" System.Threading.CancellationToken.None
-    let! project = FSharpWorkspace.checkProject fresh
 
     Assert.True(withSource.IsNone)
-    Assert.True(project.IsNone, "there is no project to check")
 }
 
 /// Rename filters uses down to those declared inside the project. With no

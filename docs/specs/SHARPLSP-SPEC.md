@@ -45,7 +45,7 @@ Primary implementations: [main.rs](../../src/sharplsp/src/main.rs) (start-up and
 
 - Long-running .NET process hosting [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) v43.12+
 - [FSharpChecker](https://fsharp.github.io/fsharp-compiler-docs/reference/fsharp-compiler-codeanalysis-fsharpchecker.html) for parsing, checking, and semantic queries
-- [Ionide.ProjInfo](https://github.com/ionide/proj-info) for project cracking (MSBuild evaluation for F# projects)
+- MSBuild's design-time build for project cracking: the F# compiler task reports each framework's exact options ([NETFX-PROJECTS-FSHARP])
 - [FSharpLint](https://github.com/fsprojects/FSharpLint) for linting
 - Same RPC interface and transport as the C# sidecar
 
@@ -135,7 +135,7 @@ Every host-to-sidecar request carries a response budget: 600s for `workspace/ope
 Project evaluation MUST handle SDK-style and legacy `.csproj`/`.fsproj` files, multi-targeting, [Directory.Build.props](https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-by-directory), [Directory.Packages.props](https://learn.microsoft.com/en-us/nuget/consume-packages/central-package-management), [global.json](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json), conditional symbols, and NuGet resolution.
 
 - **C# projects:** [MSBuildWorkspace](https://learn.microsoft.com/en-us/dotnet/api/microsoft.codeanalysis.msbuild.msbuildworkspace) ([Microsoft.CodeAnalysis.Workspaces.MSBuild](https://www.nuget.org/packages/Microsoft.CodeAnalysis.Workspaces.MSBuild) + [Microsoft.Build.Locator](https://github.com/microsoft/MSBuildLocator)) performs design-time builds to extract source files, references, and compiler options.
-- **F# projects:** [Ionide.ProjInfo](https://github.com/ionide/proj-info) performs MSBuild evaluation with F#-specific handling (file ordering, which is semantically significant in F#).
+- **F# projects:** MSBuild's design-time build reports the F# compiler's own command line per target framework — defines, references and sources in compile order, which is semantically significant in F# ([NETFX-PROJECTS-FSHARP]). No third-party project cracker is involved.
 - **Mixed solutions:** Both sidecars load their respective projects from the same `.sln` or `.slnx` solution file. Cross-language project references are resolved via binary reference (compiled DLL), not source-level.
 - **Solution files:** SharpLsp treats legacy `.sln` and XML `.slnx` as first-class solution inputs. Shared sidecar code reads both formats through `Microsoft.VisualStudio.SolutionPersistence` and exposes a neutral `solution/read` DTO so host/editor code does not parse solution text.
 - **File watching:** The Rust host watches .csproj, .fsproj, .sln, .slnx, Directory.Build.props, Directory.Packages.props, NuGet.config, and global.json for changes. On change, the affected sidecar is notified to reload the project model.
@@ -176,7 +176,7 @@ A reopen after a failed first open starts the sidecar's health monitor, which ru
 
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] Walking the Workspace for Projects
 
-Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj` search) never enters `bin`, `obj`, `node_modules`, or any dot-directory (`.git`, `.vs`, `.vscode-test`). Those hold build output, package caches and copies of solutions, never one the user opens: counting them turned a repository root into hundreds of "competing" solutions, and walking them cost seconds per pass. A directory reparse point (junction or symlink) is not followed, so a link cycle cannot loop the walk.
+Recursive discovery (the C# sidecar's solution search, the F# sidecar's `.fsproj` search) never enters `bin`, `obj`, `node_modules`, or any dot-directory (`.git`, `.vs`, `.vscode-test`). Those hold build output, package caches and copies of solutions, never one the user opens: counting them turned a repository root into hundreds of "competing" solutions, and walking them cost seconds per pass. A project or solution file git ignores is left out too ([DIAG-CONFIG-OWNED-SOURCES]). A directory reparse point (junction or symlink) is not followed, so a link cycle cannot loop the walk.
 
 The C# sidecar walks the tree **once** per `workspace/open`: the same walk yields the target, or the competing solutions when it refuses to guess. What sits in the opened folder itself is the target — its solution (the one named after the folder, of several), else its project — and nothing nested beneath competes with it. Only when the folder holds neither does a sole nested solution become the target, and several nested solutions compete. The walk is `NativePaths.WorkspaceFiles`, in the tier's path module ([SHARPLSP-ARCHITECTURE-PATHS]).
 
@@ -410,7 +410,6 @@ The Rust binary MUST have a test that proves:
 | Package | Version | Purpose |
 |---|---|---|
 | [FSharp.Compiler.Service](https://www.nuget.org/packages/FSharp.Compiler.Service) | 43.12.201 | F# compiler services (parsing, type checking, IDE features) |
-| [Ionide.ProjInfo](https://github.com/ionide/proj-info) | latest | F# project cracking (MSBuild evaluation) |
 | [FSharpLint.Core](https://github.com/fsprojects/FSharpLint) | latest | F# linting diagnostics |
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
@@ -490,6 +489,22 @@ Tests: `SignatureHelpEndToEndTests` drives the real `WorkspaceManager` over a re
 | Breadcrumbs | `textDocument/documentSymbol` | Hierarchical symbol tree | Hierarchical symbol tree | P1 |
 | Go to decompiled source | Custom: `sharplsp/decompileSource` | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | ICSharpCode.Decompiler | P1 |
 | Go to source generator output | Custom: `sharplsp/generatorOutput` | GeneratorDriverRunResult | N/A | P2 |
+| Go to related files | Custom: `sharplsp/relatedFiles` | Host, by file name ([SHARPLSP-FEATURES-NAVIGATION-RELATED]) | Host, by file name | P2 |
+| Next / previous member | Custom: `sharplsp/adjacentMember` | Host, over the document symbol tree ([SHARPLSP-FEATURES-NAVIGATION-MEMBERS]) | Host, over the FCS symbol tree | P2 |
+
+#### [SHARPLSP-FEATURES-NAVIGATION-RELATED] Go to Related Files
+
+`sharplsp/relatedFiles` takes `{ textDocument: { uri } }` and answers `{ files: [{ uri, name }] }`: the files that belong with the document. They are the files in its directory that share its name up to the **first dot**, compared as paths compare ([SHARPLSP-ARCHITECTURE-PATHS]), without the document itself, sorted by path. `Form1.cs` relates to `Form1.Designer.cs` and `Form1.resx` but not to `Form10.cs`; `Lib.fs` to `Lib.fsi`; `Index.razor` to `Index.razor.cs` and `Index.razor.css`; `Main.xaml` to `Main.xaml.cs`. The rule names no extension, so it needs no upkeep as SDKs add file kinds. Directories are never related files. A document that stands alone, or is not on disk, answers an empty list. The host answers it itself, with no sidecar.
+
+An interface and its implementations are related symbols, not related files: that is `textDocument/implementation` ([DEFINITION-SPEC.md](DEFINITION-SPEC.md)).
+
+VS Code: `sharplsp.goToRelatedFile` (**Go to Related File**) opens the only related file at once, shows a picker titled `Go to related file` over several, and says `SharpLsp: this file has no related files.` when there is none. A dismissed picker opens nothing.
+
+#### [SHARPLSP-FEATURES-NAVIGATION-MEMBERS] Next and Previous Member
+
+`sharplsp/adjacentMember` takes `{ textDocument: { uri }, position, direction: "next" | "previous" }` and answers `{ position }`: where the neighbouring member's own name starts, or `null` past the last or first member. The members are the symbols of the document's outline at every depth, namespaces aside — the tree `textDocument/documentSymbol` answers, so tree-sitter for C#, the F# compiler for F# and the Razor compiler for Razor, and unsaved edits count. `next` is the first member whose name starts after the position; `previous` the last whose name starts before it, so from inside a body `previous` lands on that member's own name. With no engine for the document's language the request fails with the reason; it never answers `null` for that.
+
+VS Code: `sharplsp.goToNextMember` and `sharplsp.goToPreviousMember` move the caret there and reveal it; past either end the caret stays put. No default key is bound.
 
 ### [SHARPLSP-FEATURES-DIAGNOSTICS] Diagnostics and Analysis
 
@@ -649,12 +664,22 @@ When the name is declared somewhere the file's project cannot reach yet, the fix
 2. **A package another project of the solution already uses.** Another project's references include an assembly that declares a public type `N.T`. That assembly belongs to a NuGet package, matched through the other project's `obj/project.assets.json` (the package whose `compile` items include the assembly). The fix adds that package at the same version, so the solution keeps one version.
 3. **A well-known package.** A curated table, `SharpLsp.Sidecar.Common/References/WellKnownPackages.json`, maps the full names of commonly used types to the package that ships them, for packages no project of the solution references yet. The fix installs the latest stable version from nuget.org. Both sidecars read the one table.
 
-Each of these three is an edit action that also carries a command. It resolves to the import edit, like any other action. It also carries the LSP command `sharplsp.addReferenceAndImport` with the arguments `{ title, reference: { kind: "project" | "package", projectPath, reference, version } }`. An LSP client applies an action's edit and then runs its command, so the import is in place first. The host then adds the reference through the MSBuild DOM:
+Each of these three is an edit action that also carries a command. It resolves to the import edit, like any other action. It also carries the LSP command `sharplsp.addReferenceAndImport` with the arguments `{ title, reference: { kind: "project" | "package" | "compileOrder", projectPath, reference, version } }` (`compileOrder` is [REFACTOR-FSHARP-FILE-ORDER]). An LSP client applies an action's edit and then runs its command, so the import is in place first. The host then adds the reference through the MSBuild DOM:
 
 1. A project reference goes through the C# sidecar's `project/addProjectReference`. It adds `<ProjectReference Include="relative/path/P.csproj" />`, or changes nothing if the project already references P.
 2. A package goes through the `sharplsp/nuget/install` pipeline, which is aware of Central Package Management and restores in the background ([NUGET-XML-DOM]). An empty `version` resolves to the latest stable version on nuget.org.
 
 If the reference cannot be added, the command fails with the reason ([REFACTOR-NEVER-SILENT]). The failure message says that the import is already in place and that Undo removes it. The host reloads the compilers when a project file changes on disk, so the diagnostic clears once the reference resolves. The command does not apply the import itself through `workspace/applyEdit`, because a client may answer that request `{ applied: false }` without telling the user.
+
+#### [REFACTOR-FSHARP-FILE-ORDER] A Name a Later File Declares
+
+F# compiles a project's files in order, so a name declared by a file further down the `Compile` list is not in scope: FCS reports FS0039, and no import can fix it. On FS0039 the F# sidecar parses each file the project compiles after the current one (through the overlay, so unsaved declarations count) and looks for the flagged name among the top-level declarations and their direct members; `module P.B` declares `B`. For each later file that declares it, the fix is offered, in compile order:
+
+`Move B.fs above A.fs in App.fsproj — B.fs declares 'B' but compiles after A.fs`
+
+When any later file declares the name, nothing outside the project is searched: the rows of [REFACTOR-IMPORT-REFERENCE] are not offered for it.
+
+The action is its command alone. It carries the LSP command `sharplsp.addReferenceAndImport` with `reference: { kind: "compileOrder", projectPath, reference, version }`, where `reference` is the project-relative include of the file to move and `version` the include of the file it lands directly above. It also carries a present, empty `edit` and no `data`, so a client has nothing to resolve; the sidecars would refuse an edit with no changes ([REFACTOR-NEVER-SILENT]). The host moves the `Compile` item through the MSBuild DOM ([SE-REORDER-FILE-REQUEST]) and answers `Moved B.fs`, or `B.fs is already in place` when it already sits there. The host reloads the compilers when the project file changes on disk, so the diagnostic clears. A move that cannot be made fails the command with the reason; the VS Code message then says that the project file is unchanged.
 
 #### [REFACTOR-NEVER-SILENT] Code Actions Never Fail Silently
 
@@ -679,6 +704,7 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 | Delta semantic tokens | `textDocument/semanticTokens/full/delta` | Incremental classification | Incremental classification | P1 |
 | Range semantic tokens | `textDocument/semanticTokens/range` | Classifier (range-scoped) | GetSemanticClassification (range) | P0 |
 | Keyword classes | `textDocument/semanticTokens/*` | `ClassificationTypeNames.ControlKeyword` → `controlKeyword` | Keywords left to the grammar | P0 |
+| Regex pattern syntax | `textDocument/semanticTokens/*` | Pattern tokenizer over `[StringSyntax("Regex")]` arguments → `regexp` ([SHARPLSP-FEATURES-HIGHLIGHTING-REGEX]) | — | P2 |
 
 **Keyword classes.** A flow-control keyword (`if`, `for`, `while`, `return`, `throw`, …) is a different token from every other keyword (`public`, `class`, `int`), as Visual Studio's "Keyword - Control" classification is. The legend carries a `controlKeyword` type after the standard ones, and the C# sidecar reports Roslyn's `ControlKeyword` classification as it; Roslyn's plain `Keyword` stays `keyword`. The VS Code extension declares `controlKeyword` with super type `keyword` and maps it to the TextMate scope `keyword.control`, so a theme paints it as its own grammar does (and as `keyword` where a theme has no `keyword.control` rule). Plain C# `keyword` tokens map to `keyword.other.cs` through language-scoped semantic mappings for C#, Razor, and aspnetcorerazor: VS Code's generic `keyword` fallback is `keyword.control`, which would otherwise paint declarations and predefined types as control flow. Colors come from the active theme; the extension never assigns RGB values or changes user color settings. FCS classifies symbols, not keywords, so an F# keyword carries no semantic token and the F# grammar's own keyword classes show through. F# module/local values use the standard `variable` category, module functions use `function`, member methods use `method`, property accessors use `property`, constructors use `class`, and operator tokens use `operator`. Symbol spans are recovered through the FCS lexer so a qualified member never recolors its receiver or punctuation.
 
@@ -695,6 +721,17 @@ A lens never holds up the user. Each compiler answers one request at a time, and
 | Test indicators | `textDocument/codeLens` | Test framework attribute detection | Test framework attribute detection | P1 |
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |
 | Recent changes (git) | `textDocument/codeLens` | git log integration | git log integration | P3 |
+
+#### [SHARPLSP-FEATURES-HIGHLIGHTING-REGEX] Regex Patterns in String Literals
+
+A C# string literal that is a regular-expression pattern is not one flat `string` token: the pattern's syntax comes back as `regexp` tokens, and the literal text between stays `string`.
+
+- **Which literals.** A literal passed to a parameter marked `[StringSyntax("Regex")]`, which covers every `Regex` constructor and static method. The semantic model decides, never the literal's text: the same characters in any other string stay one `string` token.
+- **Which syntax.** Escapes (`\d`, `\.`, `\p{Lu}`, `\k<name>`, `\u0041`, backreferences), a whole character class (`[a-z]`, `[^0-9]`, a subtraction `[a-z-[aeiou]]`), a group's opening with its prefix (`(`, `(?:`, `(?=`, `(?<name>`, inline options) and its `)`, a comment group whole, quantifiers with their lazy `?` (`*`, `+?`, `{2,3}`), anchors `^` `$`, alternation `|` and `.`. A brace that is not a count (`{x}`) is literal text. The tokenizer does not validate: an unterminated construct runs to the end of the pattern.
+- **Where it sits.** Token positions are source positions. In a verbatim literal `""` is one pattern character; in a regular literal each C# escape is one, so `"\\w"` is the regex escape `\w` spanning four source characters; a single-line raw literal maps one to one. A literal whose characters cannot be placed (multi-line, or a surrogate escape) keeps its one `string` token.
+- Roslyn's own regex classifier is not exported by the assemblies the sidecar ships, so the public `Classifier` reports the literal as one span; the sidecar carves the `regexp` tokens out of it for full and range requests alike.
+
+Implementation: `RegexLiteralTokens.cs`, `RegexPatternTokens.cs` and `SemanticTokensResolver.Carve`; `RegexHighlightingTests`.
 
 ### [SHARPLSP-FEATURES-WARM-UP] Background Warm-Up
 
@@ -726,7 +763,7 @@ See [DEBUGGING-SPEC.md](DEBUGGING-SPEC.md) for the DAP router and debug-sidecar 
 
 | Feature | LSP Method | Implementation | Priority |
 |---|---|---|---|
-| Solution/project loading | Custom: `sharplsp/openSolution` | MSBuildWorkspace + Ionide.ProjInfo | P0 |
+| Solution/project loading | Custom: `sharplsp/openSolution` | MSBuildWorkspace + MSBuild design-time build ([NETFX-PROJECTS-FSHARP]) | P0 |
 | Project dependency graph | Custom: `sharplsp/projectGraph` | MSBuild project reference analysis | P1 |
 | NuGet package search | Custom: `sharplsp/nuget/search` | HTTP GET nuget.org v3 API, cross-ref installed | P2 |
 | NuGet package versions | Custom: `sharplsp/nuget/versions` | HTTP GET nuget.org flat container API | P2 |
@@ -758,7 +795,7 @@ source text (GitHub #389).
 | Record stub generation | `textDocument/codeAction` | Generate record field stubs | P1 |
 | Open statement management | `textDocument/codeAction` | Auto-open + organize opens | P0 |
 | Computation expression support | `textDocument/completion` | CE-aware completions | P1 |
-| Type provider navigation | `textDocument/definition` | Type provider generated type nav | P2 |
+| Type provider navigation | `textDocument/definition` | Provided types and members land on the declaration that instantiates the provider ([DEFINITION-FSHARP-PROVIDED]) | P2 |
 | F# Interactive integration | Custom: `sharplsp/fsi` | Send selection to FSI, evaluate | P2 |
 | File ordering awareness | Custom: `sharplsp/fileOrder` | Semantic file reorder suggestions | P1 |
 
@@ -799,7 +836,7 @@ source text (GitHub #389).
 **Schedule:** Months 4–8.
 
 - C# sidecar with MSBuildWorkspace, full project loading, design-time build evaluation
-- F# sidecar with FSharpChecker, Ionide.ProjInfo, project cracking
+- F# sidecar with FSharpChecker and MSBuild design-time project cracking
 - IPC protocol implementation (MessagePack over named pipes/UDS) with health monitoring
 - Completions, hover, signature help for both C# and F#
 - Go to definition, declaration, type definition, implementation for both languages
@@ -874,7 +911,6 @@ SharpLsp is MIT-licensed. All dependencies are compatible:
 | [.NET Runtime](https://github.com/dotnet/runtime) | MIT + Patent Promise | Patent promise covers applications running on .NET Runtime. |
 | [Fantomas](https://github.com/fsprojects/fantomas) | Apache-2.0 | None. |
 | [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | MIT | None. |
-| [Ionide.ProjInfo](https://github.com/ionide/proj-info) | MIT | None. |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) / grammars | MIT | None. |
 | [salsa](https://github.com/salsa-rs/salsa) | Apache-2.0 / MIT | Dual-licensed. |
 | SharpLsp itself | MIT | Open source. No proprietary components. |

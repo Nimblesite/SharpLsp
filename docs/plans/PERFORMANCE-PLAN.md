@@ -53,5 +53,5 @@ user never waits on projects they are not looking at.
 - [ ] Benchmark hover latency on cold start (first hover after project load)
 - [ ] Benchmark hover latency on warm cache (repeated hover on same position)
 - [ ] Benchmark hover latency on large solution (~2M LOC)
-- [ ] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms
+- [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs`, shared with [DEFINITION-PERFORMANCE]
 - [ ] Profile sidecar memory usage during sustained hover requests

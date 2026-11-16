@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -26,6 +27,21 @@ internal static class AnalyzerDiagnosticResolver
         "Microsoft.CodeAnalysis.CSharp.Features",
     ];
 
+    /// <summary>
+    /// The document report's analyzer diagnostics, computed once per document snapshot: a
+    /// code-action request on every caret move must not re-analyze an unchanged file.
+    /// </summary>
+    private static readonly ConditionalWeakTable<
+        Document,
+        Task<ImmutableArray<Diagnostic>>
+    > ReportedByDocument = [];
+
+    /// <summary>
+    /// The analyzer diagnostics a code fix can act on in <paramref name="span"/>: those of the
+    /// rewrite <paramref name="analyzers"/>, whatever their severity, and every diagnostic the
+    /// document report shows there — the same analyzers under the same filter — so a rule
+    /// promoted in .editorconfig never appears without its fix. [REFACTOR-NEVER-SILENT]
+    /// </summary>
     public static async Task<ImmutableArray<Diagnostic>> ResolveAsync(
         Document document,
         SemanticModel model,
@@ -34,10 +50,24 @@ internal static class AnalyzerDiagnosticResolver
         CancellationToken ct
     )
     {
-        return analyzers.IsDefaultOrEmpty
+        var rewrites = analyzers.IsDefaultOrEmpty
             ? []
             : await ResolveWithCompilationAsync(document, model, span, analyzers, ct)
                 .ConfigureAwait(false);
+        var reported = await ReportedByDocument
+            .GetValue(
+                document,
+                snapshot =>
+                    ResolveDocumentAsync(
+                        snapshot,
+                        model,
+                        DiscoverDocumentAnalyzers(snapshot.Project),
+                        CancellationToken.None
+                    )
+            )
+            .WaitAsync(ct)
+            .ConfigureAwait(false);
+        return FilterDiagnostics(rewrites.AddRange(reported), model.SyntaxTree, span);
     }
 
     /// <summary>

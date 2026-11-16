@@ -1,26 +1,4 @@
 {
-  "profiler-film": {
-    "page": "/docs/profiler/",
-    "encodings": ["mp4", "webm"],
-    "width": 1920,
-    "height": 1080,
-    "duration": "PT1M4S",
-    "uploadDate": "2026-10-16T08:09:21+11:00",
-    "text": {
-      "en": {
-        "label": "SharpLsp profiler film: CPU profiling, heat map, flame graph, memory timeline and leak suspects in VS Code",
-        "caption": "The profiler in one minute. All editor footage was recorded in VS Code with the SharpLsp extension profiling a real .NET app. Fast-forwarded stretches are marked on screen."
-      },
-      "zh": {
-        "label": "SharpLsp 性能分析器影片：VS Code 中的 CPU 分析、热力图、火焰图、内存时间线和可疑泄漏",
-        "caption": "一分钟了解性能分析器。所有编辑器画面均在 VS Code 中使用 SharpLsp 扩展分析真实 .NET 应用时录制。快进的片段在画面上有标注。"
-      },
-      "ja": {
-        "label": "SharpLsp プロファイラーの紹介映像：VS Code での CPU プロファイリング、ヒートマップ、フレームグラフ、メモリタイムライン、リークの疑い",
-        "caption": "1 分でわかるプロファイラー。エディターの映像はすべて、SharpLsp 拡張機能で実際の .NET アプリをプロファイリングしながら VS Code で収録したものです。早送りの部分は画面上に表示されます。"
-      }
-    }
-  },
   "profiler-csharp": {
     "page": "/docs/profiler/",
     "encodings": ["mp4", "webm"],
@@ -88,6 +66,28 @@
       }
     }
   },
+  "profiler-film": {
+    "page": "/docs/profiler/",
+    "encodings": ["mp4", "webm"],
+    "width": 1920,
+    "height": 1080,
+    "duration": "PT1M4S",
+    "uploadDate": "2026-10-16T08:09:21+11:00",
+    "text": {
+      "en": {
+        "label": "SharpLsp profiler film: CPU profiling, heat map, flame graph, memory timeline and leak suspects in VS Code",
+        "caption": "The profiler in one minute. All editor footage was recorded in VS Code with the SharpLsp extension profiling a real .NET app. Fast-forwarded stretches are marked on screen."
+      },
+      "zh": {
+        "label": "SharpLsp 性能分析器影片：VS Code 中的 CPU 分析、热力图、火焰图、内存时间线和可疑泄漏",
+        "caption": "一分钟了解性能分析器。所有编辑器画面均在 VS Code 中使用 SharpLsp 扩展分析真实 .NET 应用时录制。快进的片段在画面上有标注。"
+      },
+      "ja": {
+        "label": "SharpLsp プロファイラーの紹介映像：VS Code での CPU プロファイリング、ヒートマップ、フレームグラフ、メモリタイムライン、リークの疑い",
+        "caption": "1 分でわかるプロファイラー。エディターの映像はすべて、SharpLsp 拡張機能で実際の .NET アプリをプロファイリングしながら VS Code で収録したものです。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
   "profiler-fix-memory-leak": {
     "page": "/docs/memory-leaks/",
     "encodings": ["mp4", "webm"],
@@ -131,28 +131,6 @@
       "ja": {
         "label": "画面録画：VS Code で SharpLsp を使い F# アプリをプロファイリング。ホットなパイプラインのステージとクロージャーから、モジュール値からリークする F# のレコードと共用体ケース、修正の確認まで",
         "caption": "ナレーション、オリジナル音楽、字幕付き。VS Code で収録した FsStorefront デモでの F# の一連の流れ：Profile CPU と .fs の行のヒートマップ、Track Memory、組み立てた行に塗られるレコードと共用体ケース、モジュール値をルートとする保持グラフ、修正の入力、そして再実行。早送りの部分は画面上に表示されます。"
-      }
-    }
-  },
-  "sharplsp-tour": {
-    "page": "/docs/editors/",
-    "encodings": ["mp4", "webm"],
-    "width": 1000,
-    "height": 562,
-    "duration": "PT22S",
-    "uploadDate": "2026-10-13T22:09:22+11:00",
-    "text": {
-      "en": {
-        "label": "SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf",
-        "caption": "SharpLsp in 22 seconds: Solution Explorer, the NuGet browser, C# and F# on equal terms, then debug, profile, test and ship — on Windows, macOS and Linux, in VS Code, Cursor, Windsurf and VSCodium."
-      },
-      "zh": {
-        "label": "SharpLsp 导览：Visual Studio 和 Rider 的开源替代方案——在 VS Code、Cursor 和 Windsurf 中使用解决方案资源管理器、NuGet 浏览器、C# 与 F#、调试、性能分析和测试",
-        "caption": "22 秒了解 SharpLsp：解决方案资源管理器、NuGet 浏览器、地位平等的 C# 与 F#，以及调试、性能分析、测试和发布——支持 Windows、macOS 和 Linux 上的 VS Code、Cursor、Windsurf 和 VSCodium。"
-      },
-      "ja": {
-        "label": "SharpLsp のツアー：Visual Studio と Rider に代わるオープンソース。ソリューションエクスプローラー、NuGet ブラウザー、C# と F#、デバッグ、プロファイリング、テストを VS Code・Cursor・Windsurf で",
-        "caption": "22 秒でわかる SharpLsp：ソリューションエクスプローラー、NuGet ブラウザー、対等に扱われる C# と F#、そしてデバッグ・プロファイル・テスト・ビルド。Windows・macOS・Linux 上の VS Code・Cursor・Windsurf・VSCodium で動作します。"
       }
     }
   },
@@ -223,6 +201,28 @@
       "ja": {
         "label": "VS Code での SharpLsp のエディター設定：同梱のサーバーとサイドカーの起動、コマンドパレットの SharpLsp コマンド、信頼済みワークスペース用のパス設定",
         "caption": "ナレーション、オリジナル音楽、字幕付き。パッケージ版の拡張機能で VS Code にて収録：ステータスバーからの言語サーバーの再起動、SharpLsp のコマンド、開発ビルド用の設定。早送りの部分は画面上に表示されます。"
+      }
+    }
+  },
+  "sharplsp-tour": {
+    "page": "/docs/editors/",
+    "encodings": ["mp4", "webm"],
+    "width": 1000,
+    "height": 562,
+    "duration": "PT22S",
+    "uploadDate": "2026-10-13T22:09:22+11:00",
+    "text": {
+      "en": {
+        "label": "SharpLsp tour: the open-source alternative to Visual Studio and Rider — Solution Explorer, NuGet browser, C# and F#, debugging, profiling and testing in VS Code, Cursor and Windsurf",
+        "caption": "SharpLsp in 22 seconds: Solution Explorer, the NuGet browser, C# and F# on equal terms, then debug, profile, test and ship — on Windows, macOS and Linux, in VS Code, Cursor, Windsurf and VSCodium."
+      },
+      "zh": {
+        "label": "SharpLsp 导览：Visual Studio 和 Rider 的开源替代方案——在 VS Code、Cursor 和 Windsurf 中使用解决方案资源管理器、NuGet 浏览器、C# 与 F#、调试、性能分析和测试",
+        "caption": "22 秒了解 SharpLsp：解决方案资源管理器、NuGet 浏览器、地位平等的 C# 与 F#，以及调试、性能分析、测试和发布——支持 Windows、macOS 和 Linux 上的 VS Code、Cursor、Windsurf 和 VSCodium。"
+      },
+      "ja": {
+        "label": "SharpLsp のツアー：Visual Studio と Rider に代わるオープンソース。ソリューションエクスプローラー、NuGet ブラウザー、C# と F#、デバッグ、プロファイリング、テストを VS Code・Cursor・Windsurf で",
+        "caption": "22 秒でわかる SharpLsp：ソリューションエクスプローラー、NuGet ブラウザー、対等に扱われる C# と F#、そしてデバッグ・プロファイル・テスト・ビルド。Windows・macOS・Linux 上の VS Code・Cursor・Windsurf・VSCodium で動作します。"
       }
     }
   },

@@ -152,7 +152,7 @@ let private workspaceErrors (scenario: ForeignRenameScenario) =
             checkedFile
             |> Option.map (fun (result, _) ->
                 result.Diagnostics |> Array.filter (fun item -> item.Severity = FSharpDiagnosticSeverity.Error))
-            |> Option.defaultWith (fun () -> failwith "real FCS check must complete")
+            |> Option.defaultWith (fun () -> failwith "the real FCS check of the overlay must complete")
     }
 
 let private runForeignForward (scenario: ForeignRenameScenario) =

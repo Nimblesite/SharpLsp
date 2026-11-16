@@ -23,11 +23,11 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 // ── Helpers ──────────────────────────────────────────────────────
 
 /// `Core`: one unused `open System.IO` (0-based line 2), one live function.
-let private CORE_OPENS =
+let private coreOpens =
     String.Join("\n", [ "module Core.Library"; ""; "open System.IO"; ""; "let greet () = \"core\""; "" ])
 
 /// `App`: one unused `open System.IO` (0-based line 2), one use of `Core.greet`.
-let private APP_OPENS =
+let private appOpens =
     String.Join(
         "\n",
         [ "module App.Program"; ""; "open System.IO"; "open Core.Library"; ""; "let message = greet ()"; "" ]
@@ -66,7 +66,7 @@ let private editsFor file (edits: FSharpCodeFixes.DocumentEdit list) =
 
 /// Apply several edits to a whole-file source, back-to-front.
 let private applyEdits (src: string) (edits: FSharpCodeFixes.TextEdit list) =
-    (src, edits) ||> List.fold (fun text edit -> applyEdit text edit)
+    (src, edits) ||> List.fold applyEdit
 
 /// One fix-all anchored on `anchor`, analyzers off, cancellations unused.
 let private fixAll state anchor fixKey scope =
@@ -101,7 +101,7 @@ let private errorsOf (check: FSharpCheckFileResults) =
 [<Fact>]
 let ``fix all unused opens spans document project and solution and the fixed files re-check clean`` () =
     task {
-        let! state, root, corePath, appPath = openSolution CORE_OPENS APP_OPENS
+        let! state, root, corePath, appPath = openSolution coreOpens appOpens
         try
             // 1. Document: only the anchor file, one whole-line deletion of its unused open.
             let! document = fixAll state appPath FSharpCodeFixes.FixAllKeys.RemoveUnusedOpen "document"
@@ -131,13 +131,13 @@ let ``fix all unused opens spans document project and solution and the fixed fil
             Assert.Equal<(string * int) array>([| ("Library.fs", 1); ("Program.fs", 1) |], countsByFile solution)
 
             // 5. Applying the solution edit leaves both files error-free with no unused opens.
-            let coreEdited = applyEdits CORE_OPENS (editsFor "Library.fs" solution)
+            let coreEdited = applyEdits coreOpens (editsFor "Library.fs" solution)
             let! coreCheck = recheck state corePath coreEdited
             Assert.Empty(errorsOf coreCheck)
             let! coreFindings = findingsOf coreEdited coreCheck
             Assert.Empty(coreFindings.UnusedOpens)
 
-            let appEdited = applyEdits APP_OPENS (editsFor "Program.fs" solution)
+            let appEdited = applyEdits appOpens (editsFor "Program.fs" solution)
             let! appCheck = recheck state appPath appEdited
             Assert.Empty(errorsOf appCheck)
             let! appFindings = findingsOf appEdited appCheck
@@ -153,7 +153,7 @@ let ``fix all unused opens spans document project and solution and the fixed fil
 [<Fact>]
 let ``a fix all that finds nothing or cannot run refuses with a reason`` () =
     task {
-        let! state, root, _, appPath = openSolution CORE_OPENS APP_OPENS
+        let! state, root, _, appPath = openSolution coreOpens appOpens
         try
             // The anchor holds one unused open; the simplify-name key finds nothing there.
             match! fixAll state appPath FSharpCodeFixes.FixAllKeys.SimplifyName "document" with
@@ -221,7 +221,7 @@ let ``fix all unused declarations needs the analyzer and then sweeps every dead 
 let ``fix all unused values prefixes every occurrence in the document`` () =
     task {
         let! state, dir, _, paths =
-            loadWorkspace [ "M.fs", "module M\n\nlet f () =\n    let first = 42\n    let second = 43\n    ()\n" ]
+            loadWorkspace [ ("M.fs", "module M\n\nlet f () =\n    let first = 42\n    let second = 43\n    ()\n") ]
         try
             warnOn1182 state
             let! outcome = fixAll state paths[0] FSharpCodeFixes.FixAllKeys.PrefixUnusedValue "document"
@@ -253,10 +253,10 @@ let ``fix all add-new prefixes every construction in the project`` () =
             let! outcome = fixAll state paths[0] FSharpCodeFixes.FixAllKeys.AddNewForDisposable "project"
             let edits = editsOf outcome
             Assert.Equal<(string * int) array>([| ("A.fs", 1); ("B.fs", 1) |], countsByFile edits)
-            for path, module_ in [ (paths[0], "Alpha"); (paths[1], "Beta") ] do
+            for path, moduleName in [ (paths[0], "Alpha"); (paths[1], "Beta") ] do
                 let name = NativePaths.NameOf path |> string
                 let edited = applyEdits (File.ReadAllText path) (editsFor name edits)
-                Assert.Equal($"let reader = new System.IO.StringReader(\"{module_}\")", edited.Split('\n')[2])
+                Assert.Equal($"let reader = new System.IO.StringReader(\"{moduleName}\")", edited.Split('\n')[2])
                 let! check = recheck state path edited
                 Assert.Empty(check.Diagnostics |> Array.filter (fun d -> d.ErrorNumber = 760))
 

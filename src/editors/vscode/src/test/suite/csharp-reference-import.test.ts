@@ -209,6 +209,28 @@ suite(
       assert.deepStrictEqual(stubs.log.errorActions[0], ['Show Log'], 'with the way to the log');
       assert.deepStrictEqual(stubs.log.infoMessages, [], 'and no false success');
       assert.strictEqual(fs.readFileSync(layout.app, 'utf-8'), before, 'the project is untouched');
+
+      // [REFACTOR-FSHARP-FILE-ORDER] A compile-order move has no import to keep:
+      // its failure names the missing item and says the project is unchanged.
+      const move = 'Move Defs.fs above Uses.fs in App.csproj';
+      await vscode.commands.executeCommand(COMMAND, {
+        title: move,
+        reference: {
+          kind: 'compileOrder',
+          projectPath: layout.app,
+          reference: 'Defs.fs',
+          version: 'Uses.fs',
+        },
+      });
+
+      assert.strictEqual(stubs.log.errorMessages.length, 2, 'one more message');
+      const moveMessage = stubs.log.errorMessages[1] ?? '';
+      assert.ok(moveMessage.startsWith(`SharpLsp could not apply "${move}": `), moveMessage);
+      assert.ok(moveMessage.includes('Defs.fs'), `it names the missing item: ${moveMessage}`);
+      assert.ok(moveMessage.includes('the project file is unchanged'), moveMessage);
+      assert.ok(!moveMessage.includes('the import is already in place'), moveMessage);
+      assert.deepStrictEqual(stubs.log.infoMessages, [], 'still no false success');
+      assert.strictEqual(fs.readFileSync(layout.app, 'utf-8'), before, 'the project is untouched');
     });
   },
 );

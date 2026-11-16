@@ -66,7 +66,7 @@ let private renderElement (element: ToolTipElement) : string option =
 /// Render a ToolTipText result into Markdown hover content.
 let renderToolTip (tip: ToolTipText) : string option =
     match tip with
-    | ToolTipText.ToolTipText elements when elements.Length > 0 ->
+    | ToolTipText elements when elements.Length > 0 ->
         elements
         |> List.choose renderElement
         |> function

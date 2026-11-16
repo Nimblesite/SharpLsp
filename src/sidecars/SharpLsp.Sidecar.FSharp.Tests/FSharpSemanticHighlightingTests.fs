@@ -40,7 +40,7 @@ let private decode (data: int array) =
 [<InlineData(3, 22, 1, 21)>] // An overloaded operator keeps the standard operator category.
 [<InlineData(10, 18, 8, 5)>] // A value-type constructor has its standard struct color.
 let ``full and range tokens use standard FSharp symbol categories`` line column length expected = task {
-    let! state, directory, _, files = loadWorkspace [ "Highlighting.fs", code ]
+    let! state, directory, _, files = loadWorkspace [ ("Highlighting.fs", code) ]
     try
         let! full = FSharpFeatures.getSemanticTokens state files[0]
         let tokens = decode full

@@ -95,7 +95,8 @@ let private referencePackOf (assembly: string) =
         packVersionOf packRoot (NativePaths.NameOf version)
         |> Option.map (fun pack -> NativePaths.Resolve(pack, "ref"))
         |> Option.filter Directory.Exists
-        |> Option.bind (fun refs -> Directory.GetDirectories refs |> Array.sortDescending |> Array.tryHead)
+        |> Option.map Directory.GetDirectories
+        |> Option.bind (Array.sortDescending >> Array.tryHead)
     else
         None
 

@@ -1,5 +1,5 @@
-/// MessagePack wire-contract types and serialization helpers for the F#
-/// sidecar. Positional [<Key(n)>] layouts mirror the Rust host's structs.
+// MessagePack wire-contract types and serialization helpers for the F#
+// sidecar. Positional [<Key(n)>] layouts mirror the Rust host's structs.
 namespace SharpLsp.Sidecar.FSharp
 
 open System
@@ -452,7 +452,7 @@ module internal Helpers =
         handle query (fun result ct -> serializeOk (toWire result) ct)
 
     let private resultRequestHandler
-        (query: 'Request -> CancellationToken -> Task<Microsoft.FSharp.Core.Result<'Result, string>>)
+        (query: 'Request -> CancellationToken -> Task<Core.Result<'Result, string>>)
         (toWire: 'Result -> 'Wire)
         : Func<byte[], CancellationToken, Task<ByteResult>> =
         handleWithCancellation query (fun result ct ->

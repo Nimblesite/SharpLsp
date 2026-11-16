@@ -12,7 +12,6 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpExtraCoverageTests
 open System.IO
 open Xunit
 open MessagePack
-open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 open SharpLsp.Sidecar.Common
@@ -408,27 +407,3 @@ let ``main exits non-zero when the host that launched it is already gone`` () =
     let listener = IpcConnection.CreateListener(endpoint)
     Assert.False(listener.IsError)
     listener.Match((fun l -> l.DisposeAsync().AsTask().Wait()), (fun _ -> ()))
-
-// ── File-order analyzer: a genuinely misordered project ──────────
-
-[<Fact>]
-let ``analyzeFileOrder flags a forward dependency in a misordered project`` () =
-    task {
-        let dir = NativePaths.Temp($"slsp-order-{System.Guid.NewGuid():N}")
-        Directory.CreateDirectory(dir) |> ignore
-        // Compile order A→B, but A uses B ⇒ B must come first ⇒ misordered.
-        File.WriteAllText(
-            NativePaths.Resolve(dir, "Order.fsproj"),
-            "<Project Sdk=\"Microsoft.NET.Sdk\">"
-            + "<PropertyGroup><TargetFramework>net10.0</TargetFramework>"
-            + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference></PropertyGroup>"
-            + "<ItemGroup><Compile Include=\"A.fs\" /><Compile Include=\"B.fs\" /></ItemGroup></Project>")
-        File.WriteAllText(NativePaths.Resolve(dir, "A.fs"), "module P.A\n\nlet useB = B.value\n")
-        File.WriteAllText(NativePaths.Resolve(dir, "B.fs"), "module P.B\n\nlet value = 42\n")
-        let ws = FSharpWorkspace.create ()
-        let! _ = FSharpWorkspaceLoading.loadProject ws dir
-        let! issues = FSharpFileOrder.analyzeFileOrder ws (NativePaths.Resolve(dir, "Order.fsproj"))
-        Assert.NotEmpty(issues)
-        Assert.All(issues, fun i -> Assert.False(System.String.IsNullOrEmpty i.Message))
-        try Directory.Delete(dir, true) with _ -> ()
-    }

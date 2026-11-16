@@ -15,7 +15,7 @@ open SharpLsp.Sidecar.Common
 
 /// Definition two characters into the first `needle` on `line` of `src`.
 let private definitionOf (src: string) line (needle: string) = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "M.fs", src ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("M.fs", src) ]
 
     try
         let text = src.Split('\n')[line]

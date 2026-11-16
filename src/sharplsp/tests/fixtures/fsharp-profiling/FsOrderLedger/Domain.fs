@@ -36,6 +36,6 @@ type Versioned<'T> = { Version: int; Value: 'T }
 
 type AuditEntry = { At: DateTime; OrderId: int; Note: string }
 
-exception OrderRejected of orderId: int * reason: string
+exception OrderRejected of orderId: int * reason: string // fsharplint:disable-line ExceptionNames
 
 type Quote = { Sku: string; Price: decimal; Tags: Set<string> }

@@ -10,7 +10,6 @@ open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.Common.References
-open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 [<NoComparison; NoEquality>]
 type private ImportContext =
@@ -31,7 +30,7 @@ let private directReferences (state: FSharpWorkspace.FSharpWorkspaceState) (proj
     | _ -> []
 
 /// Whether `from` reaches `target` through loaded F# project references.
-let rec private reaches state (from: string) (target: string) =
+let private reaches state (from: string) (target: string) =
     let rec walk trail current =
         if NativePaths.AreEqual(current, target) then true
         elif trail |> List.exists (fun seen -> NativePaths.AreEqual(seen, current)) then false
@@ -52,7 +51,7 @@ let private importable name (entity: FSharpEntity) =
     && (entity.DisplayName = name || entity.CompiledName = name || entity.LogicalName = name)
 
 let private namedTypes name (entities: seq<FSharpEntity>) =
-    FSharpEntityIndex.allNested entities
+    FSharpSemanticNavigation.allNested entities
     |> Seq.filter (importable name)
     |> List.ofSeq
 

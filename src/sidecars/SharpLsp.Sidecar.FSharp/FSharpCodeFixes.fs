@@ -2,7 +2,6 @@
 /// Maps FCS diagnostic codes to concrete text edits.
 module SharpLsp.Sidecar.FSharp.FSharpCodeFixes
 
-open System
 open System.Collections.Concurrent
 open System.Threading
 open System.Threading.Tasks
@@ -220,13 +219,20 @@ let private withoutReference actions : (FSharpCodeActions.GeneratedAction * Refe
 let private nameActions workspace parseResults checkResults source filePath r =
     task {
         let imports = FSharpNameFixes.imports workspace parseResults checkResults source filePath r
+        let name = FSharpNameFixes.flaggedName source r
+        // A later file of the project declares the name: a compile-order
+        // problem, so nothing outside the project is searched. [REFACTOR-FSHARP-FILE-ORDER]
+        let! order =
+            match name with
+            | Some name -> FSharpFileOrder.actions workspace filePath name
+            | None -> Task.FromResult []
         let! external =
-            match imports, FSharpNameFixes.flaggedName source r with
-            | [], Some name -> FSharpImportReferences.actions workspace parseResults source filePath r name
+            match imports, order, name with
+            | [], [], Some name -> FSharpImportReferences.actions workspace parseResults source filePath r name
             | _ -> Task.FromResult []
         let own = imports @ FSharpNameFixes.typos parseResults checkResults source filePath r |> withoutReference
-        let outside = external |> List.map (fun (action, reference) -> action, reference)
-        return own @ outside
+        let commands = order @ external |> List.map (fun (action, reference) -> action, reference)
+        return own @ commands
     }
 
 /// The quick fixes one diagnostic offers, keyed by its number, each built from

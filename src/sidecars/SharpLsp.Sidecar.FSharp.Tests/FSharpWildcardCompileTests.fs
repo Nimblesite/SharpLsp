@@ -9,7 +9,6 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpWildcardCompileTests
 
 open System
 open System.IO
-open System.Threading
 open System.Xml.Linq
 open FSharp.Compiler.Diagnostics
 open Xunit

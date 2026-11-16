@@ -4,11 +4,9 @@
 module SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
-open Serilog
 
 /// A raw text edit (no MessagePack annotations — internal use only).
 type RawEdit =
@@ -37,6 +35,7 @@ let rangeEdit (filePath: string) (r: range) (text: string) : RawEdit =
 
 /// The identifier a binding's head pattern defines: `x` in `let x = …`, `f` in
 /// `let f a = …`, `Name` in `member this.Name = …`.
+[<TailCall>]
 let rec patIdent (pat: SynPat) : Ident option =
     match pat with
     | SynPat.Named(ident = SynIdent(ident, _)) -> Some ident

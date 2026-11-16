@@ -301,12 +301,26 @@ public sealed class DeadCodeAnalyzerMemberReferenceTests : IDisposable
         }
         """;
 
+    // A type nothing names, whose only member the runtime calls: a module initializer.
+    private const string StartupSource = """
+        using System.Runtime.CompilerServices;
+
+        namespace Ext;
+
+        internal static class Startup
+        {
+            [ModuleInitializer]
+            internal static void Register() { }
+        }
+        """;
+
     private readonly ProjectlessWorkspaceFixture _files = new("deadcode-members");
     private readonly string _csprojPath;
     private readonly string _logPath;
     private readonly string _extensionsPath;
     private readonly string _configPath;
     private readonly string _abandonedPath;
+    private readonly string _startupPath;
 
     public DeadCodeAnalyzerMemberReferenceTests()
     {
@@ -315,6 +329,7 @@ public sealed class DeadCodeAnalyzerMemberReferenceTests : IDisposable
         _extensionsPath = _files.Write("StringExtensions.cs", ExtensionsSource);
         _configPath = _files.Write("ConfigHolder.cs", ConfigSource);
         _abandonedPath = _files.Write("Abandoned.cs", AbandonedSource);
+        _startupPath = _files.Write("Startup.cs", StartupSource);
         _ = _files.Write("Consumer.cs", ConsumerSource);
         var (exitCode, output) = DotnetBuild.Restore(_csprojPath);
         Assert.True(exitCode == 0, $"dotnet restore must succeed: {output}");
@@ -349,6 +364,11 @@ public sealed class DeadCodeAnalyzerMemberReferenceTests : IDisposable
         // Nested type and const references keep the containing class alive.
         var config = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _configPath);
         Assert.True(config.Count == 0, Messages(config));
+
+        // A [ModuleInitializer] is called by the runtime: neither it nor the class that
+        // exists only to hold it is dead, though no code names either.
+        var startup = await DeadCodeAnalyzerTests.DeadDiagnosticsAsync(manager, _startupPath);
+        Assert.True(startup.Count == 0, Messages(startup));
     }
 
     [Fact]

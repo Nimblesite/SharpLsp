@@ -350,6 +350,10 @@ fn handle_custom_request(
         ),
         "sharplsp/sortMembers" => handle_sort_members(req, parsers, vfs),
         "sharplsp/statementStop" => handle_statement_stop(req, parsers, vfs),
+        "sharplsp/relatedFiles" => crate::related_files::handle(req),
+        "sharplsp/adjacentMember" => {
+            crate::member_navigation::handle(req, parsers, vfs, runtime, engines)
+        }
         "sharplsp/hotReload" => hot_reload::handle(req, runtime, csharp_sidecar),
         razor::HTML_PROJECTION => razor::handle_html_projection(req, runtime, csharp_sidecar),
         // NuGet package management
@@ -379,11 +383,8 @@ fn handle_custom_request(
             nuget::vulnerability::command::handle(&req, runtime, connection.sender.clone(), engines)
         }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
-        "sharplsp/project/addCompileItem" => {
-            project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
-        }
-        "sharplsp/project/removeCompileItem" => {
-            project_edit::handle_remove_compile_item(req, runtime, csharp_sidecar)
+        method if project_edit::edit_for(method).is_some() => {
+            project_edit::handle(req, runtime, csharp_sidecar)
         }
         "sharplsp/project/compileItems" => {
             project_sources::handle_compile_items(req, runtime, fsharp_sidecar)

@@ -26,7 +26,7 @@ let private placed (result: LocationListResult) =
     |> Array.sort
     |> List.ofArray
 
-let private ADD = "M:TestProject.Library.add(System.Int32,System.Int32)"
+let private add = "M:TestProject.Library.add(System.Int32,System.Int32)"
 
 type FSharpForeignSymbolsWireTests(fixture: SidecarFixture) =
     interface IClassFixture<SidecarFixture>
@@ -36,15 +36,15 @@ type FSharpForeignSymbolsWireTests(fixture: SidecarFixture) =
         let! person = fixture.Send("workspace/declarationForeign", request "TestProject" "T:TestProject.Library.Person" true)
         Assert.Null(person.Error)
         Assert.Equal<(string * int * int * int) list>(
-            [ "Library.fs", 9, 5, 11 ],
+            [ ("Library.fs", 9, 5, 11) ],
             placed (deserialize<LocationListResult> person.Payload)
         )
 
         // A function is named with its parameter types, and lands on its name.
-        let! add = fixture.Send("workspace/declarationForeign", request "TestProject" ADD false)
+        let! add = fixture.Send("workspace/declarationForeign", request "TestProject" add false)
         Assert.Null(add.Error)
         Assert.Equal<(string * int * int * int) list>(
-            [ "Library.fs", 6, 4, 7 ],
+            [ ("Library.fs", 6, 4, 7) ],
             placed (deserialize<LocationListResult> add.Payload)
         )
 
@@ -56,17 +56,17 @@ type FSharpForeignSymbolsWireTests(fixture: SidecarFixture) =
 
     [<Fact>]
     member _.``a foreign references request lists F# uses, the declaration only when asked``() = task {
-        let! withDeclaration = fixture.Send("workspace/referencesForeign", request "TestProject" ADD true)
+        let! withDeclaration = fixture.Send("workspace/referencesForeign", request "TestProject" add true)
         Assert.Null(withDeclaration.Error)
         let all = placed (deserialize<LocationListResult> withDeclaration.Payload)
         Assert.Contains(("Library.fs", 6, 4, 7), all)
         Assert.Contains(("Library.fs", 15, 13, 16), all)
 
-        let! withoutDeclaration = fixture.Send("workspace/referencesForeign", request "TestProject" ADD false)
+        let! withoutDeclaration = fixture.Send("workspace/referencesForeign", request "TestProject" add false)
         Assert.Null(withoutDeclaration.Error)
         let uses = placed (deserialize<LocationListResult> withoutDeclaration.Payload)
         Assert.DoesNotContain(("Library.fs", 6, 4, 7), uses)
-        Assert.Equal<(string * int * int * int) list>(List.except [ "Library.fs", 6, 4, 7 ] all, uses)
+        Assert.Equal<(string * int * int * int) list>(List.except [ ("Library.fs", 6, 4, 7) ] all, uses)
         Assert.All(uses, fun (_, _, character, endCharacter) -> Assert.Equal("add".Length, endCharacter - character))
 
         // A symbol F# does not declare has no uses.

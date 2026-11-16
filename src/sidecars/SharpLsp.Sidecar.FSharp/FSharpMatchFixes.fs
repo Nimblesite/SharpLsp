@@ -6,14 +6,13 @@
 module SharpLsp.Sidecar.FSharp.FSharpMatchFixes
 
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.SyntaxTrivia
 open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 /// The case added to complete a match.
-let private WILDCARD = "| _ -> failwith \"Unhandled case\""
+let private wildcard = "| _ -> failwith \"Unhandled case\""
 
 /// The clauses of the innermost `match`, `match!` or `function` holding `pos`.
 let private clausesAt (parseResults: FSharpParseFileResults) (pos: pos) : SynMatchClause list option =
@@ -45,5 +44,5 @@ let wildcards (parseResults: FSharpParseFileResults) filePath (r: range) : Gener
     |> Option.map (fun last ->
         let clause = last.Range
         let after = Position.mkPos (clause.EndLine + 1) (clauseColumn last)
-        FSharpQuickFix.insertLine "Add wildcard case '| _ ->'" filePath after WILDCARD)
+        FSharpQuickFix.insertLine "Add wildcard case '| _ ->'" filePath after wildcard)
     |> Option.toList

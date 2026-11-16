@@ -151,11 +151,33 @@ struct CompileInsertWire {
     position: String,
 }
 
-/// Insert a `<Compile Include>` item via the sidecar. GitHub #493 /
-/// [SE-ADD-FILE-REQUEST].
-pub fn add_compile_item(
+/// Which sidecar Compile-item edit to run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompileEdit {
+    /// Insert a new item ([SE-ADD-FILE-REQUEST], GitHub #493).
+    Add,
+    /// Take an item out, either separator spelling ([SE-REMOVE-FILE-REQUEST]).
+    Remove,
+    /// Move an existing item next to an anchor ([SE-REORDER-FILE-REQUEST]).
+    Reorder,
+}
+
+impl CompileEdit {
+    /// The sidecar method that performs this edit.
+    pub fn sidecar_method(self) -> &'static str {
+        match self {
+            Self::Add => "project/addCompileItem",
+            Self::Remove => "project/removeCompileItem",
+            Self::Reorder => "project/reorderCompileItems",
+        }
+    }
+}
+
+/// Edit a `<Compile Include>` item via the sidecar's `MSBuild` document model.
+pub fn compile_item_edit(
     sidecar: &Arc<SidecarManager>,
     runtime: &Runtime,
+    kind: CompileEdit,
     file_path: &str,
     include: &str,
     anchor_include: &str,
@@ -167,13 +189,7 @@ pub fn add_compile_item(
         anchor_include: anchor_include.to_string(),
         position: position.kind().to_string(),
     };
-    round_trip(
-        sidecar,
-        runtime,
-        "project/addCompileItem",
-        request,
-        file_path,
-    )
+    round_trip(sidecar, runtime, kind.sidecar_method(), request, file_path)
 }
 
 /// Sidecar request payload for a project reference (positional — must match C#
@@ -203,30 +219,6 @@ pub fn add_project_reference(
         sidecar,
         runtime,
         "project/addProjectReference",
-        request,
-        file_path,
-    )
-}
-
-/// Remove a `<Compile Include>` item via the sidecar, either separator
-/// spelling; an include the project lacks changes nothing.
-/// [SE-REMOVE-FILE-REQUEST]
-pub fn remove_compile_item(
-    sidecar: &Arc<SidecarManager>,
-    runtime: &Runtime,
-    file_path: &str,
-    include: &str,
-) -> Result<EditOutcome> {
-    let request = CompileInsertWire {
-        file_path: file_path.to_string(),
-        include: include.to_string(),
-        anchor_include: String::new(),
-        position: String::new(),
-    };
-    round_trip(
-        sidecar,
-        runtime,
-        "project/removeCompileItem",
         request,
         file_path,
     )

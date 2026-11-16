@@ -19,11 +19,11 @@ open Fantomas.FCS.Syntax
 open Fantomas.FCS.Text
 open LintSourceBuild.SourcePaths
 
-let private AsyncName = "Microsoft.FSharp.Control.FSharpAsync`1"
-let private TaskPrefix = "System.Threading.Tasks.Task"
-let private ScrutineeVar = "fSharpType"
-let private ScrutineeProp = "BasicQualifiedName"
-let private GuardMethod = "StartsWith"
+let private asyncName = "Microsoft.FSharp.Control.FSharpAsync`1"
+let private taskPrefix = "System.Threading.Tasks.Task"
+let private scrutineeVar = "fSharpType"
+let private scrutineeProp = "BasicQualifiedName"
+let private guardMethod = "StartsWith"
 
 // --- shape recognizers ------------------------------------------------------
 
@@ -48,13 +48,13 @@ let private isMemberAccess receiver memberName (e: SynExpr) =
     | _ -> false
 
 let private (|TargetScrutinee|_|) expression =
-    if isMemberAccess ScrutineeVar ScrutineeProp expression then Some () else None
+    if isMemberAccess scrutineeVar scrutineeProp expression then Some () else None
 
 /// `name.StartsWith "System.Threading.Tasks.Task..."` guard expression.
 let private (|StartsWithGuard|_|) (patName: string) (e: SynExpr) =
     match e with
     | SynExpr.App(_, _, funcExpr, SynExpr.Const(SynConst.String(s, _, _), _), _) when
-        isMemberAccess patName GuardMethod funcExpr && s.StartsWith(TaskPrefix, StringComparison.Ordinal) ->
+        isMemberAccess patName guardMethod funcExpr && s.StartsWith(taskPrefix, StringComparison.Ordinal) ->
         Some()
     | _ -> None
 
@@ -71,7 +71,7 @@ let private isStartsWithGuardOn (patName: string) (g: SynExpr) : bool =
 
 let private classifyClause (c: SynMatchClause) : ClauseKind =
     match c with
-    | SynMatchClause(SynPat.Const(SynConst.String(s, _, _), _), None, _, _, _, _) when s = AsyncName ->
+    | SynMatchClause(SynPat.Const(SynConst.String(s, _, _), _), None, _, _, _, _) when s = asyncName ->
         AsyncStringClause
     | SynMatchClause(SynPat.Named(SynIdent(id, _), false, None, _), Some g, _, _, _, _) when
         isStartsWithGuardOn id.idText g ->
@@ -96,7 +96,7 @@ let private wrapClauses (clauses: SynMatchClause list) : Result<SynMatchClause l
     | [ AsyncStringClause; NamedWithStartsWithGuard; WildClause ] ->
         Ok [ wrapClause clauses.[0]; wrapClause clauses.[1]; clauses.[2] ]
     | shapes ->
-        let described = shapes |> List.map (fun s -> string s) |> String.concat "; "
+        let described = shapes |> List.map string |> String.concat "; "
         Error(err "unexpected-match-shape" ("target match clause shape changed: " + described))
 
 // --- generic guarded AST traversal ------------------------------------------
@@ -144,7 +144,7 @@ and private walkUnion hook state t (x: obj) : objnull =
     let case, fields = FSharpValue.GetUnionFields(x, t, true)
     FSharpValue.MakeUnion(case, fields |> Array.map (walk hook state), true)
 
-and private walk hook state (x: objnull) : objnull =
+and [<TailCall>] private walk hook state (x: objnull) : objnull =
     // Fantomas.FCS union values expose their per-case nested class through
     // GetType(), so SynExpr nodes must be detected with a type test, not
     // type equality.
@@ -211,6 +211,8 @@ let private verifyHook (state: WalkState) (e: SynExpr) : SynExpr option =
 
 let private parse (source: string) : Result<ParsedInput, PrepError> =
     try
+        // The source builder is a console program: it parses one file and exits.
+        // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
         match CodeFormatter.ParseAsync(false, source) |> Async.RunSynchronously with
         | [||] -> Error(err "parse-failed" "parser returned no input")
         | results -> Ok(fst results.[0])
@@ -219,6 +221,8 @@ let private parse (source: string) : Result<ParsedInput, PrepError> =
 
 let private format (ast: ParsedInput) (source: string) : Result<string, PrepError> =
     try
+        // The source builder is a console program: it formats one file and exits.
+        // fsharplint:disable-next-line NoAsyncRunSynchronouslyInLibrary
         Ok(CodeFormatter.FormatASTAsync(ast, source) |> Async.RunSynchronously)
     with e ->
         Error(err "format-failed" ("AST formatting failed: " + e.Message))

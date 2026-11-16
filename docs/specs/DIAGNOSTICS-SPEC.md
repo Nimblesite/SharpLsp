@@ -119,6 +119,15 @@ project_filter = ["MyApp.Core", "MyApp.Api", "MyApp.Tests.*"]
 
 When empty (default), every project in the solution is included. Per-document pulls (`textDocument/diagnostic`) are never filtered — the editor asked for that file specifically, so the server always answers.
 
+### [DIAG-CONFIG-OWNED-SOURCES] Workspace Diagnostics Cover the Developer's Sources
+
+Workspace-wide diagnostics report files a developer owns. Two kinds of file a workspace holds are nobody's to fix, and neither gets a workspace report, not even an empty one:
+
+- **Build output.** A source file under a directory named `obj` or `bin` — the SDK's `obj/…AssemblyInfo.fs`, a pinned or generated source a project compiles from `obj/` — is compiled with its project but is never listed for workspace diagnostics, in either engine. The one test is each tier's path module (`NativePaths.IsBuildOutput`).
+- **Gitignored projects.** Folder discovery ([SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY]) leaves out every project and solution file git ignores, asked of git itself (`git check-ignore`), so a gitignored clone or scratch folder loads no project and reports nothing. A nested clone is ignored by the repository around it like any other ignored folder. Without git, outside a repository, or when git does not answer within its budget, nothing is treated as ignored.
+
+Neither rule hides a file from its owner's eyes: a file opened in the editor answers `textDocument/diagnostic` as any document does, and a folder that is itself gitignored, opened on purpose as the workspace, keeps all its projects.
+
 ### [DIAG-CONFIG-RELOAD] Runtime Reconfiguration
 
 Diagnostics settings are hot-reloadable via `workspace/didChangeConfiguration`. Changing `solution_wide_analysis`, `project_filter`, or `min_severity` bumps `global_state_version` and triggers `workspace/diagnostic/refresh` so the editor re-pulls under the new policy.
@@ -166,6 +175,8 @@ An invalid lint configuration or failed rule must not hide fresh compiler findin
 The compiler-compatible FSharpLint dependency is a normal source project reference, built from a revision-pinned upstream archive verified by SHA256. Compatibility corrections use the real F# AST and reject unexpected source shapes. Unchanged builds retain prepared source and assembly timestamps; packaging includes upstream license and provenance. A developer-specific binary path must never be required.
 
 Real source-builder CLI tests run against the compiled builder and pinned archive on both operating systems. They reject incorrect arguments, paths and archive bytes before extraction; verify both AST compatibility patterns and the rule-state correction; and preserve source, license, provenance and fingerprint timestamps on a verified no-op. Corrupt source or any fingerprint identity/hash field requires fresh extraction and verification. A matching output fingerprint never bypasses hashing the current archive. CI passes these inputs across [DIST-CI-ARTIFACT-TESTS] rather than recompiling the builder in the tooling consumer.
+
+**What the report shows, a fix can act on.** Code actions resolve fixes against the same analyzer diagnostics the document report shows — the same analyzers under the same .editorconfig filter, computed once per document snapshot — so a rule promoted to a warning or error (IDE0001 *name can be simplified*, IDE0002, any other) never appears without the code fix Roslyn ships for it ([REFACTOR-NEVER-SILENT]). The four style rules offered as rewrites (IDE0007, IDE0008, IDE0160, IDE0161) are also offered at their default severity.
 
 ### [DIAG-CATEGORIES-TAGS] Unnecessary and Deprecated Tags
 
@@ -438,6 +449,15 @@ When a file changes:
 - The host updates its VFS, sends `textDocument/didChange` IPC to the sidecar (which calls `_solution.WithDocumentText(...)`), and the sidecar emits `diagnostics/refresh` carrying only the affected project's IDs in `AffectedProjectIds`.
 - The host's debounced refresh queue collapses bursts; the LSP `workspace/diagnostic/refresh` notification fires once per debounce window.
 - The editor re-pulls. Files whose salsa inputs did not change return `{ kind: "unchanged" }` because their `resultId` remains valid.
+
+## [DIAG-HYGIENE-GUARD] The Repository's Own Diagnostics
+
+SharpLsp is its own first user: opened on this repository, its Problems panel shows nothing but the fixtures that exist to demonstrate diagnostics. A guard keeps it so.
+
+- **The guard.** `tools/ci/workspace-diagnostics.mjs` starts the real host over stdio on a folder (this checkout by default), initializes as an editor does, waits for `workspace/projectInitializationComplete`, pulls `workspace/diagnostic` until two pulls agree with no refresh between them, and fails when any diagnostic of any severity lies outside the allow-list. `make _check-workspace-diagnostics` runs it; CI runs that in the Tooling job with the prebuilt host and sidecars, after a Debug build that gives every project the design-time references its compilers read.
+- **The allow-list** is path parts, not codes: `/diagnostic-lint`, `/diagnostic-tags`, `/diagnostic-cancellation`, and `/test-fixtures/workspace/fsharp/CodeFixes.fs`, the file the code-fix suites remove an unused open and a redundant qualifier from. Nothing else may carry a diagnostic.
+- **What keeps it at zero.** Build output and gitignored projects are never reported ([DIAG-CONFIG-OWNED-SOURCES]). The repository's `fsharplint.json` is FSharpLint's default configuration, which the linter requires in full, with one rule off: `ensureTailCallDiagnosticsInRecursiveFunctions` asks for `[<TailCall>]` on every `rec`, which a local function cannot carry and tree or task recursion cannot honour. The functions that are tail-recursive carry the attribute, and the F# projects turn on FS3569, so the compiler fails a build whose `[<TailCall>]` function is not. Six fixture lines whose names and positions tests assert suppress their one finding with a trailing `fsharplint:disable-line`, which moves no position; three synchronous bridges keep `Async.RunSynchronously` with the reason stated above them.
+- **Fixing at the compilers' ranges.** `tools/debug/fix-diagnostics.mjs` runs the same pull and repairs one code at a time without searching source text: `--code` edits each reported range (parenthesise a single-tuple list element, drop the qualifier Roslyn marks unnecessary), `--fix-all` applies the server's own *Fix all in solution* action, and `--rename` renames each identifier a naming rule reports through `textDocument/rename`. The clean-up from 4,460 diagnostics to zero was done with it, and found four product bugs on the way: quick fixes missing for promoted IDE rules ([DIAG-CATEGORIES-ANALYZER]), a class holding only a `[ModuleInitializer]` reported dead, an F# rename that accepted a name its module already declared ([RENAME-ERRORS]), and F# comments and strings escaping the tree-sitter pre-validation ([DEFINITION-PERFORMANCE]).
 
 ## [DIAG-TRUTH] Truth Guarantees
 

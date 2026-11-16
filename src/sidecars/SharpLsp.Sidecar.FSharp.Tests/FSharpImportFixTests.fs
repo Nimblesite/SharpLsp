@@ -12,7 +12,6 @@ open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
-open SharpLsp.Sidecar.Common.References
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
@@ -40,7 +39,7 @@ let private applySole state path original title line column =
         Assert.Equal(path, document.FilePath)
         let change = Assert.Single(document.Edits)
         let edited = applyEdit original change
-        match! FSharpWorkspace.checkFileWithSource state path edited Threading.CancellationToken.None with
+        match! FSharpWorkspace.checkFileWithSource state path edited CancellationToken.None with
         | None -> return failwith "FCS did not check the fixed source"
         | Some(_, checkedFile, _) -> return edited, change, checkedFile
     }
@@ -53,7 +52,7 @@ let private assertNoErrors (checkedFile: FSharp.Compiler.CodeAnalysis.FSharpChec
 let ``namespace and fully qualified rows have exact explicit titles and clear FS0039`` () =
     task {
         let original = source [ "namespace Shapes"; ""; "module Area ="; "    let joined = Path.Combine(\"a\", \"b\")" ]
-        let! state, dir, _, paths = loadWorkspace [ "Shapes.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Shapes.fs", original) ]
         try
             let! _, before, _ = checkedFixture state paths[0]
             Assert.Equal<int array>([| 3 |], linesWith 39 before)
@@ -132,7 +131,7 @@ let ``open type imports a static member and a nested type with exact edits`` () 
             cleanup dir
     }
 
-let private projectXml name (references: string list) (packages: (string * string) list) =
+let internal projectXml name (references: string list) (packages: (string * string) list) =
     let projectReferences = references |> List.map (fun reference -> $"    <ProjectReference Include=\"{reference}\" />")
     let packageReferences = packages |> List.map (fun (id, version) -> $"    <PackageReference Include=\"{id}\" Version=\"{version}\" />")
     source
@@ -149,7 +148,7 @@ let private projectXml name (references: string list) (packages: (string * strin
           "</Project>" ]
     |> fun xml -> name, xml
 
-let private writeSolution root (projects: (string * string * string) list) =
+let internal writeSolution root (projects: (string * string * string) list) =
     projects
     |> List.iter (fun (name, xml, text) ->
         let directory = NativePaths.Resolve(root, name)
@@ -159,7 +158,7 @@ let private writeSolution root (projects: (string * string * string) list) =
     let entries = projects |> List.map (fun (name, _, _) -> $"  <Project Path=\"{name}/{name}.fsproj\" />")
     File.WriteAllText(NativePaths.Resolve(root, "Fixture.slnx"), source [ "<Solution>"; yield! entries; "</Solution>" ])
 
-let private loadSolution (projects: (string * string * string) list) =
+let internal loadSolution (projects: (string * string * string) list) =
     task {
         let root = NativePaths.Temp($"sharplsp-import-{Guid.NewGuid():N}")
         Directory.CreateDirectory(root) |> ignore
@@ -172,7 +171,7 @@ let private loadSolution (projects: (string * string * string) list) =
         return state, root
     }
 
-let private libraryPath (root: string) (name: string) =
+let internal libraryPath (root: string) (name: string) =
     NativePaths.Resolve(root, name, "Library.fs")
 
 [<Fact>]
@@ -217,7 +216,7 @@ let ``a solution package row and a project row coexist for one unresolved type``
             loadSolution
                 [ projectXml "App" [] [] |> fun (n, x) -> n, x, app
                   projectXml "Declares" [] [] |> fun (n, x) -> n, x, declared
-                  projectXml "Packages" [] [ "MessagePack", "3.1.12" ] |> fun (n, x) -> n, x, packages ]
+                  projectXml "Packages" [] [ ("MessagePack", "3.1.12") ] |> fun (n, x) -> n, x, packages ]
         try
             // The package project really carries the declaring assembly and a clean check.
             let packageTitle = "Add package MessagePack 3.1.12 to App.fsproj (as in Packages.fsproj) and add 'open MessagePack'"
@@ -231,7 +230,7 @@ let ``a solution package row and a project row coexist for one unresolved type``
             Assert.Empty(packageCheck.Diagnostics |> Array.filter (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error))
             let declaring =
                 packageCheck.ProjectContext.GetReferencedAssemblies()
-                |> Seq.collect (fun assembly -> FSharpEntityIndex.allNested assembly.Contents.Entities)
+                |> Seq.collect (fun assembly -> FSharpSemanticNavigation.allNested assembly.Contents.Entities)
                 |> Seq.filter (fun entity -> entity.DisplayName = "MessagePackSerializer")
                 |> List.ofSeq
             Assert.NotEmpty(declaring)
@@ -285,7 +284,7 @@ let private editOf (action: FSharpCodeActions.GeneratedAction) =
 let ``both FS0039 shapes of an unopened type offer its namespace open`` () =
     task {
         let original = source [ "module Tasks.Library"; ""; "let value = Task.Delay(1)" ]
-        let! state, dir, _, paths = loadWorkspace [ "Tasks.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Tasks.fs", original) ]
         try
             let! parse, before, src = checkedFixture state paths[0]
             let openTitle = "Add 'open System.Threading.Tasks' — imports every type and module in namespace System.Threading.Tasks"
@@ -322,7 +321,7 @@ let ``both FS0039 shapes of an unopened type offer its namespace open`` () =
 let ``a member misspelling of a type in scope gains no namespace open`` () =
     task {
         let original = source [ "module Console.Library"; ""; "open System"; "let value = Console.ReadLnie()" ]
-        let! state, dir, _, paths = loadWorkspace [ "Console.fs", original ]
+        let! state, dir, _, paths = loadWorkspace [ ("Console.fs", original) ]
         try
             let! parse, before, src = checkedFixture state paths[0]
             let range = Range.mkRange paths[0] (Position.mkPos 4 20) (Position.mkPos 4 28)
@@ -366,7 +365,7 @@ let ``a well known package is offered only with an explicit latest stable instal
 let ``Task Delay against FSharp Core with a Task module offers the tasks namespace open`` () =
     task {
         let app = source [ "module App.Library"; ""; "let value = Task.Delay(1)" ]
-        let! state, root = loadSolution [ projectXml "App" [] [ "FSharp.Core", "10.1.404" ] |> fun (n, x) -> n, x, app ]
+        let! state, root = loadSolution [ projectXml "App" [] [ ("FSharp.Core", "10.1.404") ] |> fun (n, x) -> n, x, app ]
         try
             let path = libraryPath root "App"
             let! _, before, _ = checkedFixture state path
@@ -382,4 +381,71 @@ let ``Task Delay against FSharp Core with a Task module offers the tasks namespa
             assertNoErrors checkedFile
         finally
             cleanup root
+    }
+
+let private orderProject (dir: string) (order: string list) =
+    let items = order |> List.map (fun file -> $"<Compile Include=\"{file}\" />") |> String.concat ""
+    File.WriteAllText(
+        NativePaths.Resolve(dir, "Order.fsproj"),
+        "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework>"
+        + "<DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference></PropertyGroup>"
+        + $"<ItemGroup>{items}</ItemGroup></Project>")
+
+let private loadOrdered (dir: string) =
+    task {
+        let state = FSharpWorkspace.create ()
+        let! _ = FSharpWorkspaceLoading.loadProject state dir
+        return state
+    }
+
+/// [REFACTOR-FSHARP-FILE-ORDER] A name a LATER file of the project declares is a
+/// compile-order problem: the fix is one command action per declaring file, with
+/// no edit and nothing searched outside the project; once the file is above, FCS
+/// has no FS0039 left and no move is offered.
+[<Fact>]
+let ``a name declared by a later file offers moving that file above, and nothing outside the project`` () =
+    task {
+        let dir = NativePaths.Temp($"sharplsp-order-{Guid.NewGuid():N}")
+        Directory.CreateDirectory(dir) |> ignore
+        try
+            let aPath, bPath = NativePaths.Resolve(dir, "A.fs"), NativePaths.Resolve(dir, "B.fs")
+            File.WriteAllText(aPath, source [ "module P.A"; ""; "let useB = B.value"; "let typo = Missing.value" ])
+            File.WriteAllText(NativePaths.Resolve(dir, "Mid.fs"), source [ "module P.Mid"; ""; "let unrelated = 1" ])
+            File.WriteAllText(bPath, source [ "module P.B"; ""; "let value = 42" ])
+            orderProject dir [ "A.fs"; "Mid.fs"; "B.fs" ]
+            let! state = loadOrdered dir
+            let! _, before, _ = checkedFixture state aPath
+            Assert.Equal<int array>([| 2; 3 |], linesWith 39 before)
+            // Interaction 1: the forward dependency offers exactly the move.
+            let title = "Move B.fs above A.fs in Order.fsproj — B.fs declares 'B' but compiles after A.fs"
+            let! fixes, actions = actionsAt state aPath 2 11
+            let move = actionNamed title actions
+            Assert.Equal("quickfix", move.Kind)
+            Assert.False(move.IsPreferred)
+            let reference = referenceOf move
+            Assert.Equal(ReferenceImport.CompileOrderKind, reference.Kind)
+            Assert.Equal(NativePaths.Resolve(dir, "Order.fsproj"), reference.ProjectPath)
+            Assert.Equal("B.fs", reference.Reference)
+            Assert.Equal("A.fs", reference.Version)
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Mid.fs"))
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Install package"))
+            Assert.DoesNotContain(actions, fun action -> action.Title.Contains("Reference project"))
+            // The move is the command alone: its action carries no text edit.
+            let edit = FSharpCodeFixes.resolveCodeAction fixes move.Id |> Option.defaultWith (fun () -> failwith "move did not resolve")
+            Assert.Empty(edit.DocumentChanges)
+            // Interaction 2: a name no later file declares offers no move.
+            let! _, typoActions = actionsAt state aPath 3 11
+            Assert.DoesNotContain(typoActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+            // Interaction 3: nothing compiles after B.fs, so B.fs never offers one.
+            let! _, lastActions = actionsAt state bPath 2 4
+            Assert.DoesNotContain(lastActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+            // Interaction 4: with B.fs above A.fs (what the host's move writes) the name resolves.
+            orderProject dir [ "B.fs"; "A.fs"; "Mid.fs" ]
+            let! moved = loadOrdered dir
+            let! _, after, _ = checkedFixture moved aPath
+            Assert.Equal<int array>([| 3 |], linesWith 39 after)
+            let! _, afterActions = actionsAt moved aPath 2 11
+            Assert.DoesNotContain(afterActions, fun action -> action.Title.StartsWith("Move ", StringComparison.Ordinal))
+        finally
+            cleanup dir
     }

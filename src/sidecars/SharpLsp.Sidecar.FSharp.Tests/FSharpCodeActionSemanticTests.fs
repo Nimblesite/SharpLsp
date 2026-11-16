@@ -12,7 +12,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 
 // ── Generated stubs ────────────────────────────────────────────────
 
-let private GENERATION_SOURCE =
+let private generationSource =
     source
         [ "module Generation"
           "type Choice ="
@@ -45,7 +45,7 @@ let private GENERATION_SOURCE =
           ""
           "let whole = { Alpha = 1; Beta = \"b\" }" ]
 
-let private generationProject () = loadWorkspace [ "Generation.fs", GENERATION_SOURCE ]
+let private generationProject () = loadWorkspace [ ("Generation.fs", generationSource) ]
 
 /// Generated stubs must never carry trailing whitespace: the repository's own
 /// `git diff --check` gate rejects it the moment a user accepts the fix.
@@ -177,7 +177,7 @@ let ``definition of a type annotation resolves to its declaration`` () = task {
 
 /// One mismatched binding per conversion the fixer knows about. Each line is a
 /// real compiler error whose message the fixer parses to pick a function.
-let private CONVERSION_SOURCE =
+let private conversionSource =
     source
         [ "module Conversions"
           "let toFloatFromInt (v: int) : float = v"
@@ -195,7 +195,7 @@ let private CONVERSION_SOURCE =
 /// `interface IService`: one that already carries `with`, and an object
 /// expression. Kept in their own project so parse recovery on the bare `with`
 /// cannot disturb the other generation fixtures.
-let private INTERFACE_SHAPES_SOURCE =
+let private interfaceShapesSource =
     source
         [ "module Shapes"
           "type IService ="
@@ -227,7 +227,7 @@ let private interfaceStubAt state path line col =
 /// from a bare `interface IService`. [SHARPLSP-FEATURES-REFACTORING]
 [<Fact>]
 let ``interface stubs insert correctly for a bare with keyword and an object expression`` () = task {
-    let! (state, dir, _fsproj, paths) = loadWorkspace [ "Shapes.fs", INTERFACE_SHAPES_SOURCE ]
+    let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Shapes.fs", interfaceShapesSource) ]
     try
         match! interfaceStubAt state paths[0] 6 15 with
         | None -> failwith "no stub offered for the interface carrying a bare with keyword"
@@ -267,7 +267,7 @@ let ``conversion quick fix proposes the function that bridges the two types``
     (expected: string)
     =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", conversionSource) ]
         try
             let! titles = conversionTitlesAt state paths[0] line
             let offered = String.concat " | " titles
@@ -284,7 +284,7 @@ let ``conversion quick fix proposes the function that bridges the two types``
 [<Fact>]
 let ``a mismatch no conversion bridges offers none`` () =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", conversionSource) ]
         try
             let! _, check, _ = checkedFixture state paths[0]
             Assert.Contains(10, linesWith 1 check)
@@ -303,7 +303,7 @@ let ``a mismatch no conversion bridges offers none`` () =
 [<InlineData(7)>]
 let ``implicitly widened numerics offer no conversion at all`` (line: int) =
     task {
-        let! (state, dir, _fsproj, paths) = loadWorkspace [ "Conversions.fs", CONVERSION_SOURCE ]
+        let! (state, dir, _fsproj, paths) = loadWorkspace [ ("Conversions.fs", conversionSource) ]
         try
             let! titles = conversionTitlesAt state paths[0] line
             Assert.Empty(titles)
@@ -314,7 +314,7 @@ let ``implicitly widened numerics offer no conversion at all`` (line: int) =
 
 // ── Call and type hierarchy ────────────────────────────────────────
 
-let private HIERARCHY_SOURCE =
+let private hierarchySource =
     source
         [ "module Hier"
           "type IShape ="
@@ -328,7 +328,7 @@ let private HIERARCHY_SOURCE =
           "let caller () = helper 1"
           "let outer () = caller ()" ]
 
-let private hierarchyProject () = loadWorkspace [ "Hier.fs", HIERARCHY_SOURCE ]
+let private hierarchyProject () = loadWorkspace [ ("Hier.fs", hierarchySource) ]
 
 let private names (items: FSharpHierarchy.HierItem list) = items |> List.map _.Name
 
@@ -341,7 +341,7 @@ let ``call hierarchy resolves callers and callees`` () = task {
     try
         let! prepared = FSharpHierarchy.prepareCall state paths[0] 8 5
         Assert.True(prepared.IsSome, "helper must be preparable as a call-hierarchy item")
-        let! incoming = FSharpHierarchy.incomingCalls state paths[0] 8 5 System.Threading.CancellationToken.None
+        let! incoming = FSharpHierarchy.incomingCalls state paths[0] 8 5 CancellationToken.None
         Assert.Contains("caller", names incoming)
         let! outgoing = FSharpHierarchy.outgoingCalls state paths[0] 9 5
         Assert.Contains("helper", names outgoing)
@@ -358,7 +358,7 @@ let ``type hierarchy resolves supertypes and subtypes`` () = task {
         Assert.True(prepared.IsSome, "Square must be preparable as a type-hierarchy item")
         let! supers = FSharpHierarchy.supertypes state paths[0] 4 6
         Assert.Contains("IShape", names supers)
-        let! subs = FSharpHierarchy.subtypes state paths[0] 1 6 System.Threading.CancellationToken.None
+        let! subs = FSharpHierarchy.subtypes state paths[0] 1 6 CancellationToken.None
         Assert.Contains("Square", names subs)
     finally
         cleanup dir

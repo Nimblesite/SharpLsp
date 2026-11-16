@@ -20,7 +20,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunPositionQueryAsync<SignatureHelpResult?>(
+        return RunPositionQueryAsync(
             filePath,
             (line, character),
             null,

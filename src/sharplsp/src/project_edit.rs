@@ -1,9 +1,10 @@
-//! `sharplsp/project/addCompileItem` — insert a `<Compile>` item at a chosen
-//! position in an `MSBuild` project's compile order (GitHub #493,
-//! [SE-ADD-FILE-REQUEST]) — and `sharplsp/project/removeCompileItem`, which
-//! takes one out ([SE-REMOVE-FILE-REQUEST]).
+//! Compile-item editing of an `MSBuild` project's compile order:
+//! `sharplsp/project/addCompileItem` inserts a `<Compile>` item at a chosen
+//! position (GitHub #493, [SE-ADD-FILE-REQUEST]), `removeCompileItem` takes one
+//! out ([SE-REMOVE-FILE-REQUEST]) and `reorderCompileItems` moves one next to
+//! an anchor ([SE-REORDER-FILE-REQUEST]).
 //!
-//! In F# compile ORDER matters, so new source files must land where the user
+//! In F# compile ORDER matters, so source files must land where the user
 //! asked: before/after a named anchor item, or by default before the LAST
 //! `Compile` item so an F# entry point stays last ([SE-ADD-FILE-ORDER]). The XML
 //! mutation is delegated to the C# sidecar's `MSBuild` document model — exactly
@@ -19,17 +20,17 @@ use serde_json::Value;
 use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
-use crate::nuget::edit::{self, CompilePosition, EditOutcome};
+use crate::nuget::edit::{self, CompileEdit, CompilePosition, EditOutcome};
 use crate::nuget::handlers::EDITOR_UNAVAILABLE;
 use crate::sidecar::manager::SidecarManager;
 
-/// Parameters for the `sharplsp/project/addCompileItem` request.
+/// Parameters of the compile-item requests; removal reads only the first two.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddCompileItemParams {
+pub struct CompileItemParams {
     /// Absolute path of the `.csproj` / `.fsproj` to edit.
     pub project_path: String,
-    /// Project-relative include of the new source file.
+    /// Project-relative include of the source file the edit is about.
     pub include: String,
     /// Existing Compile include to anchor to (absent for the default position).
     #[serde(default)]
@@ -39,11 +40,11 @@ pub struct AddCompileItemParams {
     pub position: Option<String>,
 }
 
-/// Response for the `sharplsp/project/addCompileItem` request.
+/// Response of the compile-item requests.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddCompileItemResponse {
-    /// Whether the insert (or no-op) completed through the sidecar.
+pub struct CompileItemResponse {
+    /// Whether the edit (or no-op) completed through the sidecar.
     pub success: bool,
     /// Human-readable status message.
     pub message: String,
@@ -51,49 +52,47 @@ pub struct AddCompileItemResponse {
     pub modified: bool,
 }
 
-/// Handle `sharplsp/project/addCompileItem` — route the edit to the C# sidecar.
-pub fn handle_add_compile_item(
+/// The edit a `sharplsp/project/*` compile-item method asks for.
+pub fn edit_for(method: &str) -> Option<CompileEdit> {
+    match method {
+        "sharplsp/project/addCompileItem" => Some(CompileEdit::Add),
+        "sharplsp/project/removeCompileItem" => Some(CompileEdit::Remove),
+        "sharplsp/project/reorderCompileItems" => Some(CompileEdit::Reorder),
+        _ => None,
+    }
+}
+
+/// Handle a compile-item request: the C# sidecar edits the project through the
+/// `MSBuild` DOM; a removed source file itself is the editor's to keep or delete.
+pub fn handle(
     req: Request,
     runtime: &Runtime,
     csharp: Option<&Arc<SidecarManager>>,
 ) -> Result<Value> {
-    let params: AddCompileItemParams = serde_json::from_value(req.params)?;
+    let kind = edit_for(&req.method).ok_or_else(|| anyhow::anyhow!("method not found"))?;
+    let params: CompileItemParams = serde_json::from_value(req.params)?;
     info!(
+        method = %req.method,
         project = %params.project_path,
         include = %params.include,
         position = params.position.as_deref().unwrap_or("default"),
-        "Handling sharplsp/project/addCompileItem"
+        "Handling compile item edit"
     );
-
     let response = match csharp {
         None => unavailable_response(),
-        Some(sidecar) => apply(sidecar, runtime, &params),
-    };
-    Ok(serde_json::to_value(response)?)
-}
-
-/// Run the sidecar edit and shape the response; failures become unsuccessful
-/// responses carrying the message, never protocol errors.
-fn apply(
-    sidecar: &Arc<SidecarManager>,
-    runtime: &Runtime,
-    params: &AddCompileItemParams,
-) -> AddCompileItemResponse {
-    respond(
-        "addCompileItem",
-        &params.project_path,
-        &params.include,
-        || {
-            edit::add_compile_item(
+        Some(sidecar) => respond(&req.method, &params.project_path, &params.include, || {
+            edit::compile_item_edit(
                 sidecar,
                 runtime,
+                kind,
                 &params.project_path,
                 &params.include,
                 params.anchor_include.as_deref().unwrap_or(""),
                 CompilePosition::parse(params.position.as_deref()),
             )
-        },
-    )
+        }),
+    };
+    Ok(serde_json::to_value(response)?)
 }
 
 /// Time `run`, log its outcome as `operation`, and shape the response.
@@ -102,7 +101,7 @@ fn respond(
     project: &str,
     include: &str,
     run: impl FnOnce() -> Result<EditOutcome>,
-) -> AddCompileItemResponse {
+) -> CompileItemResponse {
     let started = Instant::now();
     match run() {
         Ok(outcome) => {
@@ -114,7 +113,7 @@ fn respond(
                 ms = elapsed_ms(&started),
                 "compile item edit complete"
             );
-            AddCompileItemResponse {
+            CompileItemResponse {
                 success: true,
                 message: outcome.message,
                 modified: outcome.modified,
@@ -122,7 +121,7 @@ fn respond(
         }
         Err(err) => {
             warn!(operation, project, include, ms = elapsed_ms(&started), error = %err, "compile item edit failed");
-            AddCompileItemResponse {
+            CompileItemResponse {
                 success: false,
                 message: format!("{err:#}"),
                 modified: false,
@@ -131,42 +130,10 @@ fn respond(
     }
 }
 
-/// Parameters for the `sharplsp/project/removeCompileItem` request.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoveCompileItemParams {
-    /// Absolute path of the `.csproj` / `.fsproj` to edit.
-    pub project_path: String,
-    /// Project-relative include of the source file to take out of compile order.
-    pub include: String,
-}
-
-/// Handle `sharplsp/project/removeCompileItem`: the C# sidecar removes the
-/// item through the `MSBuild` DOM; the source file itself is the editor's
-/// to keep or delete. [SE-REMOVE-FILE-REQUEST]
-pub fn handle_remove_compile_item(
-    req: Request,
-    runtime: &Runtime,
-    csharp: Option<&Arc<SidecarManager>>,
-) -> Result<Value> {
-    let params: RemoveCompileItemParams = serde_json::from_value(req.params)?;
-    info!(project = %params.project_path, include = %params.include, "Handling sharplsp/project/removeCompileItem");
-    let response = match csharp {
-        None => unavailable_response(),
-        Some(sidecar) => respond(
-            "removeCompileItem",
-            &params.project_path,
-            &params.include,
-            || edit::remove_compile_item(sidecar, runtime, &params.project_path, &params.include),
-        ),
-    };
-    Ok(serde_json::to_value(response)?)
-}
-
 /// The response when no C# sidecar is available to perform the `MSBuild` edit.
-fn unavailable_response() -> AddCompileItemResponse {
+fn unavailable_response() -> CompileItemResponse {
     error!("compile item edit requested with no C# sidecar available");
-    AddCompileItemResponse {
+    CompileItemResponse {
         success: false,
         message: EDITOR_UNAVAILABLE.to_string(),
         modified: false,

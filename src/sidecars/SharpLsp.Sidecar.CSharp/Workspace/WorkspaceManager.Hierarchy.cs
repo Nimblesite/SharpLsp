@@ -37,7 +37,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunScopedRowsAtAsync<CallHierarchyCallResult>(
+        return RunScopedRowsAtAsync(
             filePath,
             (line, character),
             CallHierarchyResolver.GetIncomingAsync,
@@ -53,7 +53,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunRowsAtAsync<CallHierarchyCallResult>(
+        return RunRowsAtAsync(
             filePath,
             (line, character),
             CallHierarchyResolver.GetOutgoingAsync,
@@ -80,7 +80,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunRowsAtAsync<HierarchyItem>(
+        return RunRowsAtAsync(
             filePath,
             (line, character),
             TypeHierarchyResolver.GetSupertypesAsync,
@@ -99,7 +99,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct = default
     )
     {
-        return RunScopedRowsAtAsync<HierarchyItem>(
+        return RunScopedRowsAtAsync(
             filePath,
             (line, character),
             TypeHierarchyResolver.GetSubtypesAsync,
@@ -157,7 +157,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        return RunQueryAsync<QueryTarget, TValue>(
+        return RunQueryAsync(
             () => ResolveHierarchyTargetAsync(filePath, at, ct),
             empty,
             async target =>
@@ -182,7 +182,7 @@ internal sealed partial class WorkspaceManager
     )
         where T : HierarchyItem
     {
-        return RunRowsAtAsync<T>(
+        return RunRowsAtAsync(
             filePath,
             at,
             async (document, line, character, token) =>

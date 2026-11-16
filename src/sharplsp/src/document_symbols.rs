@@ -36,19 +36,24 @@ pub fn handle_via_sidecar(
 
     // A sidecar/parse failure yields an empty outline rather than a hard error —
     // a transient outline gap is preferable to a failed request. [SE-FSHARP-SYMBOLS]
-    let items = match fetch_fsharp_document_symbols(runtime, sidecar, file_path) {
-        Ok(items) => items,
-        Err(err) => {
-            warn!("Sidecar documentSymbol unavailable: {err:#}");
-            return Ok(serde_json::to_value(DocumentSymbolResponse::Nested(
-                vec![],
-            ))?);
-        }
-    };
-    let symbols: Vec<DocumentSymbol> = items.iter().map(map_symbol).collect();
+    let symbols = sidecar_symbols(runtime, sidecar, file_path).unwrap_or_else(|err| {
+        warn!("Sidecar documentSymbol unavailable: {err:#}");
+        Vec::new()
+    });
     Ok(serde_json::to_value(DocumentSymbolResponse::Nested(
         symbols,
     ))?)
+}
+
+/// A sidecar's symbol tree of an F# or Razor file, as nested LSP symbols.
+/// `[SE-FSHARP-SYMBOLS]` `[RAZOR-FEATURES-STRUCTURE]`
+pub(crate) fn sidecar_symbols(
+    runtime: &tokio::runtime::Runtime,
+    sidecar: &Arc<SidecarManager>,
+    file_path: String,
+) -> Result<Vec<DocumentSymbol>> {
+    let items = fetch_fsharp_document_symbols(runtime, sidecar, file_path)?;
+    Ok(items.iter().map(map_symbol).collect())
 }
 
 /// Fetch the FCS document-symbol tree for an F# file from the sidecar.

@@ -469,7 +469,7 @@ suite('Run/Debug manifest contributions', () => {
     const matchers = provided.map((task) => task.problemMatchers);
     assert.deepStrictEqual(
       matchers,
-      provided.map(() => ['$msCompile']),
+      provided.map(() => ['$sharplsp-msCompile']),
       'errors reach the Problems panel',
     );
     const shells = provided.every((task) => task.execution instanceof vscode.ProcessExecution);

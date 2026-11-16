@@ -33,7 +33,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        return RunQueryAsync<RazorProjection, List<InlayHintResult>>(
+        return RunQueryAsync(
             () => FindRazorProjectionAsync(filePath, ct),
             [],
             async projection =>
@@ -65,7 +65,7 @@ internal sealed partial class WorkspaceManager
     /// </summary>
     private Task<CodeLensesResult> GetRazorCodeLensesAsync(string filePath, CancellationToken ct)
     {
-        return RunQueryAsync<RazorProjection, List<CodeLensResult>>(
+        return RunQueryAsync(
             () => FindRazorProjectionAsync(filePath, ct),
             [],
             async projection =>

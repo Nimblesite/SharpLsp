@@ -22,6 +22,7 @@ import { acquireDotnet10Sdk, showAcquireFailureNotification } from './dotnetRunt
 import { verifyDeployment } from './deployment.js';
 import * as client from './client.js';
 import * as sharedState from './state.js';
+import { registerEditorNavigation } from './editor-navigation.js';
 import { registerExplorerCommands } from './explorer-commands.js';
 import { solutionLoader } from './solution-load.js';
 import * as log from './log.js';
@@ -430,6 +431,7 @@ function registerCommands(context: ExtensionContext): void {
   );
   registerNamespaceLayout(context);
   registerExplorerCommands(context, explorerDeps);
+  registerEditorNavigation(context);
 }
 
 async function restartServer(): Promise<void> {

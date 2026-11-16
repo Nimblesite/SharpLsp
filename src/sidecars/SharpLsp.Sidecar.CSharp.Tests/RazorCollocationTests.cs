@@ -279,11 +279,7 @@ public sealed class RazorCollocationTests : IClassFixture<RazorFixture>
     private static async Task<(
         List<CompletionItem> Items,
         (int Line, int Character) At
-    )> CompleteAfterAsync(
-        SharpLsp.Sidecar.CSharp.Workspace.WorkspaceManager manager,
-        string file,
-        string suffix
-    )
+    )> CompleteAfterAsync(Workspace.WorkspaceManager manager, string file, string suffix)
     {
         var text = await File.ReadAllTextAsync(file) + suffix;
         _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(file, text));

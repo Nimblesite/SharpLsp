@@ -97,6 +97,17 @@ The C# sidecar MUST use Roslyn semantics.
 6. Convert changed Roslyn documents to file-scoped text edits.
 7. Include edits for `nameof`, XML documentation references, partial declarations, explicit interface implementations, overrides, and generated symbol aliases when Roslyn reports them as rename locations.
 
+### [RENAME-CSHARP-OPERATORS] Operators and Conversion Operators
+
+An operator has no identifier: renaming it respells its token. The rename starts on the operator token of a declaration or of a bound expression (binary, prefix or postfix unary, compound assignment), or on a conversion declaration's `implicit` / `explicit` keyword; `prepareRename` answers that token's range and text. A built-in operator (`int + int`) is nobody's to rename: `prepareRename` answers no rename.
+
+1. **New spelling.** The new name must be one token that C# allows overloading with the same number of parameters (`+` → `*` for a binary operator, `-` → `~` for a unary one), or `implicit` / `explicit` for a conversion. Anything else is refused as `Invalid C# operator rename`. The same spelling changes nothing.
+2. **Edits.** The declaration's token, and the token of every bound use `SymbolFinder` reports: `a + b` → `a * b`, `a += b` → `a *= b`, `a++` and `++a` → `a--` and `--a`. A use with no token to respell fails the rename.
+3. **Conversions.** `explicit` → `implicit` changes the keyword alone: every cast keeps compiling. `implicit` → `explicit` also wraps each expression the compiler converts through the operator implicitly, in every project that can see it, as `(T)(expression)`; a cast already written stays as it is.
+4. **The compiler is the judge.** The edits are applied to a fork of the solution and each edited project is compiled. An error the fork has that the solution lacked — a duplicate signature (CS0111), `<` left without `>` (CS0216), a wrong return type — refuses the rename as `Invalid C# operator rename: <id>: <message>`, and no edit is returned ([RENAME-ERRORS]).
+
+Implementation: [WorkspaceManager.Rename.Operators.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.Rename.Operators.cs); `WorkspaceManagerRenameOperatorsTests`, and the operator and conversion rows of `lsp-rename-symbols.test.ts`.
+
 ## [RENAME-FSHARP] F# Implementation
 
 The F# sidecar MUST use FCS symbol resolution and rename support rather than text matching.
@@ -112,6 +123,7 @@ The F# sidecar MUST use FCS symbol resolution and rename support rather than tex
 1. Compute all symbol uses across the project or solution scope required for a safe rename.
 2. Produce file-scoped text edits for every declaration and usage location.
 3. Preserve F# file ordering semantics and avoid edits in generated or metadata-only files.
+4. **The compiler judges the declaring file.** The edits of the file that declares the symbol are applied to its text and that file is checked again. An error the renamed text has that the original lacked — a name its module already declares (FS0037), a use that no longer binds — refuses the rename as `Invalid F# rename: <FSxxxx>: <message>` and returns no edit ([RENAME-ERRORS]). A later file is never the judge: it would see the new name before its declaration changed.
 
 ## [RENAME-CROSSLANGUAGE] Cross-Language Rename
 

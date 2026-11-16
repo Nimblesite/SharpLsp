@@ -29,7 +29,7 @@ internal sealed partial class WorkspaceManager
     )
     {
         Log.Debug("[Hover] request {File}:{Line}:{Character}", filePath, line, character);
-        var csharp = await RunPositionQueryAsync<HoverResult?>(
+        var csharp = await RunPositionQueryAsync(
                 filePath,
                 (line, character),
                 null,

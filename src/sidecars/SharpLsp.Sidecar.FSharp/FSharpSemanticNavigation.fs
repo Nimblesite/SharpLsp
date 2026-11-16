@@ -183,13 +183,14 @@ let getSymbolUse (checkResults: FSharpCheckFileResults) (source: string) line ch
 
 /// The entity `entity` stands for, through any abbreviation: `string` is `System.String`,
 /// and an abbreviation FSharp.Core declares has no source of its own to land in. [DEFINITION-CROSSLANG]
+[<TailCall>]
 let rec private definingEntity (entity: FSharpEntity) : FSharpEntity option =
     if entity.IsFSharpAbbreviation then
         getTypeEntity entity.AbbreviatedType
     else
         Some entity
 
-and private getTypeEntity (valueType: FSharpType) : FSharpEntity option =
+and [<TailCall>] private getTypeEntity (valueType: FSharpType) : FSharpEntity option =
     if valueType.HasTypeDefinition then
         definingEntity valueType.TypeDefinition
     else
@@ -228,11 +229,53 @@ let private navigate (operation: string) (checkFile: string -> Task<CheckedFile 
             return None
     }
 
+/// A declaration in a file this machine has. FCS gives imported entities a
+/// phantom range — `startup` for a framework type, the build server's path for
+/// FSharp.Core, `unknown` for a provided member — which must defer to
+/// metadata-as-source rather than open a file the user does not have (GitHub
+/// #220). A referenced project's real source still wins, because that file exists.
+let private onDisk (location: NavigationLocation) =
+    if File.Exists location.FilePath then Some location else None
+
 let private declarationResultLocation result =
     match result with
-    | FindDeclResult.DeclFound declarationRange -> rangeToLocation declarationRange
+    | FindDeclResult.DeclFound declarationRange -> rangeToLocation declarationRange |> Option.bind onDisk
     | FindDeclResult.DeclNotFound _
     | FindDeclResult.ExternalDecl _ -> None
+
+/// Every entity in a signature and its nested entities, from FCS's symbol tree.
+[<TailCall>]
+let rec allNested (entities: seq<FSharpEntity>) =
+    seq {
+        for entity in entities do
+            yield entity
+            yield! allNested entity.NestedEntities
+    }
+
+/// The provided entity a symbol is, or is a member of.
+let private providedEntity (symbol: FSharpSymbol) =
+    match symbol with
+    | :? FSharpEntity as entity when entity.IsProvided -> Some entity
+    | :? FSharpMemberOrFunctionOrValue as memberValue -> memberValue.DeclaringEntity |> Option.filter _.IsProvided
+    | _ -> None
+
+/// Whether `entity` is the abbreviation naming the provided type that is, or
+/// nests, `target`: `Weather` for `JsonProvider<...>` and for its `Root`.
+let private abbreviates (target: FSharpEntity) (entity: FSharpEntity) =
+    entity.IsFSharpAbbreviation
+    && entity.AbbreviatedType.HasTypeDefinition
+    && entity.AbbreviatedType.TypeDefinition.IsProvided
+    && allNested [ entity.AbbreviatedType.TypeDefinition ] |> Seq.exists target.IsEffectivelySameAs
+
+/// A provided type or member has no source of its own: its definition is the
+/// declaration that instantiates the provider, `type Weather = JsonProvider<...>`,
+/// in this file or an earlier one of the project. [DEFINITION-FSHARP-PROVIDED]
+let private fromProvider (checkResults: FSharpCheckFileResults) (symbol: FSharpSymbol option) =
+    symbol
+    |> Option.bind providedEntity
+    |> Option.bind (fun target -> allNested checkResults.PartialAssemblySignature.Entities |> Seq.tryFind (abbreviates target))
+    |> Option.bind (fun abbreviation -> rangeToLocation abbreviation.DeclarationLocation)
+    |> Option.bind onDisk
 
 let private declarationLocationFallback (checkResults: FSharpCheckFileResults) (source: string) line character =
     let lines = source.Split('\n')
@@ -247,14 +290,6 @@ let private declarationLocationFallback (checkResults: FSharpCheckFileResults) (
             checkResults.GetDeclarationLocation(line + 1, endColumn, lineText, [ name ]))
         |> Option.bind declarationResultLocation
 
-/// A declaration in a file this machine has. FCS gives imported entities a
-/// phantom range — `startup` for a framework type, the build server's path for
-/// FSharp.Core — which must defer to metadata-as-source rather than open a file
-/// the user does not have (GitHub #220). A referenced project's real source
-/// still wins, because that file exists.
-let private onDisk (location: NavigationLocation) =
-    if File.Exists location.FilePath then Some location else None
-
 let private extractDefinition (external: ExternalResolver) checkResults source line character =
     let symbolUse = getSymbolUse checkResults source line character
 
@@ -264,8 +299,11 @@ let private extractDefinition (external: ExternalResolver) checkResults source l
         |> Option.bind rangeToLocation
         |> Option.bind onDisk
 
+    let symbol = symbolUse |> Option.map _.Symbol
+
     fromSource
-    |> Option.orElseWith (fun () -> fromExternal external (symbolUse |> Option.map _.Symbol))
+    |> Option.orElseWith (fun () -> fromProvider checkResults symbol)
+    |> Option.orElseWith (fun () -> fromExternal external symbol)
     |> Option.orElseWith (fun () -> declarationLocationFallback checkResults source line character)
 
 /// The definition of the symbol at a position; an external symbol's is the source
@@ -288,10 +326,13 @@ let private extractTypeDefinition (external: ExternalResolver) checkResults sour
         getSymbolUse checkResults source line character
         |> Option.bind (fun useInfo -> symbolTypeEntity useInfo.Symbol)
 
+    let symbol = entity |> Option.map (fun entity -> entity :> FSharpSymbol)
+
     entity
     |> Option.bind (fun entity -> rangeToLocation entity.DeclarationLocation)
     |> Option.bind onDisk
-    |> Option.orElseWith (fun () -> fromExternal external (entity |> Option.map (fun entity -> entity :> FSharpSymbol)))
+    |> Option.orElseWith (fun () -> fromProvider checkResults symbol)
+    |> Option.orElseWith (fun () -> fromExternal external symbol)
 
 /// The definition of the type of the symbol at a position; an external type's is the
 /// source `external` knows, else decompiled metadata.

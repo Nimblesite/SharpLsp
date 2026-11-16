@@ -818,6 +818,24 @@
         "icon": "$(list-ordered)"
       },
       {
+        "command": "sharplsp.goToRelatedFile",
+        "title": "%cmd.goToRelatedFile%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
+        "command": "sharplsp.goToNextMember",
+        "title": "%cmd.goToNextMember%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
+        "command": "sharplsp.goToPreviousMember",
+        "title": "%cmd.goToPreviousMember%",
+        "category": "%category%",
+        "enablement": "editorLangId =~ /^(csharp|fsharp|razor|aspnetcorerazor)$/"
+      },
+      {
         "command": "sharplsp.copyQualifiedName",
         "title": "%cmd.copyQualifiedName%",
         "category": "%category%"
@@ -1579,6 +1597,20 @@
       },
       {
         "language": "fsharp"
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "sharplsp-msCompile",
+        "base": "$msCompile",
+        "pattern": {
+          "regexp": "^\\s*(?:\\s*\\d+>)?(\\S.*?)(?:\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\))?\\s*:\\s+(?:(\\S+)\\s+)?((?:fatal +)?error|warning|info)\\s+(?!NU190[1-4]\\s*:)(\\w+\\d+)?\\s*:\\s*(.*)$",
+          "file": 1,
+          "location": 2,
+          "severity": 4,
+          "code": 5,
+          "message": 6
+        }
       }
     ],
     "taskDefinitions": [

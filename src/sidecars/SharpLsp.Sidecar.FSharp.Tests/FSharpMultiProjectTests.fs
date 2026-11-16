@@ -17,6 +17,15 @@ open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 
 /// `Core`, its function named `name`: the function at line 3, an interface at line 5 (0-based).
+/// Whether the entities of every assembly file `context` references are built. FCS's
+/// cache entry type is internal, so its option's members cannot be called from here: an
+/// entry is told apart by presence alone, since a missing one is the null option.
+let private entitiesBuilt (state: FSharpWorkspace.FSharpWorkspaceState) (context: FSharp.Compiler.CodeAnalysis.FSharpProjectContext) =
+    let cache = state.Entities :> FSharp.Compiler.EditorServices.IAssemblyContentCache
+
+    FSharpEntityIndex.referencedFiles context
+    |> List.forall (fun (fileName, _) -> fileName |> Option.forall (fun file -> not (obj.ReferenceEquals(cache.TryGet file, null))))
+
 let private coreDefining (name: string) =
     String.Join(
         "\n",
@@ -102,8 +111,8 @@ let private writeSingleProjectSolution root name =
 
 let private assertMultipleSolutionDiscovery root chosenSolution =
     task {
-        let! folder = FSharpProjectLoading.discoverFsprojFiles root System.Threading.CancellationToken.None
-        let! chosen = FSharpProjectLoading.discoverFsprojFiles chosenSolution System.Threading.CancellationToken.None
+        let! folder = FSharpProjectLoading.discoverFsprojFiles root CancellationToken.None
+        let! chosen = FSharpProjectLoading.discoverFsprojFiles chosenSolution CancellationToken.None
         let coreProject = NativePaths.Resolve(root, "Core", "Core.fsproj")
         let appProject = NativePaths.Resolve(root, "App", "App.fsproj")
         match folder, chosen with
@@ -142,7 +151,7 @@ let private errorsIn state file =
                 |> Array.filter (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error)
                 |> Array.map (fun diagnostic -> diagnostic.StartLine - 1, diagnostic.Message)
                 |> List.ofArray)
-            |> Option.defaultValue [ -1, $"{file} was never checked" ]
+            |> Option.defaultValue [ (-1, $"{file} was never checked") ]
     }
 
 /// Where a use is: its file and 0-based line.
@@ -213,7 +222,7 @@ let ``a buffer carrying the text the compiler already read checks nothing again`
             use _subscription = state.Checker.FileChecked.Subscribe(fun (file, _) -> lock checkedFiles (fun () -> checkedFiles.Add file))
             let drain () = lock checkedFiles (fun () -> let seen = List.ofSeq checkedFiles in checkedFiles.Clear(); seen)
             let checkedNow file seen = seen |> List.exists (fun path -> NativePaths.AreEqual(path, file))
-            let usages () = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
+            let usages () = FSharpReferences.getProjectUsages state core 3 5 CancellationToken.None
             let! cold = usages ()
             Assert.Equal<int list>([ 4; 8 ], linesIn app cold)
             Assert.True(checkedNow core (drain ()), "the first query checks Core")
@@ -251,11 +260,11 @@ let ``references, code lens and subtypes count what every project does`` () =
         let! (state, root, core, app) = openSolution ()
 
         try
-            let! fromDefinition = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
+            let! fromDefinition = FSharpReferences.getProjectUsages state core 3 5 CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app fromDefinition)
             Assert.Equal<int list>([ 3 ], linesIn core fromDefinition)
 
-            let! fromUse = FSharpReferences.getProjectUsages state app 4 13 System.Threading.CancellationToken.None
+            let! fromUse = FSharpReferences.getProjectUsages state app 4 13 CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app fromUse)
             Assert.Equal<int list>([ 3 ], linesIn core fromUse)
 
@@ -264,7 +273,7 @@ let ``references, code lens and subtypes count what every project does`` () =
             Assert.Equal(Some "2 references", titleAt 3)
             Assert.Equal(Some "1 reference", titleAt 5)
 
-            let! subtypes = FSharpHierarchy.subtypes state core 5 6 System.Threading.CancellationToken.None
+            let! subtypes = FSharpHierarchy.subtypes state core 5 6 CancellationToken.None
             let square = subtypes |> List.tryFind (fun item -> item.Name = "Square")
             Assert.True(square.IsSome, $"App's Square implements Core's IShape: {subtypes}")
             Assert.True(NativePaths.AreEqual(app, square.Value.FilePath))
@@ -368,7 +377,7 @@ let ``warming checks each loaded project once, so the first solution-wide query 
             let! past = FSharpWarmUp.warmProject state 2 CancellationToken.None
             Assert.Equal((2, 2), (again, past))
             Assert.Equal(warm, count ())
-            let! references = FSharpReferences.getProjectUsages state core 3 5 System.Threading.CancellationToken.None
+            let! references = FSharpReferences.getProjectUsages state core 3 5 CancellationToken.None
             Assert.Equal<int list>([ 4; 8 ], linesIn app references)
             Assert.Equal<int list>([ 3 ], linesIn core references)
             Assert.Equal(warm, count ())
@@ -393,18 +402,18 @@ let ``warming builds each project's referenced entities ahead of its first compl
             let! checkedProjects = FSharpWorkspace.checkAllWithCancellation state (FSharpWorkspace.queryScope state core) CancellationToken.None
             let contexts = checkedProjects |> List.map _.ProjectContext
             Assert.Equal(2, contexts.Length)
-            Assert.All(contexts, fun context -> Assert.False(FSharpEntityIndex.isBuilt state context))
+            Assert.All(contexts, fun context -> Assert.False(entitiesBuilt state context))
 
             // 2. A cancelled build builds nothing.
             use cancelled = new CancellationTokenSource()
             cancelled.Cancel()
             Assert.Throws<OperationCanceledException>(fun () -> FSharpEntityIndex.warm state contexts.Head cancelled.Token) |> ignore
-            Assert.False(FSharpEntityIndex.isBuilt state contexts.Head)
+            Assert.False(entitiesBuilt state contexts.Head)
 
             // 3. Warming both projects builds every reference of each.
             let! _ = FSharpWarmUp.warmProject state 0 CancellationToken.None
             let! _ = FSharpWarmUp.warmProject state 1 CancellationToken.None
-            Assert.All(contexts, fun context -> Assert.True(FSharpEntityIndex.isBuilt state context))
+            Assert.All(contexts, fun context -> Assert.True(entitiesBuilt state context))
         finally
             cleanup root
     }

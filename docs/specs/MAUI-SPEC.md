@@ -127,7 +127,7 @@ A *Publish* command builds a signed release package for the active platform.
 | Windows | `.msix` | A certificate the user picks |
 
 - **Secrets:** keystore and certificate passwords live in the editor's secret storage. They never go into the project file, the command line, the terminal or logs. They reach MSBuild only through environment variables of the publish process.
-- **Project edits:** signing properties (`CodesignKey`, `CodesignProvision`, `AndroidSigningKeyStore`) are written into a `Release` property group through the project DOM ([STRUCTURED-FILE-DOM-PLAN.md](../plans/STRUCTURED-FILE-DOM-PLAN.md)), never by text edits.
+- **Project edits:** signing properties (`CodesignKey`, `CodesignProvision`, `AndroidSigningKeyStore`) are written into a `Release` property group through the project DOM ([SHARPLSP-ARCHITECTURE-STRUCTURED-EDITS]), never by text edits.
 - **Later:** downloading provisioning profiles from Apple with an App Store Connect API key is a later phase ([vscode-dotnettools #1539](https://github.com/microsoft/vscode-dotnettools/issues/1539)).
 
 ## [MAUI-TESTS] Device Tests

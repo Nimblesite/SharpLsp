@@ -48,7 +48,7 @@ type NavClass(seed: int) =
 type NavGenericBox<'T>(value: 'T) =
     member _.NavUnbox = value
 
-exception NavFailure of string
+exception NavFailure of string // fsharplint:disable-line ExceptionNames
 
 module NavModule =
     let navValue = 7
@@ -90,5 +90,5 @@ module CSharpUses =
     let viaRecordMember = viaRecord.NavCSharpPositional
     let viaBox = NavCSharpBox<int>(9)
     let viaBoxMember = viaBox.NavCSharpBoxed
-    let viaDelegate = NavCSharpDelegate(fun value -> value)
+    let viaDelegate = NavCSharpDelegate(fun value -> value) // fsharplint:disable-line Hints
     let callContract (contract: INavCSharpContract) = contract.NavCSharpCall(10)

@@ -56,10 +56,10 @@ let ``inlay hints use short type names, skip operators and sit before each argum
             let lengthsLine, pipe = at lines "let lengths" "|>"
             Assert.Contains((pipe, ": string list"), labelsOn hints 1 lengthsLine)
             let _, mapped = at lines "let lengths" "String.length"
-            Assert.Equal<(int * string) list>([ mapped, "mapping:" ], labelsOn hints 2 lengthsLine)
+            Assert.Equal<(int * string) list>([ (mapped, "mapping:") ], labelsOn hints 2 lengthsLine)
 
             let partsLine, separator = at lines "let parts" "','"
-            Assert.Equal<(int * string) list>([ separator, "separator:" ], labelsOn hints 2 partsLine)
+            Assert.Equal<(int * string) list>([ (separator, "separator:") ], labelsOn hints 2 partsLine)
 
             let totalLine, folder = at lines "let total" "(fun"
             let _, state = at lines "let total" "0 ["

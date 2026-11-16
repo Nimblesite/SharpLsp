@@ -98,6 +98,10 @@ internal sealed partial class CSharpSidecar : SidecarHost
             ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Remove)
         );
         Register(
+            "project/reorderCompileItems",
+            ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Move)
+        );
+        Register(
             "project/addProjectReference",
             ProjectFileEdit<ProjectReferenceRequest>(ProjectReferenceEditor.Add)
         );
@@ -170,24 +174,18 @@ internal sealed partial class CSharpSidecar : SidecarHost
     private bool _refreshSupported;
 
     /// <summary>Compiler-originated invalidation, including while IPC is idle. [DIAG-IPC-REFRESH]</summary>
-    private async Task<Outcome.Result<Outcome.Unit, string>> NotifyDiagnosticsChangedAsync(
-        CancellationToken ct
-    )
+    private async Task<Result<Unit, string>> NotifyDiagnosticsChangedAsync(CancellationToken ct)
     {
         if (!_refreshSupported)
         {
-            return new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
-                Outcome.Unit.Value
-            );
+            return new Result<Unit, string>.Ok<Unit, string>(Unit.Value);
         }
 
         var result = await NotifyAsync("diagnostics/refresh", string.Empty, ct)
             .ConfigureAwait(false);
         return result.Match(
-            _ => new Outcome.Result<Outcome.Unit, string>.Ok<Outcome.Unit, string>(
-                Outcome.Unit.Value
-            ),
-            Outcome.Result<Outcome.Unit, string>.Failure
+            _ => new Result<Unit, string>.Ok<Unit, string>(Unit.Value),
+            Result<Unit, string>.Failure
         );
     }
 

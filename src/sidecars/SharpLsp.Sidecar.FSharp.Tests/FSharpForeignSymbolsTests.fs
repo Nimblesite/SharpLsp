@@ -11,7 +11,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.Common
 
-let private DOMAIN =
+let private domainSource =
     source
         [ "namespace Domain"
           ""
@@ -21,7 +21,7 @@ let private DOMAIN =
           "    let total (players: seq<Player>) = players |> Seq.sumBy (fun player -> player.Score)"
           "    let best (players: seq<Player>) = players |> Seq.maxBy (fun player -> player.Score)" ]
 
-let private BOARD =
+let private board =
     source
         [ "module Board"
           "open Domain"
@@ -37,19 +37,19 @@ let private placed (locations: FSharpWorkspace.DefinitionLocation list) =
     |> List.map (fun location -> string (NativePaths.NameOf location.FilePath), location.Line, location.Character)
     |> List.sort
 
-let private domain () = loadWorkspace [ "Domain.fs", DOMAIN; "Board.fs", BOARD ]
+let private domain () = loadWorkspace [ "Domain.fs", domainSource; "Board.fs", board ]
 
 [<Fact>]
 let ``declarations place a type, a record field and a function where F# declares them`` () = task {
     let! (state, dir, _, _) = domain ()
     try
         let! player = FSharpForeignSymbols.declarations state (named "T:Domain.Player") true
-        Assert.Equal<(string * int * int) list>([ "Domain.fs", 2, 5 ], placed player)
+        Assert.Equal<(string * int * int) list>([ ("Domain.fs", 2, 5) ], placed player)
         let! score = FSharpForeignSymbols.declarations state (named "P:Domain.Player.Score") true
-        Assert.Equal<(string * int * int) list>([ "Domain.fs", 2, 30 ], placed score)
+        Assert.Equal<(string * int * int) list>([ ("Domain.fs", 2, 30) ], placed score)
         let total = "M:Domain.Scoring.total(System.Collections.Generic.IEnumerable{Domain.Player})"
         let! declared = FSharpForeignSymbols.declarations state (named total) false
-        Assert.Equal<(string * int * int) list>([ "Domain.fs", 5, 8 ], placed declared)
+        Assert.Equal<(string * int * int) list>([ ("Domain.fs", 5, 8) ], placed declared)
         let range = List.exactlyOne declared
         Assert.Equal((5, 13), (range.EndLine, range.EndCharacter))
 
@@ -80,7 +80,7 @@ let ``uses list every F# use, with the declaration only when asked`` () = task {
         Assert.Equal<(string * int * int) list>([ "Domain.fs", 5, 28; "Domain.fs", 6, 27 ], placed player)
         let total = "M:Domain.Scoring.total(System.Collections.Generic.IEnumerable{Domain.Player})"
         let! called = FSharpForeignSymbols.uses state (named total) false
-        Assert.Equal<(string * int * int) list>([ "Board.fs", 3, 33 ], placed called)
+        Assert.Equal<(string * int * int) list>([ ("Board.fs", 3, 33) ], placed called)
     finally
         cleanup dir
 }
@@ -117,7 +117,7 @@ let ``F# references and foreign uses place each use on its name alike`` () = tas
         cleanup dir
 }
 
-let private MARKS =
+let private marks =
     source
         [ "module Marks"
           ""
@@ -132,7 +132,7 @@ let private MARKS =
 /// so C# can never name it. [REFERENCES-FSHARP-FIND] [DEFINITION-CROSSLANG-IDENTITY]
 [<Fact>]
 let ``a use no token spells keeps its range, and a symbol without a signature has no identity`` () = task {
-    let! (state, dir, _, paths) = loadWorkspace [ "Marks.fs", MARKS ]
+    let! (state, dir, _, paths) = loadWorkspace [ ("Marks.fs", marks) ]
     try
         let! fileCheck = FSharpWorkspace.checkFile state paths[0]
         let checkResults, _ = FSharpForeignSymbols.requireCheckedFile paths[0] fileCheck

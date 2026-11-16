@@ -93,7 +93,7 @@ internal sealed partial class WorkspaceManager
                     : !CanUseNewName(target.Value, newName) ? EmptyRenameResult()
                     : await RenameFSharpSymbolAsync(target.Value.Symbol, newName, ct)
                         .ConfigureAwait(false)
-            : target.Value.Symbol is IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator }
+            : IsOperatorSymbol(target.Value.Symbol)
                 ? await RenameOperatorAsync(_solution, target.Value, newName, ct)
                     .ConfigureAwait(false)
             : !IsValidIdentifier(newName) ? RenameEditResult.Failure("Invalid C# rename identifier")
@@ -177,19 +177,14 @@ internal sealed partial class WorkspaceManager
             return null;
         }
 
-        var symbol = await FindSymbolAsync(document, position, ct).ConfigureAwait(false);
+        var symbol = IsOperatorAtPosition(token!.Value, position)
+            ? await FindOperatorSymbolAsync(document, token.Value, ct).ConfigureAwait(false)
+            : await FindSymbolAsync(document, position, ct).ConfigureAwait(false);
         var targetSymbol = symbol is null ? null : RenameConflictTarget(symbol);
         var foreign =
             targetSymbol is not null
             && FSharpProjectSymbols.Declares(document.Project, targetSymbol);
-        return
-            targetSymbol is not null
-            && (foreign || IsSourceSymbol(targetSymbol))
-            && (
-                targetSymbol
-                    is not IMethodSymbol { MethodKind: MethodKind.UserDefinedOperator } method
-                || method.Parameters.Length == 2
-            )
+        return targetSymbol is not null && (foreign || IsSourceSymbol(targetSymbol))
             ? new RenameTarget(document, text, targetSymbol, token!.Value, foreign)
             : null;
     }

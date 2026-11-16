@@ -123,7 +123,7 @@ let packageReferenceArgs (assemblies: PackageAssembly list) : string array =
 /// [DIAG-RESTORE]
 let missingPackages (fsprojPath: string) : string list =
     PackageAssets.MissingPackages(fsprojPath).Match(
-        (fun packages -> List.ofArray packages),
+        List.ofArray,
         (fun _ ->
             Log.Debug("F# project package assets could not be read for {Project}", fsprojPath)
             []))

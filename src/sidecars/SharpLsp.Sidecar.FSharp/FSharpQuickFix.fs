@@ -32,6 +32,7 @@ let insertLine (title: string) (filePath: string) (at: pos) (text: string) : Gen
 
 /// `at` moved down past blank lines, up to `lastLine`: an `open` joins the
 /// declarations it serves rather than its scope's header line.
+[<TailCall>]
 let rec private pastBlankLines (line: int -> string) (lastLine: int) (at: pos) : pos =
     if at.Line < lastLine && System.String.IsNullOrWhiteSpace(line at.Line) then
         pastBlankLines line lastLine (Position.mkPos (at.Line + 1) at.Column)
