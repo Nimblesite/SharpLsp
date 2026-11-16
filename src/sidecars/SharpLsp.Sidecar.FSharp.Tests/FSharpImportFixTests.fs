@@ -231,7 +231,7 @@ let ``a solution package row and a project row coexist for one unresolved type``
             Assert.Empty(packageCheck.Diagnostics |> Array.filter (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error))
             let declaring =
                 packageCheck.ProjectContext.GetReferencedAssemblies()
-                |> Seq.collect (fun assembly -> FSharpEntityIndex.allNested assembly.Contents.Entities)
+                |> Seq.collect (fun assembly -> FSharpSemanticNavigation.allNested assembly.Contents.Entities)
                 |> Seq.filter (fun entity -> entity.DisplayName = "MessagePackSerializer")
                 |> List.ofSeq
             Assert.NotEmpty(declaring)

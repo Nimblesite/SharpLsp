@@ -24,21 +24,13 @@ let entities state (checkResults: FSharpCheckFileResults) () : AssemblySymbol li
     let own = AssemblyContent.GetAssemblySignatureContent AssemblyContentType.Full checkResults.PartialAssemblySignature
     own @ (referencedFiles checkResults.ProjectContext |> List.collect (contentOf state))
 
-/// Every entity in a signature and its nested entities, from FCS's symbol tree.
-let rec allNested (entities: seq<FSharpEntity>) =
-    seq {
-        for entity in entities do
-            yield entity
-            yield! allNested entity.NestedEntities
-    }
-
 /// The types a file can reach: its own and every referenced assembly's.
 /// [REFACTOR-IMPORT-FSHARP] `open type` searches these FCS symbols.
 let types (checkResults: FSharpCheckFileResults) =
-    let own = allNested checkResults.PartialAssemblySignature.Entities
+    let own = FSharpSemanticNavigation.allNested checkResults.PartialAssemblySignature.Entities
     let referenced =
         checkResults.ProjectContext.GetReferencedAssemblies()
-        |> Seq.collect (fun assembly -> allNested assembly.Contents.Entities)
+        |> Seq.collect (fun assembly -> FSharpSemanticNavigation.allNested assembly.Contents.Entities)
     Seq.append own referenced |> List.ofSeq
 
 /// Build a checked project's referenced entities ahead of its first completion, one

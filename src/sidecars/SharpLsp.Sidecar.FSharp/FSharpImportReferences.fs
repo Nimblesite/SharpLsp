@@ -52,7 +52,7 @@ let private importable name (entity: FSharpEntity) =
     && (entity.DisplayName = name || entity.CompiledName = name || entity.LogicalName = name)
 
 let private namedTypes name (entities: seq<FSharpEntity>) =
-    FSharpEntityIndex.allNested entities
+    FSharpSemanticNavigation.allNested entities
     |> Seq.filter (importable name)
     |> List.ofSeq
 

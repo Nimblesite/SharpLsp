@@ -783,7 +783,7 @@ source text (GitHub #389).
 | Record stub generation | `textDocument/codeAction` | Generate record field stubs | P1 |
 | Open statement management | `textDocument/codeAction` | Auto-open + organize opens | P0 |
 | Computation expression support | `textDocument/completion` | CE-aware completions | P1 |
-| Type provider navigation | `textDocument/definition` | Type provider generated type nav | P2 |
+| Type provider navigation | `textDocument/definition` | Provided types and members land on the declaration that instantiates the provider ([DEFINITION-FSHARP-PROVIDED]) | P2 |
 | F# Interactive integration | Custom: `sharplsp/fsi` | Send selection to FSI, evaluate | P2 |
 | File ordering awareness | Custom: `sharplsp/fileOrder` | Semantic file reorder suggestions | P1 |
 

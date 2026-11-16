@@ -12,11 +12,9 @@ It is the shared source of truth for three lanes:
 - **F# sidecar implementation** — owned by the F# sidecar lane (fsharp-parity-opus).
 - **Analyzers / config** — `[analyzers]` + dead-code work (SharpLsp1).
 
-**Related plan:** [FSHARP-FEATURES-PLAN.md](FSHARP-FEATURES-PLAN.md) tracks the
-*internal* C# (Roslyn) ⇄ F# (FCS) parity — every host-routed method working
-identically for `.cs` and `.fs`. **This** doc tracks the *external* target:
-matching and beating **FsAutoComplete/Ionide**. Complementary — keep the
-internal-parity matrix there and the FSAC-parity matrix here; do not duplicate.
+The *internal* C# (Roslyn) ⇄ F# (FCS) parity — every host-routed method working
+identically for `.cs` and `.fs` — is complete, and its plan is deleted. **This**
+doc tracks the *external* target: matching and beating **FsAutoComplete/Ionide**.
 
 Spec IDs use the `FSAC-PARITY-...` group; existing `FS-...` and `PKG-...`
 feature IDs are referenced where they already implement a row.
