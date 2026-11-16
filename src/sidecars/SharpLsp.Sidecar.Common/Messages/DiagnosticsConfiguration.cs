@@ -24,4 +24,11 @@ public sealed class DiagnosticsConfiguration
     /// </summary>
     [Key(3)]
     public int? ReloadDebounceMs { get; set; }
+
+    /// <summary>
+    /// <c>fsharp.script_arguments</c>: extra compiler arguments every F# script is checked
+    /// with. Null, from an older host, is none. [SCRIPT-FSX-ARGUMENTS]
+    /// </summary>
+    [Key(4)]
+    public IReadOnlyList<string>? ScriptArguments { get; set; }
 }

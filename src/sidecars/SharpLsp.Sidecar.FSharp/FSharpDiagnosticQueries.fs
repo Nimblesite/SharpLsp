@@ -43,7 +43,7 @@ let private scopeChanged previous (current: FSharpProjectOptions) =
 /// [HOVER-FSHARP-OVERLAY]
 let private scriptOptions (state: FSharpWorkspace.FSharpWorkspaceState) (root, persist, previous) ct =
     task {
-        let! options, diagnostics, sourceLength, pending = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays root ct
+        let! options, diagnostics, sourceLength, pending = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.ScriptArguments state.Overlays root ct
         Serilog.Log.Debug("Script compiler inputs resolved: {SourceLength}, {DiagnosticCount}, {SourceFileCount}, {PackagesPending}",
             sourceLength, diagnostics.Length, options.SourceFiles.Length, pending)
         let changed = persist && scopeChanged previous options

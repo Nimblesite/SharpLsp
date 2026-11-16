@@ -71,6 +71,7 @@ pub mod folding;
 pub mod formatting_contract;
 pub mod fsharp;
 pub mod fsharp_file_order;
+pub mod fsharp_script_arguments;
 pub mod fsharp_script_packages;
 pub mod full_stack;
 pub mod full_stack_features;

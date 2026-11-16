@@ -155,6 +155,7 @@ type FSharpSidecar() as this =
                 analyzersEnabled <- request.AnalyzersEnabled
                 refreshSupported <- request.RefreshSupported
                 autoRestoreOnOpen <- request.AutoRestoreOnOpen.GetValueOrDefault(true)
+                workspace.ScriptArguments <- request.ScriptArguments |> Option.ofObj |> Option.map Array.ofSeq |> Option.defaultValue [||]
                 Task.FromResult<ByteResult>(Helpers.serializeOk "ok" ct)
             with ex ->
                 Task.FromResult<ByteResult>(ByteResult.Failure(ex.Message))))

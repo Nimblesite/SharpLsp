@@ -189,6 +189,10 @@ Compiler option-resolution errors appear once on their actual owning script rang
 
 Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED` is **not** defined. Getting this wrong makes `#if INTERACTIVE` blocks appear greyed-out-dead in the editor while being live at runtime.
 
+### Script arguments `[SCRIPT-FSX-ARGUMENTS]`
+
+`fsharp.script_arguments` in `sharplsp.toml` lists extra compiler arguments every script is checked with, as `dotnet fsi` would be started with them: `--define:`, `--langversion:`, `--nowarn:`, `--warnaserror:`. They follow the arguments of [SCRIPT-FSX-SYMBOLS], so a script reads the same under the editor as it runs. The host sends them to the F# sidecar as the fifth field of `diagnostics/configure`; an older host sends none. A change of the setting applies without a restart: the next check of every script uses the new arguments. Projects are unaffected, since their arguments are MSBuild's.
+
 ### NuGet references `[SCRIPT-FSX-NUGET]`
 
 `#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network or local package-store access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.

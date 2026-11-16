@@ -307,11 +307,12 @@ mod contract {
             "an external restore reloads"
         );
         let configured = compiler.since(mark, "diagnostics/configure")?;
-        let (_, _, restores, debounce_ms) = rmp_serde::from_slice::<(bool, bool, bool, u64)>(
-            configured
-                .last()
-                .context("the reload configures diagnostics")?,
-        )?;
+        let (_, _, restores, debounce_ms, _scripts) =
+            rmp_serde::from_slice::<(bool, bool, bool, u64, Vec<String>)>(
+                configured
+                    .last()
+                    .context("the reload configures diagnostics")?,
+            )?;
         assert!(
             !restores,
             "the reload uses the restored outputs without restoring again"

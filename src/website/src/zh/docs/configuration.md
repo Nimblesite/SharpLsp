@@ -49,6 +49,7 @@ solution_path = ""
 
 [fsharp]
 enabled = true
+script_arguments = []
 
 [diagnostics]
 analyzers_enabled = true
@@ -85,6 +86,7 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | 启动或跳过 C# sidecar |
 | `csharp.solution_path` | 选择一个 `.sln` 或 `.slnx`；可使用绝对路径或相对于工作区的路径 |
 | `fsharp.enabled` | 启动或跳过 F# sidecar |
+| `fsharp.script_arguments` | 检查每个 F# 脚本时附加的编译器参数，与启动 `dotnet fsi` 时传入的参数相同，例如 `--define:CI` 或 `--langversion:preview`；默认为空，修改后无需重启即可生效 |
 | `diagnostics.analyzers_enabled` | 启用 F# 和 C# 分析器诊断；不会隐藏编译器错误 |
 | `diagnostics.solution_wide_analysis` | 解决方案诊断包含未打开的 F# 和 C# 文件；默认启用 |
 | `diagnostics.project_filter` | 按项目名称或相对于所选解决方案的项目路径筛选 F# 和 C# 工作区结果；直接文档拉取不受影响 |

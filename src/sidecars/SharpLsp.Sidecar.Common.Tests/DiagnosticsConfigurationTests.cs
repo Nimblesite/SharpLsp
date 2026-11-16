@@ -20,7 +20,8 @@ public sealed class DiagnosticsConfigurationTests
         Assert.True(actual.RefreshSupported);
         Assert.Equal(restore, actual.AutoRestoreOnOpen);
         Assert.Null(actual.ReloadDebounceMs);
-        object?[] wire = [false, true, restore, null];
+        Assert.Null(actual.ScriptArguments);
+        object?[] wire = [false, true, restore, null, null];
         Assert.Equal(
             wire,
             MessagePackSerializer.Deserialize<object?[]>(MessagePackSerializer.Serialize(actual))
@@ -46,6 +47,29 @@ public sealed class DiagnosticsConfigurationTests
         );
         Assert.Equal(debounceMs, roundTrip.ReloadDebounceMs);
         Assert.False(roundTrip.AutoRestoreOnOpen);
+    }
+
+    /// <summary>Script arguments follow the reload window. [SCRIPT-FSX-ARGUMENTS]</summary>
+    [Fact]
+    public void Script_arguments_are_the_fifth_field_in_order()
+    {
+        string[] arguments = ["--define:CI", "--langversion:preview", "--nowarn:25"];
+        object[] fields = [true, true, true, 150, arguments];
+        var bytes = MessagePackSerializer.Serialize(fields);
+        var actual = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(bytes);
+        Assert.Equal(arguments, actual.ScriptArguments);
+        Assert.Equal(150, actual.ReloadDebounceMs);
+        Assert.True(actual.AutoRestoreOnOpen);
+        var roundTrip = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(
+            MessagePackSerializer.Serialize(actual)
+        );
+        Assert.Equal(arguments, roundTrip.ScriptArguments);
+        object[] none = [true, true, true, 150, Array.Empty<string>()];
+        var empty = MessagePackSerializer.Deserialize<DiagnosticsConfiguration>(
+            MessagePackSerializer.Serialize(none)
+        );
+        Assert.NotNull(empty.ScriptArguments);
+        Assert.Empty(empty.ScriptArguments);
     }
 
     [Fact]

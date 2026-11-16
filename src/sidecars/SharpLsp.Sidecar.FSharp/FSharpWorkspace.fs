@@ -30,6 +30,9 @@ type FSharpWorkspaceState =
         mutable IsLoaded: bool
         /// A valid selected workspace may have no F# projects; old projects must be retired.
         mutable LastLoadWasEmpty: bool
+        /// Extra compiler arguments every script is checked with, from the host's
+        /// `fsharp.script_arguments`. [SCRIPT-FSX-ARGUMENTS]
+        mutable ScriptArguments: string array
         /// The workspace generation, advanced at the start of every replacement so a
         /// background owner adoption begun earlier can tell its workspace is gone.
         /// [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-OWNING]
@@ -80,6 +83,7 @@ let create () : FSharpWorkspaceState =
       ProjectOptions = None
       IsLoaded = false
       LastLoadWasEmpty = false
+      ScriptArguments = [||]
       Epoch = 0
       LifecycleLock = obj ()
       Overlays = overlays
@@ -341,7 +345,7 @@ let internal isLooseScript (state: FSharpWorkspaceState) (filePath: string) =
 /// Check a loose script under the options its own directives resolve. [SCRIPT-FSX-OPTIONS]
 let private checkLooseScript (state: FSharpWorkspaceState) (filePath: string) ct =
     task {
-        let! options, _, _, _ = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.Overlays filePath ct
+        let! options, _, _, _ = FSharpProjectLoading.scriptOptionsFromEditor state.Checker state.ScriptArguments state.Overlays filePath ct
         let! parseResults, checkAnswer, source = parseAndCheckOnceWithCancellation state filePath options ct
         return interpretAnswer parseResults checkAnswer source
     }
@@ -367,7 +371,7 @@ let internal checkFileWithParse state filePath =
 let internal checkFileWithSource state filePath source (ct: CancellationToken) =
     task {
         if isLooseScript state filePath then
-            let! options, _ = FSharpProjectLoading.scriptOptions state.Checker filePath source ct
+            let! options, _ = FSharpProjectLoading.scriptOptions state.Checker state.ScriptArguments filePath source ct
             let! parseResults, checkAnswer =
                 Async.StartAsTask(state.Checker.ParseAndCheckFileInProject(filePath, 0, SourceText.ofString source, options), cancellationToken = ct)
             return interpretAnswer parseResults checkAnswer source
