@@ -143,6 +143,13 @@ enforce_in_build = false  # true => error-mapped codes also fail `dotnet build`
   version that pulls the fixed one exists — the lower-impact choice is offered first.
 - Applied via `sharplsp/nuget/install` with an exact version and [NUGET-XML-DOM], then restore; a failed restore is
   reported as failure with the attempted version ([REFACTOR-NEVER-SILENT]).
+- Editor-agnostic apply: the action carries the server command `sharplsp.nuget.updateVulnerable` (advertised in
+  `executeCommandProvider`) with the project, package, exact version and the resolved version it was offered
+  against; `codeAction/resolve` returns it unchanged, and a declaration that moved since refuses as stale. Only a
+  same-line update is `isPreferred`; a boundary-crossing one is never auto-applied — choosing its titled boundary
+  is the confirmation.
+- Editors sync `.csproj`, `.fsproj` and `.props` documents to the server so the diagnostic and its fix reach them
+  (VS Code: the client's document selector).
 - **Fix all** ([FIXALL-SCOPES]): `Update all vulnerable packages` at project and solution scope, plus
   *Fix all and enforce* (writes `enforce_in_build`).
 

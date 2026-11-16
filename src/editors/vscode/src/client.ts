@@ -67,6 +67,9 @@ export const DOCUMENT_SELECTOR = [
   { scheme: 'untitled', language: 'csharp' },
   { scheme: 'untitled', language: 'fsharp' },
   ...RAZOR_LANGUAGES.map((language) => ({ scheme: 'file', language })),
+  // Project and props files, whatever language they open as: the host owns their
+  // vulnerable-package diagnostics and update fixes ([PKG-VULN-DIAG], #578).
+  { scheme: 'file', pattern: '**/*.{csproj,fsproj,props}' },
 ];
 
 export interface DeploymentPaths {
