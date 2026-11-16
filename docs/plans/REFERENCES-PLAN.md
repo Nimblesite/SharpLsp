@@ -136,4 +136,4 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 - [ ] Benchmark references latency on medium solution (~1000 files): target <2s
 - [ ] Benchmark document highlight latency: target <100ms
 - [ ] Benchmark references salsa hit: target <1ms
-- [ ] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms
+- [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs`, shared with [DEFINITION-PERFORMANCE]

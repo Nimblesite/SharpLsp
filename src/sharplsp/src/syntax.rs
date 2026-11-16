@@ -238,13 +238,51 @@ pub fn linked_editing_ranges(
 
 // ── Hover Pre-validation ──────────────────────────────────────
 
+/// The comment node kinds of both grammars: C# has one, F# tells a line comment
+/// from a block comment and its content.
+const COMMENT_KINDS: [&str; 4] = [
+    "comment",
+    "line_comment",
+    "block_comment",
+    "block_comment_content",
+];
+
+/// The node kinds that are the text or the delimiters of a string or character
+/// literal, in both grammars. A leaf inside a literal is its *content* node
+/// (`string_literal_content`), not the literal, so both are listed. The holes
+/// of an interpolated string (`interpolation`, `format_string_eval`) hold code
+/// and are not here: a name inside one is a symbol.
+const STRING_KINDS: [&str; 19] = [
+    // C#
+    "string_literal",
+    "string_literal_content",
+    "string_literal_encoding",
+    "verbatim_string_literal",
+    "raw_string_literal",
+    "raw_string_start",
+    "raw_string_content",
+    "raw_string_end",
+    "character_literal",
+    "character_literal_content",
+    "escape_sequence",
+    "interpolated_string_expression",
+    "interpolated_string_text",
+    "string_content",
+    // F#
+    "string",
+    "verbatim_string",
+    "triple_quoted_string",
+    "char",
+    "format_string",
+];
+
 /// Check if a position is on a comment node (tree-sitter pre-validation).
 ///
 /// Returns `true` when the position falls inside a comment, allowing the
 /// caller to short-circuit hover requests with `null` before dispatching
 /// to the sidecar.
 pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
-    node_under_cursor(tree, position).is_some_and(|node| node.kind() == "comment")
+    node_under_cursor(tree, position).is_some_and(|node| COMMENT_KINDS.contains(&node.kind()))
 }
 
 /// Whether a position has no symbol under it at all: whitespace, or a comment.
@@ -260,26 +298,16 @@ pub fn is_comment_at_position(tree: &Tree, position: Position) -> bool {
 /// between tokens resolves to the enclosing construct, which has children.
 pub fn has_no_symbol_at_position(tree: &Tree, position: Position) -> bool {
     node_under_cursor(tree, position)
-        .is_some_and(|node| node.kind() == "comment" || node.child_count() > 0)
+        .is_some_and(|node| COMMENT_KINDS.contains(&node.kind()) || node.child_count() > 0)
 }
 
 /// Check if a position is on a string literal node (tree-sitter pre-validation).
 ///
-/// Returns `true` when the position falls inside a string literal, allowing
-/// the caller to short-circuit definition requests with `null`.
+/// Returns `true` when the position falls inside the text or the delimiters of a
+/// string or character literal, allowing the caller to answer navigation with
+/// nothing before dispatching to the sidecar.
 pub fn is_string_at_position(tree: &Tree, position: Position) -> bool {
-    node_under_cursor(tree, position).is_some_and(|node| {
-        matches!(
-            node.kind(),
-            "string_literal"
-                | "verbatim_string_literal"
-                | "raw_string_literal"
-                | "interpolated_string_expression"
-                | "interpolated_string_text"
-                | "string_content"
-                | "character_literal"
-        )
-    })
+    node_under_cursor(tree, position).is_some_and(|node| STRING_KINDS.contains(&node.kind()))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────

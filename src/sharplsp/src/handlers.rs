@@ -197,3 +197,7 @@ impl HasTextDocumentPosition for GotoDefinitionParams {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod tests;
