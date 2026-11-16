@@ -85,15 +85,15 @@ remaining gaps are explicit rather than implied.
       `CSharpCompilationOptions.Usings` is honoured only for `SourceCodeKind.Script`, so a file-based
       app needs the generated-file route the SDK itself uses — [SCRIPT-FILEBASED-PARSEOPTIONS]
 - [x] Replace a root's previous project when reopening without discarding other projectless roots
-- [ ] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
-      `.razor`→Content); only `Compile` joins the semantic closure. Currently every resolved include
-      is treated as Compile — [SCRIPT-FILEBASED-DIRECTIVES]
+- [x] Map `#:include` item types by extension (`.cs`→Compile, `.resx`→EmbeddedResource, `.json`→None,
+      `.razor`→Content); only `Compile` joins the semantic closure — [SCRIPT-FILEBASED-DIRECTIVES] —
+      `DocumentClosure.cs` `IncludedItem`; `FileBasedIncludeEndToEndTests.cs`
 - [x] Diagnose a `#:` directive appearing after the first non-trivia token through Roslyn's
       compiler diagnostic pipeline, and exclude it from semantic activation —
       [SCRIPT-FILEBASED-DIRECTIVES]
-- [ ] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
-      [SCRIPT-FILEBASED-PARSEOPTIONS]
-- [ ] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT]
+- [x] Resolve `LanguageVersion` from the target framework band instead of `Latest` —
+      [SCRIPT-FILEBASED-PARSEOPTIONS] — `FileBasedRules.cs` `FileBasedLanguage`
+- [x] Diagnostic when an `#:include`d file declares top-level statements — [SCRIPT-FILEBASED-ENTRYPOINT] — `SLSPC0004`, `FileBasedRules.cs` `FileBasedEntryPoints`
 - [x] Keep root-path keyed model/degradation generations in one `AdhocWorkspace` so two apps in one
       directory stay independent concurrently; reopening replaces only the matching root —
       [SCRIPT-MULTIROOT]

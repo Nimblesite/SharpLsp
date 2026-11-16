@@ -10,6 +10,13 @@ internal sealed record ClosureFile(string Path, string Text, bool IsRoot);
 internal sealed record PackageRef(string Name, string? Version);
 
 /// <summary>
+/// An <c>#:include</c>d file that is not source: it is an item of the synthesized project, of
+/// the type its extension maps to, and no part of the compilation. Implements
+/// [SCRIPT-FILEBASED-DIRECTIVES].
+/// </summary>
+internal sealed record IncludedItem(string ItemType, string Path);
+
+/// <summary>
 /// Unsaved editor text for one file, standing in for what is on disk while the closure is
 /// expanded. The edited file is not necessarily the closure root — an <c>#:include</c>d file
 /// can carry directives too — so the override is keyed by path. Implements [SCRIPT-RELOAD].
@@ -21,7 +28,8 @@ internal sealed record Closure(
     IReadOnlyList<ClosureFile> Files,
     IReadOnlyList<PackageRef> Packages,
     IReadOnlyList<FileDirective> Directives,
-    IReadOnlyList<string> Issues
+    IReadOnlyList<string> Issues,
+    IReadOnlyList<IncludedItem> Items
 );
 
 /// <summary>
@@ -80,7 +88,13 @@ internal static class DocumentClosure
     {
         var state = new ExpansionState(children, live);
         await VisitAsync(rootPath, isRoot: true, depth: 0, state, ct).ConfigureAwait(false);
-        return new Closure(state.Files, state.Packages, state.Directives, state.Issues);
+        return new Closure(
+            state.Files,
+            state.Packages,
+            state.Directives,
+            state.Issues,
+            state.Items
+        );
     }
 
     private delegate IEnumerable<string> ChildResolver(
@@ -181,7 +195,40 @@ internal static class DocumentClosure
         var baseDir = NativePaths.DirectoryOf(filePath);
         return directives
             .Where(d => d.Kind == FileDirectiveKind.Include)
-            .SelectMany(d => ResolveInclude(d.Name, baseDir, state));
+            .SelectMany(d => ResolveInclude(d.Name, baseDir, state))
+            .Where(path => IsSource(path, state));
+    }
+
+    // `#:include` maps to an item type by extension, as the SDK does. Only source is compiled;
+    // everything else is recorded for the synthesized project. [SCRIPT-FILEBASED-DIRECTIVES]
+    private static readonly (string Extension, string ItemType)[] ItemTypes =
+    [
+        (".resx", "EmbeddedResource"),
+        (".json", "None"),
+        (".razor", "Content"),
+    ];
+
+    private static bool IsSource(string path, ExpansionState state)
+    {
+        if (NativePaths.HasExtension(path, ".cs"))
+        {
+            return true;
+        }
+
+        var itemType = ItemTypes
+            .Where(mapping => NativePaths.HasExtension(path, mapping.Extension))
+            .Select(mapping => mapping.ItemType)
+            .FirstOrDefault();
+        if (itemType is null)
+        {
+            state.Issues.Add($"#:include '{path}' has no item type for its extension; skipped.");
+        }
+        else
+        {
+            state.Items.Add(new IncludedItem(itemType, NativePaths.NormalizeFullPath(path)));
+        }
+
+        return false;
     }
 
     // `#:include` accepts a literal path, a glob, or an MSBuild property. Property expansion
@@ -264,5 +311,6 @@ internal static class DocumentClosure
         public List<PackageRef> Packages { get; } = [];
         public List<FileDirective> Directives { get; } = [];
         public List<string> Issues { get; } = [];
+        public List<IncludedItem> Items { get; } = [];
     }
 }

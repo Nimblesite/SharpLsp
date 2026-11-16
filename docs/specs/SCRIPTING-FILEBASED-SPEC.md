@@ -88,7 +88,7 @@ Supported directives, matching the SDK exactly:
 | `#:property` | `#:property <Name>=<Value>` | Value may contain MSBuild expressions |
 | `#:include` | `#:include <path>` | Literal path, glob, or MSBuild property |
 
-`#:include` maps to item types by extension, per the SDK: `*.cs` → `Compile`, `*.resx` → `EmbeddedResource`, `*.json` → `None`, `*.razor` → `Content`. Only `Compile` items participate in the semantic closure; the rest are recorded so the synthesized project stays faithful.
+`#:include` maps to item types by extension, per the SDK: `*.cs` → `Compile`, `*.resx` → `EmbeddedResource`, `*.json` → `None`, `*.razor` → `Content`. Only `Compile` items participate in the semantic closure and are ever parsed as C#; the rest are recorded on the closure and written as items of the synthesized project, so it stays faithful. An include whose extension maps to no item type is skipped and recorded as a closure issue.
 
 Directives must appear before the first non-trivia token. A `#:` directive that appears after real code is reported as a diagnostic at its own location, matching compiler behavior.
 
@@ -134,9 +134,11 @@ Tier 2 must never be silently presented as a successful full load. `workspace/st
 
 `LanguageVersion` is resolved from the target framework band, not hardcoded to `Preview`. `Preview` enables unstable features that the user's SDK may reject, producing editor-only false negatives. `LanguageVersion.Latest` is used when the band cannot be determined.
 
+Before the synthesized project is restored (tier 2), the version is: a `#:property LangVersion=…` when the app has one; else the C# that ships with the `netN.0` of a `#:property TargetFramework=…` (.NET 8 → C# 12, .NET 9 → C# 13, .NET 10 → C# 14); else `Latest`. After restore (tier 1), MSBuild's own answer replaces it.
+
 ### Entry points `[SCRIPT-FILEBASED-ENTRYPOINT]`
 
-A file-based app root file carries top-level statements. `#:include`d `.cs` files may add types, methods, and namespaces but **may not** add top-level statements — the SDK forbids it. SharpLsp reports a violation as a diagnostic on the offending included file rather than allowing a confusing `CS0017` from the compiler.
+A file-based app root file carries top-level statements. `#:include`d `.cs` files may add types, methods, and namespaces but **may not** add top-level statements — the SDK forbids it. SharpLsp reports a violation as a diagnostic on the offending included file rather than allowing a confusing `CS0017` from the compiler: the error `SLSPC0004` on the included file's first top-level statement, naming the root file. The compiler's own `CS8802` ("only one compilation unit can have top-level statements") is not shown in a file-based app: it names neither the rule nor the root, and can land on the root itself.
 
 ## C# scripts `[SCRIPT-CSX]`
 
