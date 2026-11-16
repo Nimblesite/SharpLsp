@@ -64,7 +64,7 @@ Gap analysis and implementation roadmap to reach feature parity with C# Dev Kit,
 | Document highlights | Yes | Yes | **DONE** |
 | Peek Definition (inline) | Yes | Yes (editor feature) | **DONE** |
 | Workspace symbol search | Yes | Yes | **DONE** |
-| Breadcrumbs | Yes | No | **MISSING** |
+| Breadcrumbs | Yes | Yes | **DONE** |
 | Call hierarchy | No | Yes | **AHEAD** |
 | Type hierarchy | No | Yes | **AHEAD** |
 
