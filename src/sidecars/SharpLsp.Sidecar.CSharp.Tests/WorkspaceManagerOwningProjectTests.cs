@@ -204,6 +204,64 @@ public sealed class WorkspaceManagerOwningProjectTests : IDisposable
     }
 
     /// <summary>
+    /// A project nested inside a project the solution lists is that project's fixture, not a
+    /// sibling the solution hid: it is not loaded on open, while a true sibling still is.
+    /// Loading every project file in the tree cost a design-time build per test fixture and
+    /// put fixture symbols into the workspace. It is still adopted once one of its files
+    /// is opened ([SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY],
+    /// [SHARPLSP-ARCHITECTURE-PROJECTS-CSHARP-OWNING]).
+    /// </summary>
+    [Fact]
+    public async Task A_project_nested_inside_a_listed_project_is_not_loaded_until_opened()
+    {
+        _ = Write(
+            "Home/Home.csproj",
+            Project.Replace(
+                "</PropertyGroup>",
+                "</PropertyGroup><ItemGroup><Compile Remove=\"Fixtures/**\" /></ItemGroup>",
+                StringComparison.Ordinal
+            )
+        );
+        var fixture = Write("Home/Fixtures/Sample/Sample.csproj", Project);
+        var probe = Write(
+            "Home/Fixtures/Sample/Probe.cs",
+            "namespace Sample;\n\n/// <summary>Only a fixture.</summary>\n"
+                + "public static class Probe\n{\n    public static int One() => 1;\n}\n"
+        );
+        _ = Write(
+            "Home.slnx",
+            "<Solution>\n  <Project Path=\"Home/Home.csproj\" />\n</Solution>\n"
+        );
+        Build(_home);
+        Build(_lone);
+        Build(fixture);
+        using var manager = new WorkspaceManager();
+#pragma warning disable CS0618 // Obsolete OpenAsync placeholder: the discovery boundary
+        var open = await manager.OpenAsync(_root);
+#pragma warning restore CS0618
+        Assert.False(open.IsError, open.Match(_ => "ok", err => err));
+
+        // Interaction 1 — the listed project and its true sibling both loaded on open.
+        var greeter = await manager.GetHoverAsync(_homeSource, 3, 20);
+        Assert.Contains("Says hello.", (+greeter)?.Contents ?? "", StringComparison.Ordinal);
+        var sibling = await manager.GetHoverAsync(_guard, 5, 23);
+        Assert.Contains("AgainstNull", (+sibling)?.Contents ?? "", StringComparison.Ordinal);
+
+        // Interaction 2 — the fixture nested inside the listed project did not.
+        var closed = await manager.GetHoverAsync(probe, 3, 20);
+        Assert.False(closed.IsError, closed.Match(_ => "ok", err => err));
+        Assert.Null(+closed);
+
+        // Interaction 3 — opening one of its files adopts it, as any owner is adopted.
+        var opened = await manager.UpdateDocumentTextAsync(probe, await File.ReadAllTextAsync(probe));
+        Assert.False(opened.IsError, opened.Match(_ => "ok", err => err));
+        var adopted = await HoverWithinAsync(manager, probe, 3, 20);
+        Assert.True(adopted is not null, "the fixture answers once its file is opened");
+        Assert.Contains("Only a fixture.", adopted.Contents, StringComparison.Ordinal);
+        Assert.Contains("Probe", adopted.Contents, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Adopting an owner leaves its <c>obj</c> exactly as the user's build wrote it. The file
     /// arrives spelled through a link to the folder the user built in: one file, two
     /// spellings, as a Windows editor spells the drive <c>d:</c> where the build said <c>D:</c>.

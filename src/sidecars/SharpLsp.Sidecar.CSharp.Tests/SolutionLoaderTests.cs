@@ -367,4 +367,53 @@ public sealed class SolutionLoaderTests : IDisposable
         Assert.Equal(solution, discovery.Target);
         Assert.Equal([excluded], discovery.Projects);
     }
+
+    /// <summary>
+    /// A project in the opened folder itself is what the user opened: solutions nested
+    /// beneath it — samples, test fixtures — neither replace it nor make the folder
+    /// ambiguous, however many there are. v0.33.0 loaded the root project; the single walk
+    /// lost that rule. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY].
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Root_project_wins_over_solutions_nested_beneath_it(int nested)
+    {
+        var project = NativePaths.Join(_root, "Lib.csproj");
+        var solutions = Enumerable
+            .Range(0, nested)
+            .Select(n => NativePaths.Join(_root, "samples", $"s{n}", $"Sample{n}.sln"))
+            .ToArray();
+        var sample = NativePaths.Join(_root, "samples", "s0", "Sample.csproj");
+        Touch([project, sample, .. solutions]);
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(project, discovery.Target);
+        Assert.Empty(discovery.Competing);
+        Assert.Equal(
+            new[] { project, sample }.Order(NativePaths.Comparer),
+            discovery.Projects.Order(NativePaths.Comparer)
+        );
+        Assert.Equal(project, Resolve(_root));
+    }
+
+    /// <summary>
+    /// With no solution, a project in the opened folder itself is the target whichever
+    /// order the walk meets the projects in; the nested ones still load beside it.
+    /// </summary>
+    [Fact]
+    public void Root_project_is_the_target_among_nested_projects()
+    {
+        var project = NativePaths.Join(_root, "Zeta.csproj");
+        var nested = NativePaths.Join(_root, "alpha", "Alpha.csproj");
+        Touch(project, nested);
+
+        var discovery = +SolutionLoader.Discover(_root);
+
+        Assert.Equal(project, discovery.Target);
+        Assert.Empty(discovery.Competing);
+        Assert.Equal(2, discovery.Projects.Length);
+    }
 }

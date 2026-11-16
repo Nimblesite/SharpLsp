@@ -54,9 +54,9 @@ internal static class RoslynProjectLoading
     }
 
     /// <summary>
-    /// Load what discovery found: a solution — in one batch where it can — and then every
-    /// project the same walk met that the solution does not list, so a monorepo solution
-    /// that lists one project no longer hides its siblings (#575); with no solution, every
+    /// Load what discovery found: a solution — in one batch where it can — and then the
+    /// siblings the same walk met that the solution does not list, so a monorepo solution
+    /// that lists one project no longer hides them (#575); with no solution, every
     /// project the walk met. Implements [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] and
     /// [SHARPLSP-ARCHITECTURE-PROJECTS-LOAD].
     /// </summary>
@@ -74,7 +74,7 @@ internal static class RoslynProjectLoading
         }
         var solution = await LoadAsync(workspace, target, ct).ConfigureAwait(false);
         var listed = await EntriesAsync(target, ct).ConfigureAwait(false);
-        var unlisted = walked.Except(listed, NativePaths.Comparer).ToList();
+        var unlisted = SolutionLoader.Siblings(walked, listed);
         return unlisted.Count is 0
             ? solution
             : await LoadUnlistedAsync(workspace, solution, unlisted, ct).ConfigureAwait(false);
