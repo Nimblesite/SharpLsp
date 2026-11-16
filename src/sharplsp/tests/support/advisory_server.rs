@@ -195,24 +195,23 @@ fn service_index(base: &str) -> String {
 }
 
 /// One page of advisory ranges keyed by package id, exactly as
-/// `VulnerabilityInfoResourceV3` expects.
+/// `VulnerabilityInfoResourceV3` expects: a package with several advisories or
+/// ranges lists one entry per range, as nuget.org does.
 fn vulnerability_page(fixture: &Fixture) -> Value {
-    Value::Object(
-        fixture
-            .advisories
-            .iter()
-            .map(|advisory| {
-                (
-                    advisory.package.clone(),
-                    json!([{
-                        "url": advisory.url,
-                        "severity": advisory.severity,
-                        "versions": advisory.range,
-                    }]),
-                )
-            })
-            .collect::<serde_json::Map<String, Value>>(),
-    )
+    let mut page = serde_json::Map::new();
+    for advisory in &fixture.advisories {
+        let entries = page
+            .entry(advisory.package.clone())
+            .or_insert_with(|| json!([]));
+        if let Value::Array(entries) = entries {
+            entries.push(json!({
+                "url": advisory.url,
+                "severity": advisory.severity,
+                "versions": advisory.range,
+            }));
+        }
+    }
+    Value::Object(page)
 }
 
 /// One inline registration page; `lower`/`upper` are required by
