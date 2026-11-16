@@ -11,7 +11,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.Common
 
-let private domain =
+let private domainSource =
     source
         [ "namespace Domain"
           ""
@@ -37,7 +37,7 @@ let private placed (locations: FSharpWorkspace.DefinitionLocation list) =
     |> List.map (fun location -> string (NativePaths.NameOf location.FilePath), location.Line, location.Character)
     |> List.sort
 
-let private domain () = loadWorkspace [ "Domain.fs", domain; "Board.fs", board ]
+let private domain () = loadWorkspace [ "Domain.fs", domainSource; "Board.fs", board ]
 
 [<Fact>]
 let ``declarations place a type, a record field and a function where F# declares them`` () = task {
