@@ -5,6 +5,7 @@ import { expectPlayable, expectStills, playback, sourcesOf } from './media.js';
 
 const FILM_POSTER = '/assets/videos/profiler-film-poster.webp';
 const WALKTHROUGH_POSTER = '/assets/videos/profiler-csharp-poster.webp';
+const OVERVIEW_POSTER = '/assets/videos/profiler-film-poster.webp';
 const FILM_SOURCES = ['/assets/videos/profiler-film.mp4', '/assets/videos/profiler-film.webm'];
 const PROFILER_STILLS = 8;
 const DOCS = ['/docs/profiler/', '/zh/docs/profiler/', '/ja/docs/profiler/'];
@@ -101,7 +102,8 @@ test.describe('Profiler docs media', () => {
       await expectStills(stills);
 
       const videos = page.locator('figure video');
-      await expect(videos).toHaveCount(3);
+      // The narrated walkthrough, the CPU recording, the memory time-lapse, and the overview film last.
+      await expect(videos).toHaveCount(4);
       for (const video of await videos.all()) {
         await expect(video).toHaveAttribute('controls', '');
         await expect(video).not.toHaveAttribute('autoplay', '');
@@ -109,6 +111,7 @@ test.describe('Profiler docs media', () => {
       }
       // The page opens on its narrated C# walkthrough; the home page keeps the film.
       await expect(videos.first()).toHaveAttribute('poster', WALKTHROUGH_POSTER);
+      await expect(videos.last()).toHaveAttribute('poster', OVERVIEW_POSTER);
     });
   }
 });

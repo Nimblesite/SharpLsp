@@ -7,7 +7,11 @@ for (const prefix of ['', '/ja', '/zh']) {
     await expect(page.locator('h1')).toHaveCount(1);
     await expect(page.locator('#docs-sidebar a[aria-current="page"]')).toHaveAttribute('href', `${prefix}/docs/debugging/`);
     const video = page.locator('article video');
-    await expect(video.locator('track[kind="captions"]')).toHaveAttribute('src', '/assets/videos/debugging.en.vtt');
+    // Captions ship in every site language; the page's own language is the default track.
+    const lang = prefix.slice(1) || 'en';
+    await expect(video.locator('track[kind="captions"]')).toHaveCount(3);
+    await expect(video.locator('track[kind="captions"][default]')).toHaveAttribute('src', `/assets/videos/debugging.${lang}.vtt`);
+    await expect(video.locator('track[kind="captions"][default]')).toHaveAttribute('srclang', lang);
     await expect(video.locator('track[kind="chapters"]')).toHaveCount(1);
     expect(await video.evaluate(async (element) => {
       const image = new Image();
