@@ -11,7 +11,6 @@ open System
 open System.Globalization
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
-open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text

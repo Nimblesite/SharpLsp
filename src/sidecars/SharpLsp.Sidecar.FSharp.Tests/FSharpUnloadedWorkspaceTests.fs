@@ -8,7 +8,6 @@
 /// [HOVER-FSHARP-OVERLAY] / [SHARPLSP-FEATURES-NAVIGATION].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpUnloadedWorkspaceTests
 
-open System.IO
 open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.FSharp

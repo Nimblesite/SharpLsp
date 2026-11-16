@@ -5,10 +5,12 @@
 // code edits each reported range in place. [DIAG-HYGIENE-GUARD]
 //
 // Fixes:
-//   FS3886  wrap the reported single-tuple list element in parentheses
+//   --code FS3886      parenthesise the reported single-tuple list element
+//   --fix-all <code>   apply the server's own "Fix all in solution" for the first
+//                      diagnostic with that code (SLSPF0102, SLSPF0103, IDE0001…)
 //
-// Usage: node tools/debug/fix-diagnostics.mjs --code FS3886 [--root <dir>]
-//          [--server <path>] [--under <path-part>] [--dry-run]
+// Usage: node tools/debug/fix-diagnostics.mjs (--code FS3886 | --fix-all <code>)
+//          [--root <dir>] [--server <path>] [--under <path-part>] [--dry-run]
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Session } from "../ci/lsp-session.mjs";
@@ -67,6 +69,52 @@ export function rangesByFile(reports, code, under) {
     return files;
 }
 
+/** `text` with LSP text edits applied, last edit first so offsets stay true. */
+export function applyTextEdits(text, edits) {
+    const spans = edits
+        .map((edit) => [offsetOf(text, edit.range.start), offsetOf(text, edit.range.end), edit.newText])
+        .sort((left, right) => right[0] - left[0] || right[1] - left[1]);
+    return spans.reduce((fixed, [start, end, newText]) => fixed.slice(0, start) + newText + fixed.slice(end), text);
+}
+
+/** The text edits of a workspace edit, by file, whichever shape the server used. */
+export function editsByFile(edit) {
+    const files = new Map(Object.entries(edit.changes ?? {}).map(([uri, edits]) => [fileURLToPath(uri), edits]));
+    for (const change of edit.documentChanges ?? []) {
+        if (change.textDocument !== undefined) files.set(fileURLToPath(change.textDocument.uri), change.edits);
+    }
+    return files;
+}
+
+/** The first diagnostic with `code` under `under`, with its document. */
+export function firstDiagnostic(reports, code, under) {
+    for (const report of reports) {
+        const item = (report.items ?? []).find((found) => String(found.code) === code);
+        if (item !== undefined && fileURLToPath(report.uri).replaceAll("\\", "/").includes(under)) return { uri: report.uri, item };
+    }
+    return undefined;
+}
+
+/** Ask the server for its solution-wide fix of one diagnostic and return the resolved edit. */
+async function solutionFix(session, { uri, item }) {
+    const text = readFileSync(fileURLToPath(uri), "utf8");
+    const languageId = uri.endsWith(".cs") ? "csharp" : "fsharp";
+    session.send({ method: "textDocument/didOpen", params: { textDocument: { uri, languageId, version: 1, text } } });
+    const params = { textDocument: { uri }, range: item.range, context: { diagnostics: [item] } };
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+        const actions = (await session.request("textDocument/codeAction", params)).result ?? [];
+        const fixAll = actions.find((action) => action.title.startsWith("Fix all in solution: "));
+        if (fixAll !== undefined) {
+            console.log(fixAll.title);
+            const resolved = await session.request("codeAction/resolve", fixAll);
+            if (resolved.error !== undefined) throw new Error(JSON.stringify(resolved.error));
+            return resolved.result.edit;
+        }
+        await sleep(2000);
+    }
+    throw new Error(`no "Fix all in solution" action for ${item.code} at ${uri}`);
+}
+
 async function pull(session) {
     for (;;) {
         const response = await session.request("workspace/diagnostic", { previousResultIds: [] });
@@ -82,11 +130,12 @@ async function main() {
         const index = argv.indexOf(flag);
         return index < 0 ? undefined : argv.splice(index, 2)[1];
     };
-    const code = take("--code");
+    const fixAllCode = take("--fix-all");
+    const code = take("--code") ?? fixAllCode;
     const under = take("--under") ?? "/";
     const dryRun = argv.includes("--dry-run") && argv.splice(argv.indexOf("--dry-run"), 1).length > 0;
     const fix = FIXES[code];
-    if (fix === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
+    if (fix === undefined && fixAllCode === undefined) throw new Error(`--code must be one of ${Object.keys(FIXES).join(", ")}`);
     const options = parseArguments(argv);
 
     const session = new Session(options.server, options.root);
@@ -100,6 +149,21 @@ async function main() {
         previous = JSON.stringify(reports);
         await sleep(3000);
         reports = await pull(session);
+    }
+    if (fixAllCode !== undefined) {
+        const target = firstDiagnostic(reports, fixAllCode, under);
+        if (target === undefined) throw new Error(`no ${fixAllCode} diagnostic under ${under}`);
+        const edits = editsByFile(await solutionFix(session, target));
+        await session.request("shutdown", null);
+        session.send({ method: "exit" });
+        let total = 0;
+        for (const [file, fileEdits] of edits) {
+            total += fileEdits.length;
+            console.log(`${file}: ${fileEdits.length}`);
+            if (!dryRun) writeFileSync(file, applyTextEdits(readFileSync(file, "utf8"), fileEdits));
+        }
+        console.log(`${dryRun ? "would apply" : "applied"} ${total} edits in ${edits.size} files`);
+        process.exit(0);
     }
     await session.request("shutdown", null);
     session.send({ method: "exit" });

@@ -5,7 +5,6 @@ module SharpLsp.Sidecar.FSharp.FSharpCompletion
 open System.Collections.Concurrent
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
-open FSharp.Compiler.Tokenization
 open SharpLsp.Sidecar.Common
 open Serilog
 

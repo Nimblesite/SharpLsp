@@ -6,7 +6,6 @@
 module SharpLsp.Sidecar.FSharp.FSharpMatchFixes
 
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.SyntaxTrivia
 open FSharp.Compiler.Text

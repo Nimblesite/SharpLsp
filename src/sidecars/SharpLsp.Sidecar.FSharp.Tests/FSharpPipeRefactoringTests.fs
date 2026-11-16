@@ -4,7 +4,6 @@
 /// [REFACTOR-FSHARP-PIPE].
 module SharpLsp.Sidecar.FSharp.Tests.FSharpPipeRefactoringTests
 
-open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Text

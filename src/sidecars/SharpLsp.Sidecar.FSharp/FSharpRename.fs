@@ -5,10 +5,8 @@ module SharpLsp.Sidecar.FSharp.FSharpRename
 open System
 open System.Threading
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Symbols
 open FSharp.Compiler.Tokenization
 open Serilog
-open SharpLsp.Sidecar.FSharp.FSharpRenameAliases
 open SharpLsp.Sidecar.FSharp.FSharpRenameIndexers
 open SharpLsp.Sidecar.FSharp.FSharpRenameNames
 open SharpLsp.Sidecar.FSharp.FSharpRenameToken

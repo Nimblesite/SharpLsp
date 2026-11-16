@@ -10,7 +10,6 @@ open FSharp.Compiler.Text
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.Common.References
-open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 [<NoComparison; NoEquality>]
 type private ImportContext =

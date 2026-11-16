@@ -10,7 +10,6 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.Diagnostics
 open Serilog
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions

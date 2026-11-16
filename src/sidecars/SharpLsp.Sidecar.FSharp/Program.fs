@@ -4,7 +4,6 @@ open System
 open System.Reflection
 open Serilog
 open SharpLsp.Sidecar.Common
-open SharpLsp.Sidecar.Common.Logging
 open SharpLsp.Sidecar.FSharp
 
 /// The semantic-version string of this assembly (3 components).

@@ -12,7 +12,6 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpExtraCoverageTests
 open System.IO
 open Xunit
 open MessagePack
-open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 open SharpLsp.Sidecar.Common

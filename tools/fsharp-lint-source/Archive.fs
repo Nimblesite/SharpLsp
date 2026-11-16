@@ -2,7 +2,6 @@
 /// Extraction uses only BCL System.Formats.Tar / GZipStream - never a shell.
 module LintSourceBuild.Archive
 
-open System
 open System.Formats.Tar
 open System.IO
 open System.IO.Compression

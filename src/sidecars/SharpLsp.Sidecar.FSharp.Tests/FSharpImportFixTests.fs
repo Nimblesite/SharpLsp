@@ -12,7 +12,6 @@ open FSharp.Compiler.Text
 open Xunit
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.Common.Messages
-open SharpLsp.Sidecar.Common.References
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCodeActionKit
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests

@@ -4,11 +4,9 @@
 module SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 open FSharp.Compiler.CodeAnalysis
-open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Syntax
 open FSharp.Compiler.Text
-open Serilog
 
 /// A raw text edit (no MessagePack annotations — internal use only).
 type RawEdit =

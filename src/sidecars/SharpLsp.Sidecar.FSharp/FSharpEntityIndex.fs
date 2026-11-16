@@ -9,7 +9,6 @@ module SharpLsp.Sidecar.FSharp.FSharpEntityIndex
 open System.Threading
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.EditorServices
-open FSharp.Compiler.Symbols
 
 /// A project's referenced assemblies, grouped by the file each one is read from.
 let private referencedFiles (context: FSharpProjectContext) =

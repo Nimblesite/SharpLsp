@@ -4,7 +4,6 @@ module SharpLsp.Sidecar.FSharp.FSharpFeatures
 open System
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Symbols
-open MessagePack
 open Serilog
 
 // ── Formatting via Fantomas ─────────────────────────────────────

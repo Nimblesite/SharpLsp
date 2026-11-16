@@ -2,7 +2,6 @@
 /// Maps FCS diagnostic codes to concrete text edits.
 module SharpLsp.Sidecar.FSharp.FSharpCodeFixes
 
-open System
 open System.Collections.Concurrent
 open System.Threading
 open System.Threading.Tasks

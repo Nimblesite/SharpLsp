@@ -5,7 +5,6 @@ open System.IO
 open System.Threading
 open Xunit
 open MessagePack
-open SharpLsp.Sidecar.Common.Messages
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.SidecarEndToEndTests
 open SharpLsp.Sidecar.Common

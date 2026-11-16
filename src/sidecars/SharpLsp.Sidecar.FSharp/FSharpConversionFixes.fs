@@ -11,7 +11,6 @@ module SharpLsp.Sidecar.FSharp.FSharpConversionFixes
 
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.Diagnostics.ExtendedData
-open FSharp.Compiler.Text
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
 
 /// The conversion function that turns `actual` into `expected`, when one does.

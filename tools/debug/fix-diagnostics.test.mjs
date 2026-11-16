@@ -4,7 +4,15 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { applyFixes, offsetOf, parenthesiseSoleElement, rangesByFile } from "./fix-diagnostics.mjs";
+import {
+    applyFixes,
+    applyTextEdits,
+    editsByFile,
+    firstDiagnostic,
+    offsetOf,
+    parenthesiseSoleElement,
+    rangesByFile,
+} from "./fix-diagnostics.mjs";
 
 const range = (line, start, end, endLine = line) => ({
     start: { line, character: start },
@@ -62,4 +70,38 @@ test("the sole tuple element is parenthesised inside its brackets, whatever the 
     const tripleQuoted = '[ "M.fs",\n  """module M\nlet x = 1""" ]';
     assert.equal(parenthesiseSoleElement(tripleQuoted), tripleQuoted);
     assert.equal(parenthesiseSoleElement('[ "M.fs", """one line""" ]'), '[ ("M.fs", """one line""") ]');
+});
+
+test("a workspace edit applies in either wire shape, deletions and insertions alike", () => {
+    const text = "open System\nopen System.Text\n\nlet a = System.String.Empty\n";
+    const edits = [
+        { range: range(1, 0, 0, 2), newText: "" },
+        { range: range(3, 8, 15), newText: "" },
+        { range: range(0, 0, 0), newText: "// header\n" },
+    ];
+    assert.equal(applyTextEdits(text, edits), "// header\nopen System\n\nlet a = String.Empty\n");
+    assert.equal(applyTextEdits(text, []), text);
+
+    const uri = pathToFileURL("/repo/A.fs").href;
+    const other = pathToFileURL("/repo/B.cs").href;
+    const byChanges = editsByFile({ changes: { [uri]: edits } });
+    assert.deepEqual([...byChanges.keys()], ["/repo/A.fs"]);
+    assert.equal(byChanges.get("/repo/A.fs").length, 3);
+    const byDocuments = editsByFile({
+        documentChanges: [{ textDocument: { uri: other, version: null }, edits: [edits[0]] }, { kind: "rename", oldUri: uri, newUri: other }],
+    });
+    assert.deepEqual([...byDocuments.keys()], ["/repo/B.cs"]);
+    assert.equal(editsByFile({}).size, 0);
+});
+
+test("the first diagnostic of a code is found with its document, under a path part", () => {
+    const item = (code) => ({ code, range: range(0, 0, 1) });
+    const reports = [
+        { uri: pathToFileURL("/repo/src/A.fs").href, items: [item("FL0067"), item("SLSPF0102")] },
+        { uri: pathToFileURL("/repo/tests/B.fs").href, items: [item("SLSPF0102")] },
+    ];
+    assert.equal(firstDiagnostic(reports, "SLSPF0102", "/").uri, pathToFileURL("/repo/src/A.fs").href);
+    assert.equal(firstDiagnostic(reports, "SLSPF0102", "/tests/").uri, pathToFileURL("/repo/tests/B.fs").href);
+    assert.equal(firstDiagnostic(reports, "SLSPF0102", "/").item.code, "SLSPF0102");
+    assert.equal(firstDiagnostic(reports, "CS0001", "/"), undefined);
 });

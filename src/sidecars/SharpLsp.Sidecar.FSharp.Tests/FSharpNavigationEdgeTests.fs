@@ -11,7 +11,6 @@ open System.IO
 open Xunit
 open SharpLsp.Sidecar.FSharp
 open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
-open SharpLsp.Sidecar.FSharp.Tests.FSharpRenameSemanticTests
 open SharpLsp.Sidecar.FSharp.Tests.FSharpDeclarationKindTests
 open SharpLsp.Sidecar.Common
 
