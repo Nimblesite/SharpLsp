@@ -62,6 +62,7 @@ pub(super) fn changed(cancellation: &CancellationHandle, notification: &Notifica
     if notification.method == "textDocument/didChange" {
         crate::semantic::requests::edited();
     }
+    crate::semantic::requests::document_changed(&key);
     let compiler_backed = [
         "textDocument/diagnostic",
         "textDocument/codeLens",

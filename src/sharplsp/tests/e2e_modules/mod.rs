@@ -85,6 +85,7 @@ pub mod monorepo_load;
 pub mod multi_solution;
 pub mod native_reload_contention;
 pub mod navigation_kinds;
+pub mod navigation_latency;
 pub mod navigation_session;
 pub mod nuget_project_contract;
 pub mod nuget_restore;

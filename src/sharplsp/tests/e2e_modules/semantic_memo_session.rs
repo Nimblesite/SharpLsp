@@ -181,6 +181,32 @@ fn semantic_memo_repeats_answers_and_edits_end_the_requests_before_them() {
         "and it can be asked again"
     );
 
+    // 5. Only its own document's edit ends a request. A lost watcher event
+    //    supersedes every request the host holds; these are asked again and
+    //    answered, never failed. [SHARPLSP-ARCHITECTURE-ROUTING]
+    client.change_document(&file_uri, 6, &moved);
+    ask(
+        &mut client,
+        990_006,
+        "textDocument/definition",
+        &file_uri,
+        (15, 23),
+    );
+    ask(
+        &mut client,
+        990_007,
+        "textDocument/hover",
+        &file_uri,
+        (15, 23),
+    );
+    let lost_events = json!({ "changes": [], "sharplspRescan": true });
+    client.notify("workspace/didChangeWatchedFiles", lost_events);
+    let survived = answers(&mut client, &[990_006, 990_007]);
+    for response in &survived {
+        assert!(response.get("error").is_none(), "asked again: {response}");
+    }
+    assert_eq!(target_line(&survived[0]), 9, "the definition is answered");
+
     client.shutdown_and_exit();
     client.wait_with_timeout();
 }

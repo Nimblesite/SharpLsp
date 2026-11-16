@@ -116,7 +116,11 @@ impl Requests {
         }
         if handles(request) {
             let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
-            cancellation.register(id, interest::request(request))?;
+            let interest = interest::request(request);
+            if let Some(document) = interest.as_ref() {
+                crate::semantic::requests::arrived(request, &document.resource);
+            }
+            cancellation.register(id, interest)?;
         }
         Ok(())
     }
@@ -162,11 +166,31 @@ impl Requests {
         let store = super::state::store()?;
         let revision = diagnostic(request).then(|| store.revision());
         let snapshot = (reply.clone(), store.clone(), revision);
-        let future = self.prepare(request.clone(), snapshot, settled)?;
-        let (id, sender) = (request.id.clone(), self.context.sender.clone());
-        let method = request.method.clone();
+        let (dispatcher, context) = (self.dispatcher.clone(), self.context.clone());
+        let start = settled.map_or(Start::Now, Start::Settled);
+        let future = prepare(&dispatcher, &context, request.clone(), snapshot, start)?;
+        let (request, sender) = (request.clone(), self.context.sender.clone());
         drop(runtime.spawn(async move {
-            let result = future.await;
+            let mut result = future.await;
+            // Only its own document's change ends a position request: one a
+            // lost watcher event or a reload superseded is asked again.
+            // [SHARPLSP-ARCHITECTURE-ROUTING]
+            for attempt in 1..=crate::semantic::requests::RETRIES {
+                let snapshot = (reply.clone(), store.clone(), revision);
+                let start = Start::After(crate::semantic::requests::retry_pause(attempt));
+                let again = crate::semantic::requests::asks_again(&request, &result)
+                    .then(|| prepare(&dispatcher, &context, request.clone(), snapshot, start).ok())
+                    .flatten();
+                let Some(next) = again else { break };
+                tracing::debug!(
+                    method = request.method,
+                    attempt,
+                    "Superseded request asked again"
+                );
+                result = next.await;
+            }
+            crate::semantic::requests::finished(&request);
+            let (id, method) = (request.id, request.method);
             if reply
                 .finish(|| {
                     let result = current(result, &store, revision);
@@ -179,31 +203,6 @@ impl Requests {
             }
         }));
         Ok(true)
-    }
-
-    /// Capture a coherent input epoch and register its worker before spawning.
-    fn prepare(
-        &self,
-        request: Request,
-        (reply, store, revision): (ReplyGate, PullStore, Option<u64>),
-        settled: Option<Value>,
-    ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
-        let context = self.context.clone();
-        let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
-        let sender = context.sender.clone();
-        Ok(Box::pin(self.dispatcher.prepare_call(
-            id,
-            move |cancel| {
-                let snapshot = Snapshot {
-                    store,
-                    revision,
-                    cancel,
-                    reply,
-                    sender,
-                };
-                compute(request, context, snapshot, settled)
-            },
-        )?))
     }
 
     /// Unknown and already completed cancellation IDs are harmless.
@@ -220,6 +219,40 @@ impl Requests {
     pub fn cancel_all(&self) {
         self.dispatcher.cancel_all();
     }
+}
+
+/// How one attempt at a request begins.
+enum Start {
+    /// At once.
+    Now,
+    /// With an answer the input loop already knows; no work is done.
+    Settled(Value),
+    /// After a pause, for a request asked again while a reload settles. The
+    /// pause is part of the registered attempt, so a cancellation ends it.
+    After(std::time::Duration),
+}
+
+/// Capture a coherent input epoch and register its worker before spawning.
+fn prepare(
+    dispatcher: &Dispatcher,
+    context: &Context,
+    request: Request,
+    (reply, store, revision): (ReplyGate, PullStore, Option<u64>),
+    start: Start,
+) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
+    let context = context.clone();
+    let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
+    let sender = context.sender.clone();
+    Ok(Box::pin(dispatcher.prepare_call(id, move |cancel| {
+        let snapshot = Snapshot {
+            store,
+            revision,
+            cancel,
+            reply,
+            sender,
+        };
+        compute(request, context, snapshot, start)
+    })?))
 }
 
 /// The foreground and protocol reader agree on the requests owned by this dispatcher.
@@ -252,16 +285,21 @@ async fn compute(
     request: Request,
     context: Context,
     snapshot: Snapshot,
-    settled: Option<Value>,
+    start: Start,
 ) -> HandlerResult {
-    if let Some(value) = settled {
-        return HandlerResult::Ok(value);
-    }
+    let pause = match start {
+        Start::Settled(value) => return HandlerResult::Ok(value),
+        Start::After(pause) => pause,
+        Start::Now => std::time::Duration::ZERO,
+    };
     // An editor request's own failure reaches the user as it is.
     let rename = request.method == "textDocument/rename"
         || crate::semantic::requests::handles(&request.method);
     let cancel = snapshot.cancel.clone();
-    let worker = tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot));
+    let worker = async move {
+        tokio::time::sleep(pause).await;
+        tokio::task::spawn_blocking(move || analyze(request, &context, &snapshot)).await
+    };
     let result = tokio::select! {
         biased;
         () = cancel.cancelled() => Err(Interrupted::Cancelled.into()),
@@ -278,7 +316,7 @@ async fn compute(
 
 /// Execute compiler pulls outside the foreground protocol loop.
 fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
-    tracing::debug!(method = request.method, "Diagnostic request started");
+    tracing::debug!(method = request.method, "Request started");
     snapshot.check()?;
     let result = if request.method == "workspace/diagnostic" {
         super::handle_workspace_diagnostic(

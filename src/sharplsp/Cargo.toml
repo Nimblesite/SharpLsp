@@ -70,6 +70,8 @@ url = "2"
 percent-encoding = "2"
 # Read MSBuild package declarations independently of XML formatting.
 quick-xml = "0.41"
+# Read a folder feed package's manifest: a `.nupkg` is a zip archive. [PKG-VULN-FIX]
+zip = { version = "9.6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # The advisory fixture serves gzip, as nuget.org does (#578).

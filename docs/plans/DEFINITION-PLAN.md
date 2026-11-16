@@ -163,14 +163,14 @@ See `[DEFINITION-CROSSLANG]`.
 - [x] E2E test: definition after document edit returns updated location
 - [x] E2E test: definition after sidecar crash recovery works correctly — `navigation_kinds.rs` `definition_answers_from_source_again_after_the_fsharp_compiler_crashes` kills the host's F# compiler and requires a new process to answer from source
 - [x] E2E test: definition salsa hit returns result in <1ms — `semantic_memo_tests.rs` `a_memo_hit_answers_in_under_a_millisecond` times the hit itself; `semantic_memo_session.rs` pins the whole client round trip of a repeat
-- [ ] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution
+- [x] E2E test: definition latency p50 <100ms, p95 <250ms on medium solution — `navigation_latency.rs` `navigation_meets_its_latency_and_memory_budgets_on_a_thousand_files` (1000 files: p50 0.8ms, p95 2.6ms)
 - [x] E2E test: all four nav methods interleaved in single session
 
 ### Performance Validation
 
-- [ ] Benchmark definition latency on cold start (first request after project load)
+- [x] Benchmark definition latency on cold start (first request after project load) — same test; 1.5s from launch to the first answer on 1000 files, 5.2s on 2M lines
 - [x] Benchmark definition latency on a warm salsa query (repeated request on the same position) — same two tests
-- [ ] Benchmark definition latency on large solution (~2M LOC)
-- [ ] Benchmark find-implementations latency with 100+ implementations
+- [x] Benchmark definition latency on large solution (~2M LOC) — same test with `SHARPLSP_BENCH_FILES=4000 SHARPLSP_BENCH_LINES=500`: p50 4.2ms, p95 15ms, every budget asserted (2026-11-16, macOS arm64)
+- [x] Benchmark find-implementations latency with 100+ implementations — same test; 120 implementers in 19ms (59ms on 2M lines), budget 500ms
 - [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs` measures the median over a 20,000-line file and pins every comment and string shape of both grammars (the test found and fixed all F# comments and strings slipping through; C# string contents deliberately reach the compiler, where a module path is navigable)
-- [ ] Profile sidecar memory usage during sustained definition requests
+- [x] Profile sidecar memory usage during sustained definition requests — same test; 400 un-memoized definitions across ten edits move the C# compiler from 261MB to 275MB (4182MB to 4115MB on 2M lines), asserted under 200MB growth

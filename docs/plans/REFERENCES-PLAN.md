@@ -132,8 +132,8 @@ Implements `textDocument/references` and `textDocument/documentHighlight` for C#
 
 ### Performance Validation
 
-- [ ] Benchmark references latency on small solution (<100 files): target <500ms
-- [ ] Benchmark references latency on medium solution (~1000 files): target <2s
-- [ ] Benchmark document highlight latency: target <100ms
+- [x] Benchmark references latency on small solution (<100 files): target <500ms — `navigation_latency.rs` `references_on_a_small_solution_answer_within_half_a_second` (slowest 51ms)
+- [x] Benchmark references latency on medium solution (~1000 files): target <2s — `navigation_latency.rs` `navigation_meets_its_latency_and_memory_budgets_on_a_thousand_files` (1002 references in 184ms; 4002 in 2.5s on 2M lines against the 5s large-solution budget)
+- [x] Benchmark document highlight latency: target <100ms — same test (slowest of twenty 11ms)
 - [x] Benchmark references salsa hit: target <1ms — `semantic_memo_tests.rs` `a_memo_hit_answers_in_under_a_millisecond`, five hundred locations
 - [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs`, shared with [DEFINITION-PERFORMANCE]

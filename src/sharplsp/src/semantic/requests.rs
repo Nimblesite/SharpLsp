@@ -5,8 +5,9 @@
 //! [SHARPLSP-ARCHITECTURE-ROUTING], [DEFINITION-CACHE], [REFERENCES-SALSA]
 //! and [HOVER-CACHING].
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -48,6 +49,66 @@ const SUPERSEDED: i32 = -32802;
 static DEBOUNCE_MS: AtomicU64 = AtomicU64::new(150);
 /// When a document last changed.
 static LAST_EDIT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How often a request superseded by something other than its own document's
+/// change is asked again before it answers `ContentModified` after all. A
+/// reload re-arms the file watcher, which reports lost events again, so the
+/// attempts are paced: together they wait out about eight seconds.
+pub const RETRIES: u32 = 20;
+
+/// The pause before the `attempt`th retry.
+pub fn retry_pause(attempt: u32) -> Duration {
+    Duration::from_millis(50)
+        .saturating_mul(attempt)
+        .min(Duration::from_millis(500))
+}
+
+/// Orders requests and document changes as the protocol reader saw them.
+static SEQUENCE: AtomicU64 = AtomicU64::new(1);
+/// Each document's last open, change or close, by its path key.
+static CHANGED: LazyLock<Mutex<HashMap<String, u64>>> = LazyLock::new(Mutex::default);
+/// Each request in flight: when it arrived and the document it asks about.
+static ARRIVED: LazyLock<Mutex<HashMap<String, (u64, String)>>> = LazyLock::new(Mutex::default);
+
+/// The next position in the reader's order.
+fn next() -> u64 {
+    SEQUENCE.fetch_add(1, Ordering::AcqRel)
+}
+
+/// The protocol reader saw `request`, which asks about the document `key`.
+pub fn arrived(request: &Request, key: &str) {
+    let entry = (next(), key.to_owned());
+    let mut arrivals = ARRIVED.lock().unwrap_or_else(PoisonError::into_inner);
+    let _ = arrivals.insert(request.id.to_string(), entry);
+}
+
+/// The protocol reader saw the document `key` open, change or close.
+pub fn document_changed(key: &str) {
+    let mut changes = CHANGED.lock().unwrap_or_else(PoisonError::into_inner);
+    let _ = changes.insert(key.to_owned(), next());
+}
+
+/// `request` was answered; it is no longer in flight.
+pub fn finished(request: &Request) {
+    let mut arrivals = ARRIVED.lock().unwrap_or_else(PoisonError::into_inner);
+    let _ = arrivals.remove(&request.id.to_string());
+}
+
+/// Whether a superseded request is asked again: its document has not changed
+/// since the request arrived, so what superseded it was a lost watcher event
+/// or a reload, which every request shares, never an edit of its own.
+pub fn asks_again(request: &Request, result: &HandlerResult) -> bool {
+    let superseded = matches!(result, HandlerResult::Err(error) if error.code == SUPERSEDED);
+    if !superseded || !handles(&request.method) {
+        return false;
+    }
+    let arrivals = ARRIVED.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some((arrival, key)) = arrivals.get(&request.id.to_string()) else {
+        return false;
+    };
+    let changes = CHANGED.lock().unwrap_or_else(PoisonError::into_inner);
+    changes.get(key).is_none_or(|changed| changed < arrival)
+}
 
 /// Whether `method` is answered here.
 pub fn handles(method: &str) -> bool {
@@ -189,6 +250,62 @@ mod tests {
         }
         let answered = superseded("textDocument/hover", HandlerResult::Ok(Value::Null));
         assert!(matches!(answered, HandlerResult::Ok(Value::Null)));
+    }
+
+    #[test]
+    fn a_request_superseded_by_anything_but_its_own_edit_is_asked_again() {
+        let request = |id: i32, method: &str| Request {
+            id: id.into(),
+            method: method.to_owned(),
+            params: Value::Null,
+        };
+        let superseded_error = || HandlerResult::Err(JsonRpcError::new(SUPERSEDED, "superseded"));
+        let (hover, key) = (request(880_001, "textDocument/hover"), "/retry/program.cs");
+        assert!(
+            !asks_again(&hover, &superseded_error()),
+            "unknown until it arrives"
+        );
+        arrived(&hover, key);
+        assert!(
+            asks_again(&hover, &superseded_error()),
+            "a reload superseded it"
+        );
+        let cancelled = HandlerResult::Err(JsonRpcError::new(-32800, "cancelled"));
+        assert!(!asks_again(&hover, &cancelled), "a cancel is final");
+        assert!(!asks_again(&hover, &HandlerResult::Ok(Value::Null)));
+        let lens = request(880_002, "textDocument/codeLens");
+        arrived(&lens, key);
+        assert!(!asks_again(&lens, &superseded_error()), "a lens retriggers");
+
+        // Another document's change is not its own; its own ends it.
+        document_changed("/retry/other.cs");
+        assert!(asks_again(&hover, &superseded_error()));
+        document_changed(key);
+        assert!(
+            !asks_again(&hover, &superseded_error()),
+            "its own edit ends it"
+        );
+        // A request that arrives after the edit is not ended by it.
+        let later = request(880_003, "textDocument/definition");
+        arrived(&later, key);
+        assert!(asks_again(&later, &superseded_error()));
+        finished(&later);
+        assert!(
+            !asks_again(&later, &superseded_error()),
+            "answered requests are forgotten"
+        );
+        finished(&hover);
+        finished(&lens);
+    }
+
+    #[test]
+    fn retries_are_paced_and_bounded() {
+        assert_eq!(retry_pause(1), Duration::from_millis(50));
+        assert_eq!(retry_pause(4), Duration::from_millis(200));
+        assert_eq!(retry_pause(10), Duration::from_millis(500));
+        assert_eq!(retry_pause(RETRIES), Duration::from_millis(500), "capped");
+        let total: Duration = (1..=RETRIES).map(retry_pause).sum();
+        assert!(total > Duration::from_secs(5) && total < Duration::from_secs(10));
     }
 
     #[test]
