@@ -684,6 +684,14 @@ Params `{ projectPath, include }`, where `include` is project-relative as in [SE
 
 A modal question names the file and the project, and offers **Remove from Project** (the file stays on disk) or **Remove and Delete File**. Dismissing it changes nothing. The Compile item is removed first; the file is deleted only after the project no longer names it. The Solution Explorer then refreshes.
 
+## Reorder Source File `[SE-REORDER]`
+
+F# compiles files in project order, so fixing a forward dependency means moving a `Compile` item. Nobody edits the project file by hand, and no tier splices its text.
+
+### Request: `sharplsp/project/reorderCompileItems` `[SE-REORDER-FILE-REQUEST]`
+
+Params `{ projectPath, include, anchorInclude, position }`: `include` is the existing item to move, `anchorInclude` the existing item it lands next to, `position` is `after` or (any other value) `before`. The host routes it to the C# sidecar's `project/reorderCompileItems`, which moves the element itself through the `MSBuild` DOM, so its `Condition`, metadata children such as `<Link>` and wrapped attributes travel with it. Comments, BOM and line endings of untouched content stay as they were; the two separator spellings match. An item already on that side of the anchor, or anchored to itself, changes nothing and succeeds (`modified: false`). An unknown item or anchor fails with a message naming it and writes nothing. The response is the same `{ success, message, modified }` as adding.
+
 ## Navigation `[SE-NAVIGATION]`
 
 Clicking a symbol node opens the file and navigates to the symbol's declaration position.

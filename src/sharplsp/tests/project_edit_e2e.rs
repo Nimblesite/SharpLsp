@@ -320,3 +320,79 @@ fn remove_compile_item_takes_out_exactly_that_item() {
 
     client.shutdown_and_exit();
 }
+
+/// Send `sharplsp/project/reorderCompileItems` and return the response value.
+fn reorder_compile_item(
+    client: &mut LspClient,
+    fsproj: &str,
+    include: &str,
+    anchor: &str,
+    position: &str,
+) -> Value {
+    client.request(
+        "sharplsp/project/reorderCompileItems",
+        json!({
+            "projectPath": fsproj,
+            "include": include,
+            "anchorInclude": anchor,
+            "position": position,
+        }),
+    )
+}
+
+/// [SE-REORDER-FILE-REQUEST]: the item moves next to its anchor through the
+/// DOM with the comment and CRLF kept; a repeat is a successful no-op and an
+/// unknown item fails with a message and writes nothing.
+#[test]
+fn reorder_compile_items_moves_exactly_that_item() {
+    if !require_dotnet() {
+        return;
+    }
+    let tmp = TempDir::new().unwrap();
+    let fsproj = isolated_fsproj(&tmp);
+
+    let mut client = LspClient::start();
+    client.initialize_with_root(tmp.path());
+
+    let moved = reorder_compile_item(&mut client, &fsproj, "Program.fs", "Domain.fs", "before");
+    assert!(moved.get("error").is_none(), "request failed: {moved}");
+    assert_eq!(moved["result"]["success"].as_bool(), Some(true), "{moved}");
+    assert_eq!(moved["result"]["modified"].as_bool(), Some(true), "{moved}");
+    let expected = "<Project Sdk=\"Microsoft.NET.Sdk\">\r\n  <!-- order matters -->\r\n  <ItemGroup>\r\n    <Compile Include=\"Program.fs\" />\r\n    <Compile Include=\"Domain.fs\" />\r\n    <Compile Include=\"Library.fs\" />\r\n  </ItemGroup>\r\n</Project>\r\n";
+    assert_eq!(std::fs::read_to_string(&fsproj).unwrap(), expected);
+
+    let again = reorder_compile_item(&mut client, &fsproj, "Program.fs", "Domain.fs", "before");
+    assert_eq!(again["result"]["success"].as_bool(), Some(true), "{again}");
+    assert_eq!(
+        again["result"]["modified"].as_bool(),
+        Some(false),
+        "{again}"
+    );
+    assert_eq!(std::fs::read_to_string(&fsproj).unwrap(), expected);
+
+    let back = reorder_compile_item(&mut client, &fsproj, "Program.fs", "Library.fs", "after");
+    assert_eq!(back["result"]["modified"].as_bool(), Some(true), "{back}");
+    assert_eq!(std::fs::read_to_string(&fsproj).unwrap(), ORDERED_FSPROJ);
+
+    let missing = reorder_compile_item(&mut client, &fsproj, "Nope.fs", "Domain.fs", "before");
+    assert_eq!(
+        missing["result"]["success"].as_bool(),
+        Some(false),
+        "{missing}"
+    );
+    assert_eq!(
+        missing["result"]["modified"].as_bool(),
+        Some(false),
+        "{missing}"
+    );
+    assert!(
+        missing["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Nope.fs"),
+        "the message names the unknown item: {missing}"
+    );
+    assert_eq!(std::fs::read_to_string(&fsproj).unwrap(), ORDERED_FSPROJ);
+
+    client.shutdown_and_exit();
+}

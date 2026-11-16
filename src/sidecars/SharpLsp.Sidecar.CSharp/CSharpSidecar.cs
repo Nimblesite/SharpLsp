@@ -98,6 +98,10 @@ internal sealed partial class CSharpSidecar : SidecarHost
             ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Remove)
         );
         Register(
+            "project/reorderCompileItems",
+            ProjectFileEdit<CompileInsertRequest>(CompileItemEditor.Move)
+        );
+        Register(
             "project/addProjectReference",
             ProjectFileEdit<ProjectReferenceRequest>(ProjectReferenceEditor.Add)
         );

@@ -379,11 +379,8 @@ fn handle_custom_request(
             nuget::vulnerability::command::handle(&req, runtime, connection.sender.clone(), engines)
         }
         // MSBuild compile-order editing (GitHub #493, [SE-ADD-FILE-REQUEST])
-        "sharplsp/project/addCompileItem" => {
-            project_edit::handle_add_compile_item(req, runtime, csharp_sidecar)
-        }
-        "sharplsp/project/removeCompileItem" => {
-            project_edit::handle_remove_compile_item(req, runtime, csharp_sidecar)
+        method if project_edit::edit_for(method).is_some() => {
+            project_edit::handle(req, runtime, csharp_sidecar)
         }
         "sharplsp/project/compileItems" => {
             project_sources::handle_compile_items(req, runtime, fsharp_sidecar)

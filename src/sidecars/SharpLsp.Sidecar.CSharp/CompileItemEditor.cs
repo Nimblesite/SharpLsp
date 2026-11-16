@@ -41,8 +41,47 @@ internal static class CompileItemEditor
             return PackageEditResult.Unchanged($"{request.Include} already included");
         }
 
-        var anchor = AnchorFor(items, request);
-        var element = root.CreateItemElement("Compile", request.Include);
+        Place(
+            root.CreateItemElement("Compile", request.Include),
+            AnchorFor(items, request),
+            request
+        );
+        SaveKeepingFormat(root, request.FilePath);
+        return PackageEditResult.Changed($"Added {request.Include}");
+    }
+
+    /// <summary>
+    /// Move an existing Compile item directly before or after a named anchor
+    /// item: the F# compile-order fix. The element itself moves, so its
+    /// condition, metadata children and wrapped attributes travel with it;
+    /// comments, BOM and line endings of untouched content stay as they were.
+    /// An item already in that place changes nothing; an unknown item or anchor
+    /// is an error the caller surfaces. [SE-REORDER-FILE-REQUEST]
+    /// </summary>
+    public static PackageEditResult Move(CompileInsertRequest request)
+    {
+        using var collection = new ProjectCollection();
+        var root = ProjectRootElement.Open(request.FilePath, collection, preserveFormatting: true);
+        var items = CompileItems(root);
+        var item = Named(items, request.Include);
+        var anchor = Named(items, request.AnchorInclude);
+        if (IsPlaced(items, item, anchor, request))
+        {
+            return PackageEditResult.Unchanged($"{request.Include} is already in place");
+        }
+        item.Parent.RemoveChild(item);
+        Place(item, anchor, request);
+        SaveKeepingFormat(root, request.FilePath);
+        return PackageEditResult.Changed($"Moved {request.Include}");
+    }
+
+    /// <summary>Put <paramref name="element"/> on the requested side of <paramref name="anchor"/>.</summary>
+    private static void Place(
+        ProjectItemElement element,
+        ProjectItemElement anchor,
+        CompileInsertRequest request
+    )
+    {
         if (request.Position == "after")
         {
             anchor.Parent.InsertAfterChild(element, anchor);
@@ -51,8 +90,25 @@ internal static class CompileItemEditor
         {
             anchor.Parent.InsertBeforeChild(element, anchor);
         }
-        SaveKeepingFormat(root, request.FilePath);
-        return PackageEditResult.Changed($"Added {request.Include}");
+    }
+
+    /// <summary>
+    /// Whether <paramref name="item"/> already sits on the requested side of
+    /// <paramref name="anchor"/> in the same item group (or is the anchor).
+    /// </summary>
+    private static bool IsPlaced(
+        List<ProjectItemElement> items,
+        ProjectItemElement item,
+        ProjectItemElement anchor,
+        CompileInsertRequest request
+    )
+    {
+        var offset = request.Position == "after" ? 1 : -1;
+        return item == anchor
+            || (
+                item.Parent == anchor.Parent
+                && items.IndexOf(item) == items.IndexOf(anchor) + offset
+            );
     }
 
     /// <summary>
@@ -103,21 +159,16 @@ internal static class CompileItemEditor
     {
         return request.Position switch
         {
-            "before" or "after" => NamedAnchor(items, request),
+            "before" or "after" => Named(items, request.AnchorInclude),
             _ => items[^1],
         };
     }
 
-    /// <summary>The anchor item named by the request, or an error naming it.</summary>
-    private static ProjectItemElement NamedAnchor(
-        List<ProjectItemElement> items,
-        CompileInsertRequest request
-    )
+    /// <summary>The item with that include, or an error naming it.</summary>
+    private static ProjectItemElement Named(List<ProjectItemElement> items, string include)
     {
-        return items.Find(item => SameInclude(item.Include, request.AnchorInclude))
-            ?? throw new InvalidOperationException(
-                $"anchor Compile item not found: {request.AnchorInclude}"
-            );
+        return items.Find(item => SameInclude(item.Include, include))
+            ?? throw new InvalidOperationException($"Compile item not found: {include}");
     }
 
     /// <summary>Ordinal include comparison that ignores separator spelling.</summary>

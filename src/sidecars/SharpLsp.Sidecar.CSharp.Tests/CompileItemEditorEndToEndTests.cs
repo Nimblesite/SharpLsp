@@ -10,10 +10,7 @@
 // handler's C# types: [Key(0)] FilePath, [Key(1)] Include, [Key(2)]
 // AnchorInclude, [Key(3)] Position — the same convention as PackageEditRequest.
 using System.Text;
-using MessagePack;
-using Microsoft.Build.Construction;
-using Microsoft.Build.Evaluation;
-using SharpLsp.Sidecar.Common;
+using static SharpLsp.Sidecar.CSharp.Tests.CompileItemKit;
 
 // xunit test classes must be public, so CA1515 (types can be internal) cannot apply.
 #pragma warning disable CA1515
@@ -33,41 +30,6 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
 {
     private const string AddCompileItem = "project/addCompileItem";
     private const string RemoveCompileItem = "project/removeCompileItem";
-    private const string DefaultPosition = "default";
-
-    /// <summary>Join <paramref name="lines"/> with CRLF and a trailing newline.</summary>
-    private static string Crlf(params string[] lines)
-    {
-        return string.Join("\r\n", lines) + "\r\n";
-    }
-
-    /// <summary>Writes <paramref name="content"/> to a unique project file and returns its path.</summary>
-    private async Task<string> CreateProjectAsync(string fileName, string content, bool bom = true)
-    {
-        var dir = NativePaths.Join(fixture.TempDir, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        var path = NativePaths.Join(dir, fileName);
-        var encoding = new UTF8Encoding(bom);
-        // Encoding.GetBytes alone never emits the preamble — prepend it so the
-        // fixture really carries a BOM for the preservation assertions.
-        var body = encoding.GetBytes(content);
-        await File.WriteAllBytesAsync(path, [.. encoding.GetPreamble(), .. body])
-            .ConfigureAwait(false);
-        return path;
-    }
-
-    /// <summary>Serialize a positional addCompileItem request.</summary>
-    private static byte[] CompileRequest(
-        string filePath,
-        string include,
-        string anchor = "",
-        string position = DefaultPosition
-    )
-    {
-        return MessagePackSerializer.Serialize(
-            new object[] { filePath, include, anchor, position }
-        );
-    }
 
     private Task<PackageEditResult> AddAsync(
         string filePath,
@@ -90,14 +52,6 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         );
     }
 
-    /// <summary>The project's Compile includes in document order, via the real DOM.</summary>
-    private static List<string> CompileOrder(string path)
-    {
-        using var collection = new ProjectCollection();
-        var root = ProjectRootElement.Open(path, collection, preserveFormatting: true);
-        return [.. root.Items.Where(item => item.ItemType == "Compile").Select(i => i.Include)];
-    }
-
     /// <summary>A real F# project shape: explicit compile order, entry point last.</summary>
     private static string OrderedFsproj()
     {
@@ -116,7 +70,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Default_insert_lands_before_the_last_compile_item()
     {
-        var path = await CreateProjectAsync("Default.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Default.fsproj", OrderedFsproj());
 
         var result = await AddAsync(path, "NewModule.fs");
 
@@ -139,7 +93,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Default_insert_of_signature_pair_keeps_fsi_before_fs()
     {
-        var path = await CreateProjectAsync("Pair.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Pair.fsproj", OrderedFsproj());
 
         // The editor command adds the .fsi first, then the .fs — both at the
         // default position. The resulting order must be fsi, fs, entry point.
@@ -157,7 +111,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Before_anchor_inserts_directly_before_the_named_item()
     {
-        var path = await CreateProjectAsync("Before.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Before.fsproj", OrderedFsproj());
 
         var result = await AddAsync(path, "Near.fs", anchor: "Library.fs", position: "before");
 
@@ -168,7 +122,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task After_anchor_inserts_directly_after_the_named_item()
     {
-        var path = await CreateProjectAsync("After.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "After.fsproj", OrderedFsproj());
 
         var result = await AddAsync(path, "Near.fs", anchor: "Domain.fs", position: "after");
 
@@ -180,6 +134,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     public async Task Anchor_and_include_match_across_separator_spellings()
     {
         var path = await CreateProjectAsync(
+            fixture.TempDir,
             "Separators.fsproj",
             Crlf(
                 "<Project Sdk=\"Microsoft.NET.Sdk\">",
@@ -207,7 +162,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Existing_include_is_a_noop_with_identical_bytes()
     {
-        var path = await CreateProjectAsync("Noop.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Noop.fsproj", OrderedFsproj());
         var before = await File.ReadAllBytesAsync(path);
 
         var result = await AddAsync(path, "Library.fs");
@@ -220,7 +175,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task BOM_comment_and_CRLF_survive_an_insert()
     {
-        var path = await CreateProjectAsync("Keep.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Keep.fsproj", OrderedFsproj());
 
         var result = await AddAsync(path, "NewModule.fs", anchor: "Domain.fs", position: "after");
 
@@ -241,7 +196,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Missing_anchor_reports_an_error_and_touches_nothing()
     {
-        var path = await CreateProjectAsync("Missing.fsproj", OrderedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "Missing.fsproj", OrderedFsproj());
         var before = await File.ReadAllBytesAsync(path);
 
         var envelope = await fixture.SendAsync(
@@ -260,6 +215,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         // A glob-managed project (SDK default includes; no explicit Compile
         // items, like the C# templates) must not gain a stray explicit item.
         var path = await CreateProjectAsync(
+            fixture.TempDir,
             "Glob.csproj",
             Crlf(
                 "<Project Sdk=\"Microsoft.NET.Sdk\">",
@@ -285,6 +241,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         // as an explicit compile list, or every scaffolding auto-add wedges an
         // include between the fences and self-propagates run after run.
         var path = await CreateProjectAsync(
+            fixture.TempDir,
             "Fenced.csproj",
             Crlf(
                 "<Project Sdk=\"Microsoft.NET.Sdk\">",
@@ -312,6 +269,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
         // comment mentioning the tag sent the splice into the wrong place. The
         // DOM cannot be confused ([SE-ADD-FILE-CSHARP]).
         var path = await CreateProjectAsync(
+            fixture.TempDir,
             "CommentTrap.csproj",
             Crlf(
                 "<Project Sdk=\"Microsoft.NET.Sdk\">",
@@ -342,6 +300,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     {
         // [SE-ADD-FILE-CSHARP]: the C# newFile auto-add rides the same edit.
         var path = await CreateProjectAsync(
+            fixture.TempDir,
             "Explicit.csproj",
             Crlf(
                 "<Project Sdk=\"Microsoft.NET.Sdk\">",
@@ -377,7 +336,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Remove_takes_out_exactly_that_item_and_keeps_the_rest_byte_for_byte()
     {
-        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "mod.fsproj", LinkedFsproj());
 
         var result = await RemoveAsync(path, "../Source/Mod/Patches.fs");
 
@@ -395,7 +354,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Remove_matches_either_separator_spelling()
     {
-        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "mod.fsproj", LinkedFsproj());
 
         var result = await RemoveAsync(path, "..\\Source\\Mod\\Domain.fs");
 
@@ -406,7 +365,7 @@ public sealed class CompileItemEditorEndToEndTests(CSharpSidecarFixture fixture)
     [Fact]
     public async Task Removing_an_item_the_project_does_not_include_changes_nothing()
     {
-        var path = await CreateProjectAsync("mod.fsproj", LinkedFsproj());
+        var path = await CreateProjectAsync(fixture.TempDir, "mod.fsproj", LinkedFsproj());
         var before = await File.ReadAllBytesAsync(path);
 
         var result = await RemoveAsync(path, "../Source/Mod/Missing.fs");
