@@ -271,13 +271,16 @@ let private standardRename state newName (resolved: ResolvedRename) ct =
 let private renameChecked state parseResults checkResults source line character newName ct =
     task {
         let aliases = FSharpRenameAliases.resolveFile state parseResults checkResults source
+        // The name it already has: nothing to change, never a refusal. [RENAME-ERRORS]
         match FSharpRenameAliases.tryResolveAt line character aliases with
+        | Some(_, token, _) when token.Text = newName -> return Ok []
         | Some(symbol, token, _) when not (isValidNewName parseResults state.Checker symbol token newName) ->
             return invalidName newName
         | Some(_, _, uses) -> return Ok(FSharpRenameAliases.edits newName uses)
         | None ->
             match resolveRenameUse state checkResults parseResults source line character with
             | None -> return Ok []
+            | Some resolved when resolved.Token.Text = newName -> return Ok []
             | Some resolved when not (isValidNewName parseResults state.Checker resolved.SymbolUse.Symbol resolved.Token newName) ->
                 return invalidName newName
             | Some resolved -> return! standardRename state newName resolved ct
