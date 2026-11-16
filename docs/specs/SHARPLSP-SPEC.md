@@ -397,9 +397,22 @@ The Rust binary MUST have a test that proves:
 | [rmp-serde](https://crates.io/crates/rmp-serde) | 1.3.1 | MessagePack serialization with [serde](https://serde.rs/) |
 | [tokio](https://tokio.rs/) | 1.x | Async runtime for non-blocking I/O |
 | [serde](https://serde.rs/) / [serde_json](https://crates.io/crates/serde_json) | 1.x | JSON handling for LSP protocol |
-| [tracing](https://crates.io/crates/tracing) | 0.1.x | Structured logging with [OpenTelemetry](https://opentelemetry.io/) export |
+| [tracing](https://crates.io/crates/tracing) | 0.1.x | Structured logging |
+| [opentelemetry-otlp](https://crates.io/crates/opentelemetry-otlp) / [tracing-opentelemetry](https://crates.io/crates/tracing-opentelemetry) | 0.33 / 0.34 | OTLP export of spans and metrics ([SHARPLSP-TECHNOLOGY-TELEMETRY]) |
 | [notify](https://crates.io/crates/notify) | 7.x | Cross-platform filesystem watcher |
 | [dashmap](https://crates.io/crates/dashmap) | 6.x | Concurrent runtime state; MUST NOT store memoized feature results |
+
+### [SHARPLSP-TECHNOLOGY-TELEMETRY] OpenTelemetry Export
+
+The Rust host exports request spans and metrics over OTLP/HTTP (binary protobuf) to a collector the operator names: a collector on the developer's machine, or a team's own backend.
+
+- **Off by default.** Export starts only when the environment names an endpoint with `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, the standard OpenTelemetry variables; every other `OTEL_*` setting (headers, timeout, batch delay, metric interval) is honoured by the exporters. With no endpoint named nothing leaves the process, no span is created, and log lines are unchanged. SharpLsp never exports to a SharpLsp-operated service.
+- **Spans.** `lsp.request` per LSP request, with `rpc.method`; inside it, `sidecar.request` per compiler exchange, with `sidecar` and `rpc.method`. The service name is `sharplsp`.
+- **Metrics.** `sharplsp.request.duration` (histogram, milliseconds) and `sharplsp.requests` (counter), each by `rpc.method` and `outcome` (`ok` or `error`).
+- **Content.** Methods, compiler names, outcomes and durations only: never document text, per the logging rules.
+- **Shutdown.** Buffered spans and metrics are flushed when the server exits; a collector that cannot be configured or reached is reported on stderr and never fails the server.
+
+Implementation: [telemetry.rs](../../src/sharplsp/src/telemetry.rs).
 
 ### [SHARPLSP-TECHNOLOGY-CSHARP] C# Sidecar Packages
 

@@ -114,6 +114,7 @@ pub mod startup_session;
 pub mod statement_stop;
 pub mod symbols;
 pub mod target_framework;
+pub mod telemetry_export;
 pub mod tokens_session;
 pub mod type_hierarchy_tests;
 pub mod user_session_csharp;

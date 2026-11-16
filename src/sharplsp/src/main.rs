@@ -51,6 +51,7 @@ mod source_walk;
 mod statement_stop;
 mod syntax;
 mod target_framework;
+mod telemetry;
 mod tree_sitter_parse;
 mod type_hierarchy;
 mod utils;
@@ -133,8 +134,14 @@ fn main() -> ExitCode {
     // (e.g. VS Code) capture stderr into a plain Output panel where escape
     // codes would render as garbage. See issue #78 / [DIST-CLEAN-OUTPUT].
     let stderr_is_terminal = std::io::stderr().is_terminal();
+    // Kept until `main` returns: dropping it flushes the last spans and metrics.
+    let telemetry = telemetry::Telemetry::start();
+    let exported = telemetry
+        .as_ref()
+        .map(|telemetry| tracing_opentelemetry::layer().with_tracer(telemetry.tracer()));
     tracing_subscriber::registry()
         .with(env_filter)
+        .with(exported)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
@@ -527,16 +534,21 @@ fn main_loop(
                 if diagnostic_requests.dispatch(&req, runtime, settled)? {
                     continue;
                 }
-                dispatch::handle_request(
-                    req,
-                    vfs,
-                    &parsers,
-                    &trees,
-                    connection,
-                    runtime,
-                    csharp_sidecar,
-                    fsharp_sidecar,
-                )?;
+                let (method, started) = (req.method.clone(), std::time::Instant::now());
+                let answered = telemetry::request_span(&method).in_scope(|| {
+                    dispatch::handle_request(
+                        req,
+                        vfs,
+                        &parsers,
+                        &trees,
+                        connection,
+                        runtime,
+                        csharp_sidecar,
+                        fsharp_sidecar,
+                    )
+                });
+                telemetry::record_request(&method, started.elapsed(), answered.is_ok());
+                answered?;
             }
             Message::Notification(notif) => {
                 let Some(notif) = service_notifications::route(

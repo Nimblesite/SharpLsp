@@ -44,6 +44,11 @@ serde_bytes = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
+# OTLP export of spans and metrics, on when OTEL_EXPORTER_OTLP_ENDPOINT is set. [SHARPLSP-TECHNOLOGY-TELEMETRY]
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
+tracing-opentelemetry = "0.34"
 
 # Error handling
 anyhow = "1"

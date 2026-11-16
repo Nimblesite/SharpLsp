@@ -11,13 +11,13 @@ Core infrastructure improvements for the SharpLsp LSP host.
 
 ## Observability
 
-- [ ] Add OpenTelemetry export to tracing infrastructure (tracing-opentelemetry crate)
-- [ ] Configure OTLP exporter for traces and metrics
+- [x] Add OpenTelemetry export to tracing infrastructure (tracing-opentelemetry crate) — `telemetry.rs`, [SHARPLSP-TECHNOLOGY-TELEMETRY]: `lsp.request` and `sidecar.request` spans
+- [x] Configure OTLP exporter for traces and metrics — OTLP/HTTP from the standard `OTEL_EXPORTER_OTLP_*` environment, off by default; `telemetry_export.rs` drives a stub collector
 
 ## Distribution
 
 - [ ] Global tool installation support (`dotnet tool install -g sharplsp`)
-- [ ] NuGet package manifest for dotnet tool packaging
+- [x] NuGet package manifest for dotnet tool packaging — both sidecars carry `PackAsTool`, `ToolCommandName` and `PackageId` ([BINARY-DEPLOYMENT]); `ci-build.yml` packs them on every PR
 
 ## Incremental Computation
 

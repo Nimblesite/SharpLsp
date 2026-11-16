@@ -6,17 +6,21 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_server::{Message, Notification, Request, Response};
-use lspkit_server::pull::{AnalysisError, PullError, PullStore};
+use lspkit_server::pull::PullStore;
 use lspkit_server::{
     CancellationHandle, CancellationToken, Dispatcher, HandlerResult, JsonRpcError, ReplyGate,
 };
 use serde_json::{json, Value};
 use tracing::warn;
 
-use crate::sidecar::manager::{CompilerRefusal, SidecarManager};
+use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
 mod interest;
+mod refusal;
+
+pub(super) use refusal::settled_refusal;
+use refusal::{rpc_error, Interrupted};
 
 #[cfg(test)]
 mod rpc_error_tests;
@@ -170,6 +174,7 @@ impl Requests {
         let start = settled.map_or(Start::Now, Start::Settled);
         let future = prepare(&dispatcher, &context, request.clone(), snapshot, start)?;
         let (request, sender) = (request.clone(), self.context.sender.clone());
+        let started = std::time::Instant::now();
         drop(runtime.spawn(async move {
             let mut result = future.await;
             // Only its own document's change ends a position request: one a
@@ -191,6 +196,8 @@ impl Requests {
             }
             crate::semantic::requests::finished(&request);
             let (id, method) = (request.id, request.method);
+            let succeeded = matches!(result, HandlerResult::Ok(_));
+            crate::telemetry::record_request(&method, started.elapsed(), succeeded);
             if reply
                 .finish(|| {
                     let result = current(result, &store, revision);
@@ -316,6 +323,7 @@ async fn compute(
 
 /// Execute compiler pulls outside the foreground protocol loop.
 fn analyze(request: Request, context: &Context, snapshot: &Snapshot) -> Result<Value> {
+    let _exported = crate::telemetry::request_span(&request.method).entered();
     tracing::debug!(method = request.method, "Request started");
     snapshot.check()?;
     let result = if request.method == "workspace/diagnostic" {
@@ -383,67 +391,6 @@ fn document_request(request: Request, context: &Context, snapshot: &Snapshot) ->
     }
 }
 
-/// Preserve protocol cancellation and request-error semantics at the adapter boundary.
-fn rpc_error(error: &anyhow::Error) -> JsonRpcError {
-    let interrupted = error.downcast_ref::<Interrupted>();
-    tracing::debug!(?interrupted, "Diagnostic request rejected");
-    match interrupted {
-        Some(Interrupted::Cancelled) => JsonRpcError::new(-32800, "Request cancelled"),
-        // Stable compiler-input failures retain their actionable cause. [DIAG-TRUTH-GUARANTEES]
-        _ if compiler_inputs_unavailable(error) => JsonRpcError::new(-32603, error.to_string()),
-        _ if settled_refusal(error) => refused(error),
-        _ if error.downcast_ref::<serde_json::Error>().is_some() => {
-            JsonRpcError::new(-32602, "Invalid diagnostic parameters")
-        }
-        // A preempted lens is retryable exactly like superseded work, and says
-        // why it was cancelled. [SHARPLSP-FEATURES-CODE-LENS]
-        _ if error.is::<crate::code_lens::LensPreempted>() => {
-            JsonRpcError::new(-32802, crate::code_lens::LensPreempted.to_string())
-                .with_data(json!({"retriggerRequest": true}))
-        }
-        _ => JsonRpcError::new(-32802, "Diagnostic snapshot unavailable or superseded")
-            .with_data(json!({"retriggerRequest": true})),
-    }
-}
-
-/// The compiler's own message, when an analysis failed because the compiler
-/// answered with an error: not a superseded request, a timeout or a broken
-/// transport. The shared store keeps failures as text. [DIAG-TRUTH-GUARANTEES]
-fn compiler_refusal(error: &anyhow::Error) -> Option<&str> {
-    let Some(PullError::Analysis(AnalysisError(message))) = error.downcast_ref::<PullError>()
-    else {
-        return None;
-    };
-    message
-        .strip_prefix(crate::diagnostics::DIAGNOSTICS_REQUEST)?
-        .strip_prefix(": ")?
-        .strip_prefix(CompilerRefusal::PREFIX)
-}
-
-/// Unavailable SDK inputs fail a pull loudly, with their actionable cause. [DIAG-TRUTH-GUARANTEES]
-fn compiler_inputs_unavailable(error: &anyhow::Error) -> bool {
-    compiler_refusal(error)
-        .is_some_and(|cause| cause.starts_with("SDK compiler inputs unavailable: "))
-}
-
-/// Any other refusal is settled for the current inputs: asking again cannot
-/// change the answer until the workspace changes, and that change refreshes.
-/// VS Code asked again at once whenever it was told it could, 165,000 times in
-/// thirteen minutes for one document outside every project (#527).
-/// A refusal while a selected solution still loads is about the inputs being
-/// replaced, so it stays retryable.
-pub(super) fn settled_refusal(error: &anyhow::Error) -> bool {
-    compiler_refusal(error).is_some()
-        && !compiler_inputs_unavailable(error)
-        && !super::state::loading()
-}
-
-/// Server-cancelled with the compiler's cause and no retrigger: the editor keeps
-/// what it showed, never an empty report, and asks again on the next refresh.
-fn refused(error: &anyhow::Error) -> JsonRpcError {
-    JsonRpcError::new(-32802, error.to_string()).with_data(json!({"retriggerRequest": false}))
-}
-
 /// Convert shared dispatcher outcomes into the existing lsp-server wire shape.
 fn response(id: lsp_server::RequestId, result: HandlerResult) -> Response {
     match result {
@@ -475,18 +422,3 @@ fn current(result: HandlerResult, store: &PullStore, revision: Option<u64>) -> H
         result
     }
 }
-
-#[derive(Debug)]
-/// Why this query's result cannot be presented as current truth.
-enum Interrupted {
-    /// The client cancelled this request.
-    Cancelled,
-    /// A source, workspace or configuration mutation superseded its snapshot.
-    Superseded,
-}
-impl std::fmt::Display for Interrupted {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("diagnostic request interrupted")
-    }
-}
-impl std::error::Error for Interrupted {}
