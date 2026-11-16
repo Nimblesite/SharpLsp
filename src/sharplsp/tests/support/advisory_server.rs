@@ -9,7 +9,8 @@
 //!   `PackageBaseAddress/3.0.0` and `VulnerabilityInfo/6.7.0`.
 //! - `/v3-vulnerabilities/index.json` — the paged advisory index.
 //! - `/v3-vulnerabilities/data.json` — one page of advisory ranges, keyed by
-//!   package id. Each advisory carries a URL, a severity number
+//!   package id. Both advisory resources are gzip-encoded whatever the client
+//!   accepts, exactly as nuget.org serves them (#578). Each advisory carries a URL, a severity number
 //!   (0 = low … 3 = critical) and an affected range string such as
 //!   "[1.0.0, 1.2.0]".
 //! - `/v3-flatcontainer/{id}/index.json` — the published version list.
@@ -129,10 +130,21 @@ fn answer(mut stream: TcpStream, fixture: &Fixture, port: u16) {
             |host| format!("http://{host}"),
         );
     let Some(body) = route(&path, &base, fixture) else {
-        let _ = write_response(&mut stream, 404, "{\"error\":404}");
+        let _ = write_response(&mut stream, 404, b"{\"error\":404}", None);
         return;
     };
-    let _ = write_response(&mut stream, 200, &body);
+    let _ = if path.starts_with("/v3-vulnerabilities/") {
+        write_response(&mut stream, 200, &gzip(&body), Some("gzip"))
+    } else {
+        write_response(&mut stream, 200, body.as_bytes(), None)
+    };
+}
+
+/// `body` gzip-compressed, as nuget.org stores its advisory blobs.
+fn gzip(body: &str) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(body.as_bytes()).unwrap();
+    encoder.finish().unwrap()
 }
 
 /// The JSON body for one request path.
@@ -236,13 +248,19 @@ fn registration(base: &str, id: &str, versions: &[String]) -> Value {
 }
 
 /// Write a minimal HTTP/1.1 response and half-close.
-fn write_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &[u8],
+    encoding: Option<&str>,
+) -> std::io::Result<()> {
     let head = format!(
-        "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\n{}Content-Length: {}\r\nConnection: close\r\n\r\n",
         if status == 200 { "OK" } else { "Not Found" },
+        encoding.map_or_else(String::new, |encoding| format!("Content-Encoding: {encoding}\r\n")),
         body.len()
     );
     stream.write_all(head.as_bytes())?;
-    stream.write_all(body.as_bytes())?;
+    stream.write_all(body)?;
     stream.flush()
 }

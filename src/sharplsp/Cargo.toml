@@ -57,7 +57,8 @@ globset = "0.4"
 async-trait = "0.1"
 
 # HTTP client (NuGet API)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# gzip: nuget.org serves its VulnerabilityInfo blobs gzip-encoded unconditionally (#578).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
 
 # Utilities
 dashmap = "6"
@@ -69,6 +70,8 @@ percent-encoding = "2"
 quick-xml = "0.41"
 
 [dev-dependencies]
+# The advisory fixture serves gzip, as nuget.org does (#578).
+flate2 = "1"
 tempfile = "3"
 wait-timeout = "0.2"
 serde_json = "1"
