@@ -81,10 +81,58 @@ internal static class SemanticTokensResolver
     public static async Task<int[]> GetFullAsync(Document document, CancellationToken ct)
     {
         var text = await document.GetTextAsync(ct).ConfigureAwait(false);
-        var spans = await Classifier
-            .GetClassifiedSpansAsync(document, TextSpan.FromBounds(0, text.Length), ct)
+        return await EncodeSpanAsync(document, text, TextSpan.FromBounds(0, text.Length), ct)
             .ConfigureAwait(false);
-        return EncodeTokens(spans, text);
+    }
+
+    /// <summary>
+    /// The encoded tokens of <paramref name="span"/>: Roslyn's classifications, with the syntax
+    /// of each regex pattern carved out of its string. [SHARPLSP-FEATURES-HIGHLIGHTING-REGEX]
+    /// </summary>
+    private static async Task<int[]> EncodeSpanAsync(
+        Document document,
+        SourceText text,
+        TextSpan span,
+        CancellationToken ct
+    )
+    {
+        var spans = await Classifier
+            .GetClassifiedSpansAsync(document, span, ct)
+            .ConfigureAwait(false);
+        var regex = await RegexLiteralTokens.SpansAsync(document, span, ct).ConfigureAwait(false);
+        var typed = spans.Select(classified => new SemanticSpan(
+            classified.TextSpan,
+            MapClassification(classified.ClassificationType)
+        ));
+        return Encode(typed.SelectMany(token => Carve(token, regex)), text);
+    }
+
+    /// <summary>
+    /// <paramref name="token"/> with every hole inside it turned into a <c>regexp</c> token and
+    /// the text between holes kept as the token's own type.
+    /// </summary>
+    internal static IEnumerable<SemanticSpan> Carve(SemanticSpan token, List<TextSpan> holes)
+    {
+        var position = token.Span.Start;
+        foreach (var hole in holes.Where(token.Span.Contains))
+        {
+            if (hole.Start > position)
+            {
+                yield return token with
+                {
+                    Span = TextSpan.FromBounds(position, hole.Start),
+                };
+            }
+            yield return new SemanticSpan(hole, RegexLiteralTokens.RegexpType);
+            position = hole.End;
+        }
+        if (position < token.Span.End)
+        {
+            yield return token with
+            {
+                Span = TextSpan.FromBounds(position, token.Span.End),
+            };
+        }
     }
 
     /// <summary>Compute semantic tokens for a range.</summary>
@@ -101,21 +149,7 @@ internal static class SemanticTokensResolver
             .ResolveSpanAsync(document, startLine, startCharacter, endLine, endCharacter, ct)
             .ConfigureAwait(false);
 
-        var spans = await Classifier
-            .GetClassifiedSpansAsync(document, span, ct)
-            .ConfigureAwait(false);
-        return EncodeTokens(spans, text);
-    }
-
-    private static int[] EncodeTokens(IEnumerable<ClassifiedSpan> spans, SourceText text)
-    {
-        return Encode(
-            spans.Select(span => new SemanticSpan(
-                span.TextSpan,
-                MapClassification(span.ClassificationType)
-            )),
-            text
-        );
+        return await EncodeSpanAsync(document, text, span, ct).ConfigureAwait(false);
     }
 
     /// <summary>

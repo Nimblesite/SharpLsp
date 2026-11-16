@@ -704,6 +704,7 @@ SharpLsp does **not** provide document formatting. Use dedicated formatters:
 | Delta semantic tokens | `textDocument/semanticTokens/full/delta` | Incremental classification | Incremental classification | P1 |
 | Range semantic tokens | `textDocument/semanticTokens/range` | Classifier (range-scoped) | GetSemanticClassification (range) | P0 |
 | Keyword classes | `textDocument/semanticTokens/*` | `ClassificationTypeNames.ControlKeyword` → `controlKeyword` | Keywords left to the grammar | P0 |
+| Regex pattern syntax | `textDocument/semanticTokens/*` | Pattern tokenizer over `[StringSyntax("Regex")]` arguments → `regexp` ([SHARPLSP-FEATURES-HIGHLIGHTING-REGEX]) | — | P2 |
 
 **Keyword classes.** A flow-control keyword (`if`, `for`, `while`, `return`, `throw`, …) is a different token from every other keyword (`public`, `class`, `int`), as Visual Studio's "Keyword - Control" classification is. The legend carries a `controlKeyword` type after the standard ones, and the C# sidecar reports Roslyn's `ControlKeyword` classification as it; Roslyn's plain `Keyword` stays `keyword`. The VS Code extension declares `controlKeyword` with super type `keyword` and maps it to the TextMate scope `keyword.control`, so a theme paints it as its own grammar does (and as `keyword` where a theme has no `keyword.control` rule). Plain C# `keyword` tokens map to `keyword.other.cs` through language-scoped semantic mappings for C#, Razor, and aspnetcorerazor: VS Code's generic `keyword` fallback is `keyword.control`, which would otherwise paint declarations and predefined types as control flow. Colors come from the active theme; the extension never assigns RGB values or changes user color settings. FCS classifies symbols, not keywords, so an F# keyword carries no semantic token and the F# grammar's own keyword classes show through. F# module/local values use the standard `variable` category, module functions use `function`, member methods use `method`, property accessors use `property`, constructors use `class`, and operator tokens use `operator`. Symbol spans are recovered through the FCS lexer so a qualified member never recolors its receiver or punctuation.
 
@@ -720,6 +721,17 @@ A lens never holds up the user. Each compiler answers one request at a time, and
 | Test indicators | `textDocument/codeLens` | Test framework attribute detection | Test framework attribute detection | P1 |
 | Run/debug test | `textDocument/codeLens` | Custom test runner integration | Custom test runner integration | P2 |
 | Recent changes (git) | `textDocument/codeLens` | git log integration | git log integration | P3 |
+
+#### [SHARPLSP-FEATURES-HIGHLIGHTING-REGEX] Regex Patterns in String Literals
+
+A C# string literal that is a regular-expression pattern is not one flat `string` token: the pattern's syntax comes back as `regexp` tokens, and the literal text between stays `string`.
+
+- **Which literals.** A literal passed to a parameter marked `[StringSyntax("Regex")]`, which covers every `Regex` constructor and static method. The semantic model decides, never the literal's text: the same characters in any other string stay one `string` token.
+- **Which syntax.** Escapes (`\d`, `\.`, `\p{Lu}`, `\k<name>`, `\u0041`, backreferences), a whole character class (`[a-z]`, `[^0-9]`, a subtraction `[a-z-[aeiou]]`), a group's opening with its prefix (`(`, `(?:`, `(?=`, `(?<name>`, inline options) and its `)`, a comment group whole, quantifiers with their lazy `?` (`*`, `+?`, `{2,3}`), anchors `^` `$`, alternation `|` and `.`. A brace that is not a count (`{x}`) is literal text. The tokenizer does not validate: an unterminated construct runs to the end of the pattern.
+- **Where it sits.** Token positions are source positions. In a verbatim literal `""` is one pattern character; in a regular literal each C# escape is one, so `"\\w"` is the regex escape `\w` spanning four source characters; a single-line raw literal maps one to one. A literal whose characters cannot be placed (multi-line, or a surrogate escape) keeps its one `string` token.
+- Roslyn's own regex classifier is not exported by the assemblies the sidecar ships, so the public `Classifier` reports the literal as one span; the sidecar carves the `regexp` tokens out of it for full and range requests alike.
+
+Implementation: `RegexLiteralTokens.cs`, `RegexPatternTokens.cs` and `SemanticTokensResolver.Carve`; `RegexHighlightingTests`.
 
 ### [SHARPLSP-FEATURES-WARM-UP] Background Warm-Up
 
