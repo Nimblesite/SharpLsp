@@ -113,7 +113,15 @@ The Rust host classifies every incoming LSP request and routes it to the fastest
 | Hybrid | Rust + Sidecar | <100ms | semanticTokens (tree-sitter for structure, sidecar for classification) |
 | Memoized | Rust-host salsa | <1ms | Repeat requests for unchanged inputs |
 
-Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
+Key optimization: on every keystroke, tree-sitter re-parses in <1ms and provides immediate feedback for syntax-level features, while semantic requests are coalesced with a debounce window (`server.debounce_ms`, default 150ms) before dispatching to sidecars. Stale in-flight semantic requests are cancelled when superseded.
+
+Hover, definition, type definition, declaration, implementation, references and document highlight run off the input loop, so an edit or a `$/cancelRequest` reaches the host while a compiler still works on one of them:
+
+- **Memoized.** Their answers live only in the Rust-host salsa memo ([SHARPLSP-ARCHITECTURE-CACHING]). A position holding no symbol answers `null` from the syntax tree, before any of this.
+- **Debounced.** A request that arrives inside the debounce window after a `textDocument/didChange` waits the window out before it reaches a compiler. A request that arrives outside it is dispatched at once: the window never delays reading code.
+- **Superseded.** A `didOpen`, `didChange` or `didClose` of a request's own document ends every such request that arrived before it: its compiler exchange is cancelled and it answers `ContentModified` (`-32801`), which clients drop silently. While the user types, each keystroke's requests therefore end inside the window without a compiler round trip. A request is never superseded by another position's request, because clients ask about several positions at once.
+- **Asked again.** Clients do not retry these requests, so nothing but the request's own document may fail one. A solution switch or a lost-watcher-event rescan cancels the compiler exchange in flight, and the host asks again itself after a short pause, for up to thirty seconds. The bound is time, never a number of attempts: a reload re-arms the watcher, and a watcher under load reports lost events many times a second, each ending the attempt in flight at once. Each attempt stays cancellable, and an edit of the document during the wait still ends the request.
+- **Cancelled.** `$/cancelRequest` ends the compiler exchange and answers `RequestCancelled` (`-32800`).
 
 ### [SHARPLSP-ARCHITECTURE-SIDECARS] Sidecar Lifecycle Management
 
@@ -389,9 +397,22 @@ The Rust binary MUST have a test that proves:
 | [rmp-serde](https://crates.io/crates/rmp-serde) | 1.3.1 | MessagePack serialization with [serde](https://serde.rs/) |
 | [tokio](https://tokio.rs/) | 1.x | Async runtime for non-blocking I/O |
 | [serde](https://serde.rs/) / [serde_json](https://crates.io/crates/serde_json) | 1.x | JSON handling for LSP protocol |
-| [tracing](https://crates.io/crates/tracing) | 0.1.x | Structured logging with [OpenTelemetry](https://opentelemetry.io/) export |
+| [tracing](https://crates.io/crates/tracing) | 0.1.x | Structured logging |
+| [opentelemetry-otlp](https://crates.io/crates/opentelemetry-otlp) / [tracing-opentelemetry](https://crates.io/crates/tracing-opentelemetry) | 0.33 / 0.34 | OTLP export of spans and metrics ([SHARPLSP-TECHNOLOGY-TELEMETRY]) |
 | [notify](https://crates.io/crates/notify) | 7.x | Cross-platform filesystem watcher |
 | [dashmap](https://crates.io/crates/dashmap) | 6.x | Concurrent runtime state; MUST NOT store memoized feature results |
+
+### [SHARPLSP-TECHNOLOGY-TELEMETRY] OpenTelemetry Export
+
+The Rust host exports request spans and metrics over OTLP/HTTP (binary protobuf) to a collector the operator names: a collector on the developer's machine, or a team's own backend.
+
+- **Off by default.** Export starts only when the environment names an endpoint with `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, the standard OpenTelemetry variables; every other `OTEL_*` setting (headers, timeout, batch delay, metric interval) is honoured by the exporters. With no endpoint named nothing leaves the process, no span is created, and log lines are unchanged. SharpLsp never exports to a SharpLsp-operated service.
+- **Spans.** `lsp.request` per LSP request, with `rpc.method`; inside it, `sidecar.request` per compiler exchange, with `sidecar` and `rpc.method`. The service name is `sharplsp`.
+- **Metrics.** `sharplsp.request.duration` (histogram, milliseconds) and `sharplsp.requests` (counter), each by `rpc.method` and `outcome` (`ok` or `error`).
+- **Content.** Methods, compiler names, outcomes and durations only: never document text, per the logging rules.
+- **Shutdown.** Buffered spans and metrics are flushed when the server exits; a collector that cannot be configured or reached is reported on stderr and never fails the server.
+
+Implementation: [telemetry.rs](../../src/sharplsp/src/telemetry.rs).
 
 ### [SHARPLSP-TECHNOLOGY-CSHARP] C# Sidecar Packages
 
@@ -413,6 +434,19 @@ The Rust binary MUST have a test that proves:
 | [FSharpLint.Core](https://github.com/fsprojects/FSharpLint) | latest | F# linting diagnostics |
 | [FSharp.Analyzers.SDK](https://github.com/ionide/FSharp.Analyzers.SDK) | latest | Third-party F# analyzer support |
 | [MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp) | latest | IPC serialization |
+
+### [SHARPLSP-TECHNOLOGY-SIDECAR-PUBLISH] Sidecars Publish as Portable IL
+
+Both sidecars publish framework-dependent and platform-neutral: one build serves every platform, as the `bin/all` layout of the VSIX and the `dotnet tool` packages of [BINARY-DEPLOYMENT] require. ReadyToRun (`PublishReadyToRun`) is not used. It was measured and rejected:
+
+| Measured (macOS arm64, .NET 10, median of 5) | IL | ReadyToRun |
+|---|---|---|
+| Launch to first C# hover, restored project | 1168 ms | 1178 ms |
+| Launch to first F# hover, script | 1041 ms | 1055 ms |
+| Sidecar process start (`--version`) | 21 ms / 26 ms | 21 ms / 28 ms |
+| Published size, C# / F# | 55 MB / 63 MB | 109 MB / 134 MB |
+
+A sidecar is ready about 75 ms after it is spawned; what follows is project evaluation and compilation, which precompiled code does not shorten. ReadyToRun would double the download, need one build per platform, and need `PlatformTarget=AnyCPU` to compile the C# sidecar against the Razor compiler assemblies at all. Revisit only with a measurement that shows otherwise.
 
 ## [SHARPLSP-FEATURES] Feature Specification
 

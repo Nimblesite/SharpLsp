@@ -89,6 +89,7 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `diagnostics.project_filter` | Filters F# and C# workspace results by project name or project path relative to the selected solution; direct document pulls remain unfiltered |
 | `diagnostics.min_severity` | Includes diagnostics at or above `error`, `warning`, `info` or `hint`; defaults to `hint` |
 | `diagnostics.max_per_file` | Limits each file after severity filtering; `0` means unlimited |
+| `server.debounce_ms` | After an edit, hover and navigation requests wait this many milliseconds before they reach a compiler, and end there if the next keystroke supersedes them; defaults to `150` and updates live |
 | `diagnostics.refresh_debounce_ms` | Coalesces diagnostic refresh requests over this many milliseconds; defaults to `2000` and updates live |
 | `diagnostics.auto_restore_on_open` | Restores missing or stale SDK assets and package files before opening a workspace; defaults to `true`. Changes apply on the next workspace open |
 | `analyzers.dead_code` | Enables SharpLsp's C# and F# dead-code analyzers |
@@ -104,10 +105,19 @@ Disabling a language prevents its sidecar from starting. Syntax-only host behavi
 The following fields are parsed and retained for compatibility, but changing them does not currently change the named behavior:
 
 - `server.log_level`;
-- `server.debounce_ms`;
 - all `profiler.*` defaults except `max_concurrent_sessions`.
 
 For VS Code logging, use `sharplsp.logging.level`, which is forwarded to the host as `RUST_LOG`. Profiler commands currently use their request defaults and write under `.sharplsp/profiles`.
+
+## Telemetry Export
+
+SharpLsp exports nothing by default. To see request timings in your own OpenTelemetry collector, set the standard variable in the environment the server starts in:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+The server then sends request spans (`lsp.request`, `sidecar.request`) and metrics (`sharplsp.request.duration`, `sharplsp.requests`) over OTLP/HTTP. They carry method names, compiler names, outcomes and durations, never source text. The other standard `OTEL_*` variables (headers, timeout, export intervals) apply as usual.
 
 ## Common VS Code Settings
 

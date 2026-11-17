@@ -114,7 +114,7 @@ internal sealed partial class WorkspaceManager
         _adhocWorkspace ??= new AdhocWorkspace();
         await PrepareProjectlessRootAsync(rootPath, ct).ConfigureAwait(false);
 
-        var projectInfo = BuildProjectInfo(kind, rootPath);
+        var projectInfo = BuildProjectInfo(kind, rootPath, closure);
 
         await _solutionMutationLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -296,7 +296,7 @@ internal sealed partial class WorkspaceManager
         _solution = project
             .WithMetadataReferences(BasicReferences())
             .WithCompilationOptions(BuildCompilationOptions(isScript, rootPath))
-            .WithParseOptions(BuildParseOptions(isScript))
+            .WithParseOptions(BuildParseOptions(isScript, closure))
             .Solution;
         StartPackageResolution(kind, rootPath, projectId, closure);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
@@ -339,7 +339,11 @@ internal sealed partial class WorkspaceManager
         );
     }
 
-    private static ProjectInfo BuildProjectInfo(ProjectlessKind kind, string rootPath)
+    private static ProjectInfo BuildProjectInfo(
+        ProjectlessKind kind,
+        string rootPath,
+        Closure closure
+    )
     {
         var name = NativePaths.StemOf(rootPath);
         var isScript = kind == ProjectlessKind.Script;
@@ -351,7 +355,7 @@ internal sealed partial class WorkspaceManager
             LanguageNames.CSharp,
             filePath: rootPath,
             compilationOptions: BuildCompilationOptions(isScript, rootPath),
-            parseOptions: BuildParseOptions(isScript),
+            parseOptions: BuildParseOptions(isScript, closure),
             // Tier 2 is immediate and BCL-only. A background synthesized MSBuild project
             // atomically replaces this complete set after restore. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
             metadataReferences: BasicReferences()
@@ -359,7 +363,8 @@ internal sealed partial class WorkspaceManager
     }
 
     // Scripts need a SourceReferenceResolver rooted at the script's directory, otherwise Roslyn
-    // reports CS8099 "Source file references are not supported" for every #load.
+    // reports CS8099 "Source file references are not supported" for every #load; and a
+    // MetadataReferenceResolver, otherwise every #r is ignored without a word.
     // Implements [SCRIPT-CSX-RESOLVERS].
     private static CSharpCompilationOptions BuildCompilationOptions(bool isScript, string rootPath)
     {
@@ -374,21 +379,24 @@ internal sealed partial class WorkspaceManager
         }
 
         var baseDirectory = NativePaths.DirectoryOf(rootPath);
-        return options.WithSourceReferenceResolver(
-            new SourceFileResolver([], baseDirectory.Length == 0 ? null : baseDirectory)
-        );
+        return options
+            .WithSourceReferenceResolver(
+                new SourceFileResolver([], baseDirectory.Length == 0 ? null : baseDirectory)
+            )
+            .WithMetadataReferenceResolver(new ScriptAssemblyResolver(baseDirectory));
     }
 
-    // LanguageVersion.Latest, not Preview: Preview enables unstable features the user's SDK may
-    // reject, producing editor-only false negatives. Implements [SCRIPT-FILEBASED-PARSEOPTIONS].
+    // The language version of the app's target framework band, and Latest when the app names
+    // none; never Preview, which enables unstable features the user's SDK may reject, producing
+    // editor-only false negatives. Implements [SCRIPT-FILEBASED-PARSEOPTIONS].
     //
     // The FileBasedProgram feature flag is what unlocks `#!` and `#:` in a Regular compilation —
     // without it Roslyn reports CS9314/CS9313. The .NET SDK passes the same flag to csc when it
     // builds a file-based app. Implements [SCRIPT-FILEBASED-SHEBANG], [SCRIPT-FILEBASED-DIRECTIVES].
-    private static CSharpParseOptions BuildParseOptions(bool isScript)
+    private static CSharpParseOptions BuildParseOptions(bool isScript, Closure closure)
     {
         var options = new CSharpParseOptions(
-            LanguageVersion.Latest,
+            isScript ? LanguageVersion.Latest : FileBasedLanguage.For(closure.Directives),
             kind: isScript ? SourceCodeKind.Script : SourceCodeKind.Regular
         );
         return isScript

@@ -1,41 +1,39 @@
-//! `textDocument/hover` through the language sidecar, cached per document
-//! version and position. [HOVER-ROUTING]
-
-use std::sync::Arc;
+//! `textDocument/hover` through the language sidecar, memoized per document
+//! version and position. [HOVER-ROUTING] [HOVER-CACHING]
 
 use anyhow::Result;
 use lsp_server::Request;
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind, Position, Range};
 use tracing::{info, warn};
 
-use crate::nav_cache::NavCache;
-use crate::sidecar::manager::SidecarManager;
+use super::navigation::memoized;
+use super::Route;
 use crate::utils::{request_sidecar, SidecarPositionReq};
 use crate::vfs::Vfs;
 
-/// The LSP method this module answers and caches under.
+/// The LSP method this module answers and memoizes under.
 const METHOD: &str = "textDocument/hover";
 
-/// Handle `textDocument/hover` via the language sidecar, with caching.
-pub fn handle_hover(
-    req: Request,
-    vfs: &Vfs,
-    nav_cache: &mut NavCache,
-    runtime: &tokio::runtime::Runtime,
-    sidecar: Option<&Arc<SidecarManager>>,
-) -> Result<serde_json::Value> {
-    let Some(sidecar) = sidecar else {
+/// Handle `textDocument/hover` via the language sidecar, memoized. [HOVER-CACHING]
+pub fn handle_hover(req: Request, vfs: &Vfs, route: Route) -> Result<serde_json::Value> {
+    if route.primary.is_none() {
         warn!("Hover: no sidecar available");
+        return Ok(serde_json::Value::Null);
+    }
+    memoized(req, vfs, METHOD, move |req| {
+        ask(req, &route).map(|value| (value, true))
+    })
+}
+
+/// The sidecar's hover at the request's position; `null` when it has none or
+/// could not answer.
+fn ask(req: Request, route: &Route) -> Result<serde_json::Value> {
+    let Some(sidecar) = route.primary.as_ref() else {
         return Ok(serde_json::Value::Null);
     };
     let params: HoverParams = serde_json::from_value(req.params)?;
     let uri = params.text_document_position_params.text_document.uri;
     let at = params.text_document_position_params.position;
-    let version = vfs.get_version(&uri).unwrap_or(0);
-    if let Some(cached) = nav_cache.get(uri.as_str(), version, at.line, at.character, METHOD) {
-        info!("Hover cache hit");
-        return Ok(cached.clone());
-    }
     info!(
         file = uri.as_str(),
         line = at.line,
@@ -43,9 +41,12 @@ pub fn handle_hover(
         "Hover request dispatching to sidecar"
     );
     let request = SidecarPositionReq::at(&uri, at)?;
-    // A sidecar that could not answer leaves the cache alone; its "no hover" is cached.
-    let Some(answer) =
-        request_sidecar::<Option<SidecarHoverResult>, _>(runtime, sidecar, METHOD, &request)?
+    let Some(answer) = request_sidecar::<Option<SidecarHoverResult>, _>(
+        route.caller(),
+        sidecar,
+        METHOD,
+        &request,
+    )?
     else {
         return Ok(serde_json::Value::Null);
     };
@@ -54,16 +55,7 @@ pub fn handle_hover(
         found = answer.is_some(),
         "Hover: sidecar answered"
     );
-    let value = serde_json::to_value(answer.map(to_hover))?;
-    nav_cache.insert(
-        uri.as_str(),
-        version,
-        at.line,
-        at.character,
-        METHOD,
-        value.clone(),
-    );
-    Ok(value)
+    Ok(serde_json::to_value(answer.map(to_hover))?)
 }
 
 /// The LSP hover for a sidecar answer: markdown contents plus the symbol range when known.

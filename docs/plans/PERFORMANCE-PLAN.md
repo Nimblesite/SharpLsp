@@ -39,19 +39,19 @@ user never waits on projects they are not looking at.
 
 ## Latency Targets
 
-- [ ] Cold start < 3 seconds to first LSP response
-- [ ] Warm completion latency < 100ms p50, < 200ms p95
-- [ ] Hover latency < 150ms p50
-- [ ] Find references (1000-file solution) < 2 seconds
+- [x] Cold start < 3 seconds to first LSP response — `performance_budgets.rs` `hover_completion_and_memory_meet_their_budgets`: 1.4s to the `initialize` response, 1.5s to the first syntax answer (debug host)
+- [x] Warm completion latency < 100ms p50, < 200ms p95 — same test: p50 3ms / p95 20ms on 1000 files, 21ms / 43ms on 600K lines, 26ms / 67ms on 2M lines
+- [x] Hover latency < 150ms p50 — same test: p50 2.2ms / p95 2.8ms on 1000 files
+- [x] Find references (1000-file solution) < 2 seconds — `navigation_latency.rs` `navigation_meets_its_latency_and_memory_budgets_on_a_thousand_files`: 1002 references in 184ms
 
 ## Memory Targets
 
-- [ ] Memory < 2GB Rust + < 3GB sidecar (600K LOC solution)
+- [x] Memory < 2GB Rust + < 3GB sidecar (600K LOC solution) — same test with `SHARPLSP_BENCH_FILES=1200 SHARPLSP_BENCH_LINES=500`: host 37MB, C# compiler 1080MB; on 2M lines 42MB and 2892MB against the 3GB / 5GB row (2026-11-16, macOS arm64)
 
 ## Hover Benchmarks
 
-- [ ] Benchmark hover latency on cold start (first hover after project load)
-- [ ] Benchmark hover latency on warm cache (repeated hover on same position)
-- [ ] Benchmark hover latency on large solution (~2M LOC)
+- [x] Benchmark hover latency on cold start (first hover after project load) — same test: 12ms on 1000 files, 31ms on 600K lines, 114ms on 2M lines
+- [x] Benchmark hover latency on warm cache (repeated hover on same position) — same test: 1.4ms round trip; the memo hit itself is under 1ms (`semantic_memo_tests.rs`)
+- [x] Benchmark hover latency on large solution (~2M LOC) — same test with `SHARPLSP_BENCH_FILES=4000 SHARPLSP_BENCH_LINES=500`: p50 4.8ms / p95 9.9ms
 - [x] Validate tree-sitter pre-validation rejects non-symbol positions in <1ms — `handlers_tests.rs`, shared with [DEFINITION-PERFORMANCE]
-- [ ] Profile sidecar memory usage during sustained hover requests
+- [x] Profile sidecar memory usage during sustained hover requests — same test: 400 un-memoized hovers across ten edits move the compiler 238MB → 257MB (2791MB → 2892MB on 2M lines), asserted under 200MB growth

@@ -7,6 +7,7 @@ pub mod anchor;
 pub mod cache;
 pub mod cli;
 pub mod consolidate;
+pub mod dependencies;
 pub mod edit;
 pub mod handlers;
 pub mod lanes;

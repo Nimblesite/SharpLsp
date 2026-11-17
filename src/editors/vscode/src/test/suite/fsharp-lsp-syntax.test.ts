@@ -14,10 +14,9 @@ import { COMMAND_MS } from './test-timeouts';
  * Blanket end-to-end coverage for F# syntax-only features served by the Rust
  * host via tree-sitter: document symbols, folding ranges, and selection ranges.
  *
- * These are EXPECTED to fail until the ionide/tree-sitter-fsharp grammar is
- * integrated into the host (INFRASTRUCTURE-PLAN.md). The Rust host currently
- * bails with "F# tree-sitter grammar not yet integrated". Drive the fix via
- * /fix-bug. C# already has full syntax coverage; F# must match it.
+ * Folding and selection ranges run on the ionide/tree-sitter-fsharp grammar;
+ * document symbols come from the F# sidecar's FCS items. C# already has full
+ * syntax coverage; F# must match it.
  */
 
 suite('F# LSP — Document Symbols', () => {

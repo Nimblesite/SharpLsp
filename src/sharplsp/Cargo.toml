@@ -44,6 +44,11 @@ serde_bytes = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
+# OTLP export of spans and metrics, on when OTEL_EXPORTER_OTLP_ENDPOINT is set. [SHARPLSP-TECHNOLOGY-TELEMETRY]
+opentelemetry = "0.33"
+opentelemetry_sdk = "0.33"
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
+tracing-opentelemetry = "0.34"
 
 # Error handling
 anyhow = "1"
@@ -53,6 +58,8 @@ lsp-profiler = "0.5"
 lsp-profiler-dotnet = "0.5"
 lspkit = "0.5"
 lspkit-server = { version = "0.5", features = ["pull"] }
+# The semantic memo; the version lspkit-server memoizes diagnostics with. [DEFINITION-CACHE]
+salsa = "0.28.5"
 globset = "0.4"
 async-trait = "0.1"
 
@@ -68,6 +75,8 @@ url = "2"
 percent-encoding = "2"
 # Read MSBuild package declarations independently of XML formatting.
 quick-xml = "0.41"
+# Read a folder feed package's manifest: a `.nupkg` is a zip archive. [PKG-VULN-FIX]
+zip = { version = "9.6", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # The advisory fixture serves gzip, as nuget.org does (#578).

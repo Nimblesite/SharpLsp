@@ -180,6 +180,7 @@ pub(crate) fn reconfigure(
         info!("Vulnerability severity mapping applied live");
     }
     notify_restart_only(&services.applied, &config, client);
+    crate::semantic::requests::configure(config.server.debounce_ms);
     services.applied = config;
 }
 

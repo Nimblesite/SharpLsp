@@ -252,7 +252,9 @@ Definition results are cached via the [salsa](https://salsa-rs.github.io/salsa/)
 
 The `method` component distinguishes between `definition`, `typeDefinition`, `declaration`, and `implementation` results for the same position.
 
-The salsa query returns its memoized result when document, method, position, and version inputs match. Stale requests for superseded document versions MUST be cancelled. No second navigation cache is permitted.
+The salsa query returns its memoized result when document, method, position, and version inputs match. Stale requests for superseded document versions MUST be cancelled: they answer `ContentModified` per [SHARPLSP-ARCHITECTURE-ROUTING]. No second navigation cache is permitted.
+
+The workspace generation is the query's other input. It moves on any document's open, edit or close, a solution or target-framework switch, a compiler `WorkspaceChanged` event and a compiler (re)connect, so an answer given by a compiler that has since restarted, or while it was down, is never reused. An empty answer, an answer still showing decompiled source for an unplaced F# symbol ([DEFINITION-CROSSLANG-IDENTITY]) and a failed round trip are never memoized. Closing a document releases every input and answer, and the question table is bounded.
 
 ## Performance Requirements `[DEFINITION-PERFORMANCE]`
 

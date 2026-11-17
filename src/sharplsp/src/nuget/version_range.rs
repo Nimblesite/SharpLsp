@@ -62,6 +62,20 @@ impl VersionRangeSpec {
     }
 }
 
+/// The lowest version a dependency range admits, which is the one `NuGet`
+/// resolves when nothing else asks for more: a bare version or an inclusive
+/// lower bound. `None` for an open or exclusive lower bound. [PKG-VULN-FIX]
+pub fn minimum(range: &str) -> Option<String> {
+    let text = range.trim();
+    let Some(opened) = text.strip_prefix('[') else {
+        return (!text.is_empty() && !text.starts_with('(') && parse_version(text).is_ok())
+            .then(|| text.to_string());
+    };
+    let body = opened.strip_suffix([')', ']'])?;
+    let lowest = body.split(',').next()?.trim();
+    parse_version(lowest).is_ok().then(|| lowest.to_string())
+}
+
 /// Parse one range string: `"[1.0.0, 1.2.0]"`, `"(, 5.8.4)"`, `"1.0.0"`, `"[1.0.0]"`.
 pub fn parse_range(text: &str) -> Result<VersionRangeSpec> {
     let text = text.trim();
@@ -199,5 +213,25 @@ mod tests {
         let range = parse_range("[1.0.0, 2.0.0]").unwrap();
         assert!(!range.satisfies("garbage"));
         assert!(!range.satisfies(""));
+    }
+
+    /// The floor `NuGet` resolves a dependency range at. [PKG-VULN-FIX]
+    #[test]
+    fn the_minimum_is_a_bare_version_or_an_inclusive_lower_bound() {
+        assert_eq!(minimum("1.5.0").as_deref(), Some("1.5.0"));
+        assert_eq!(minimum(" 1.5.0 ").as_deref(), Some("1.5.0"));
+        assert_eq!(minimum("[1.2.0, 2.0.0)").as_deref(), Some("1.2.0"));
+        assert_eq!(minimum("[1.2.0]").as_deref(), Some("1.2.0"));
+        assert_eq!(minimum("[ 1.2.0 , )").as_deref(), Some("1.2.0"));
+        assert_eq!(
+            minimum("(1.2.0, 2.0.0]"),
+            None,
+            "an exclusive floor is not a version"
+        );
+        assert_eq!(minimum("(, 2.0.0]"), None, "no floor");
+        assert_eq!(minimum("[, 2.0.0]"), None);
+        assert_eq!(minimum(""), None);
+        assert_eq!(minimum("[1.2.0"), None, "a lone bracket is malformed");
+        assert_eq!(minimum("not-a-version"), None);
     }
 }

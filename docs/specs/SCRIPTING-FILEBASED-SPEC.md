@@ -37,12 +37,13 @@ Every opened document resolves to exactly one `DocumentKind` before any workspac
 | `CSharpFileBasedApp` | `.cs`, no owning project |
 | `CSharpScript` | `.csx` |
 | `FSharpScript` | `.fsx`, `.fsscript` |
+| `FSharpLooseSource` | `.fs`, no owning project — checked in its own context, like a script |
 | `FSharpSignature` | `.fsi`, no owning project — syntax-only per [SCRIPT-FSX-FSI] |
 | `Unsupported` | Any other extension |
 
 Classification uses extension plus cone search, never content sniffing. `Unsupported` documents MUST NOT initialize or latch a sidecar workspace; a later supported document must still initialize it.
 
-Implementations: [main.rs](../../src/sharplsp/src/main.rs), [SolutionLoader.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
+Implementations: [document_kind.rs](../../src/sharplsp/src/document_kind.rs), [SolutionLoader.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/SolutionLoader.cs), and [WorkspaceManager.SingleFile.cs](../../src/sidecars/SharpLsp.Sidecar.CSharp/Workspace/WorkspaceManager.SingleFile.cs).
 
 ### Project cone precedence `[SCRIPT-CONE]`
 
@@ -57,6 +58,8 @@ The walk stops at the first of:
 The project wins inside a project cone, matching `dotnet run` when a project exists in the working directory.
 
 A `.csx` or `.fsx` file is never `ProjectOwned`; MSBuild does not compile scripts by default.
+
+The host walks the cone in [cone.rs](../../src/sharplsp/src/paths/cone.rs), one directory listing per level. A project-owned document opened with no workspace root is sent to its language's compiler by file path, and that compiler loads the project that compiles it: Roslyn when the document arrives, FCS as part of `workspace/open`, so a signature file opened first loads its project too.
 
 ### Compilation closure `[SCRIPT-CLOSURE]`
 
@@ -88,7 +91,7 @@ Supported directives, matching the SDK exactly:
 | `#:property` | `#:property <Name>=<Value>` | Value may contain MSBuild expressions |
 | `#:include` | `#:include <path>` | Literal path, glob, or MSBuild property |
 
-`#:include` maps to item types by extension, per the SDK: `*.cs` → `Compile`, `*.resx` → `EmbeddedResource`, `*.json` → `None`, `*.razor` → `Content`. Only `Compile` items participate in the semantic closure; the rest are recorded so the synthesized project stays faithful.
+`#:include` maps to item types by extension, per the SDK: `*.cs` → `Compile`, `*.resx` → `EmbeddedResource`, `*.json` → `None`, `*.razor` → `Content`. Only `Compile` items participate in the semantic closure and are ever parsed as C#; the rest are recorded on the closure and written as items of the synthesized project, so it stays faithful. An include whose extension maps to no item type is skipped and recorded as a closure issue.
 
 Directives must appear before the first non-trivia token. A `#:` directive that appears after real code is reported as a diagnostic at its own location, matching compiler behavior.
 
@@ -134,9 +137,11 @@ Tier 2 must never be silently presented as a successful full load. `workspace/st
 
 `LanguageVersion` is resolved from the target framework band, not hardcoded to `Preview`. `Preview` enables unstable features that the user's SDK may reject, producing editor-only false negatives. `LanguageVersion.Latest` is used when the band cannot be determined.
 
+Before the synthesized project is restored (tier 2), the version is: a `#:property LangVersion=…` when the app has one; else the C# that ships with the `netN.0` of a `#:property TargetFramework=…` (.NET 8 → C# 12, .NET 9 → C# 13, .NET 10 → C# 14); else `Latest`. After restore (tier 1), MSBuild's own answer replaces it.
+
 ### Entry points `[SCRIPT-FILEBASED-ENTRYPOINT]`
 
-A file-based app root file carries top-level statements. `#:include`d `.cs` files may add types, methods, and namespaces but **may not** add top-level statements — the SDK forbids it. SharpLsp reports a violation as a diagnostic on the offending included file rather than allowing a confusing `CS0017` from the compiler.
+A file-based app root file carries top-level statements. `#:include`d `.cs` files may add types, methods, and namespaces but **may not** add top-level statements — the SDK forbids it. SharpLsp reports a violation as a diagnostic on the offending included file rather than allowing a confusing `CS0017` from the compiler: the error `SLSPC0004` on the included file's first top-level statement, naming the root file. The compiler's own `CS8802` ("only one compilation unit can have top-level statements") is not shown in a file-based app: it names neither the rule nor the root, and can land on the root itself.
 
 ## C# scripts `[SCRIPT-CSX]`
 
@@ -151,8 +156,8 @@ A file-based app root file carries top-level statements. `#:include`d `.cs` file
 ### Directive resolution `[SCRIPT-CSX-RESOLVERS]`
 
 - `#load` is resolved by a `SourceReferenceResolver` rooted at the script's directory, feeding [SCRIPT-CLOSURE] expansion.
-- `#r "assembly.dll"` is resolved by a `MetadataReferenceResolver` rooted at the script's directory.
-- `#r "nuget: Pkg, Version"` requires NuGet resolution and is **out of scope for phase 1**. It must produce a clearly-worded unresolved-reference diagnostic, never a silent wrong answer.
+- `#r "assembly.dll"` is resolved by a `MetadataReferenceResolver` rooted at the directory of the file that names it (the script, or a `#load`ed file). An assembly that is not there gets the compiler's own `CS0006` on its directive. `CS0006` is a declaration diagnostic of the compilation, which a document's semantic model does not carry, so the sidecar adds it for scripts; without that an unresolved reference says nothing.
+- `#r "nuget: Pkg, Version"` requires NuGet resolution and is **out of scope for phase 1**. It must produce a clearly-worded unresolved-reference diagnostic, never a silent wrong answer: the warning `SLSPC0003` on the directive, naming the package and the two ways to get its symbols (an assembly path, or a file-based app with `#:package`), in place of a `CS0006` that would call the package a missing file.
 
 ## F# scripts `[SCRIPT-FSX]`
 

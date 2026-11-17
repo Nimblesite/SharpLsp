@@ -72,8 +72,8 @@ No existing document owns the complete cluster. Three plans contain adjacent req
   path and health only after `workspace/open`.
 - [DIAGNOSTICS-PLAN.md](DIAGNOSTICS-PLAN.md) needs sidecar generation invalidation, retries, and
   server-initiated notifications.
-- [INFRASTRUCTURE-PLAN.md](INFRASTRUCTURE-PLAN.md) contains only sidecar startup performance (R2R),
-  not reliability or process ownership.
+- Sidecar startup performance is settled by [SHARPLSP-TECHNOLOGY-SIDECAR-PUBLISH] (portable IL, no
+  ReadyToRun); it is not reliability or process ownership.
 
 This plan becomes the lifecycle source of truth and those plans consume its ready-generation and
 notification APIs.

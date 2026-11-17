@@ -169,7 +169,24 @@ internal static class FileBasedPackageResolver
         root.Sdk = Sdk(closure.Directives);
         AddProperties(root.AddPropertyGroup(), closure.Directives);
         AddPackages(root.AddItemGroup(), closure.Packages);
+        AddIncludedItems(root, closure.Items);
         root.Save();
+    }
+
+    // Non-source includes are items of the app, as the SDK's virtual project has them.
+    // [SCRIPT-FILEBASED-DIRECTIVES]
+    private static void AddIncludedItems(ProjectRootElement root, IReadOnlyList<IncludedItem> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var group = root.AddItemGroup();
+        foreach (var item in items)
+        {
+            _ = group.AddItem(item.ItemType, item.Path);
+        }
     }
 
     private static string Sdk(IReadOnlyList<FileDirective> directives)

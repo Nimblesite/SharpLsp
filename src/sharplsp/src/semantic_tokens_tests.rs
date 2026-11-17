@@ -37,7 +37,6 @@ fn closing_a_document_releases_its_cached_semantic_tokens() {
     let vfs = crate::vfs::Vfs::new();
     let parsers = crate::tree_sitter_parse::TsParsers::new();
     let mut trees = std::collections::HashMap::new();
-    let mut nav_cache = crate::nav_cache::NavCache::new();
     let close = lsp_server::Notification::new(
         "textDocument/didClose".to_string(),
         serde_json::json!({ "textDocument": { "uri": closing } }),
@@ -48,7 +47,6 @@ fn closing_a_document_releases_its_cached_semantic_tokens() {
             vfs: &vfs,
             parsers: &parsers,
             trees: &mut trees,
-            nav_cache: &mut nav_cache,
             connection: &server,
             runtime: &runtime,
             sidecars: [None, None],

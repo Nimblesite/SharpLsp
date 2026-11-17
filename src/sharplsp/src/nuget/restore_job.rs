@@ -60,12 +60,16 @@ pub(super) fn spawn_restore(
         };
         if matches!(phase, types::RestorePhase::Succeeded) {
             super::vulnerability::invalidate_restored(&project);
-            crate::diagnostics::publish_after_restore(
-                &handle,
-                &sender_for_refresh,
-                owner.as_ref(),
-                &project,
-            );
+            // A project's audit also decides what its props files report: a
+            // finding anchors on whichever file declares the version.
+            for audited in super::vulnerability::audited_files(&project) {
+                crate::diagnostics::publish_after_restore(
+                    &handle,
+                    &sender_for_refresh,
+                    owner.as_ref(),
+                    &audited,
+                );
+            }
         }
         send_restore_progress(&sender, &target_id, phase, Some(message));
     }));

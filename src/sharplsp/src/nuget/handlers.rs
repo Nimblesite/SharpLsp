@@ -120,6 +120,38 @@ pub fn handle_install(
     finish_with_restore(response, runtime, sender, &target, [csharp, fsharp])
 }
 
+/// Pin `package_id` at `version` as a central `PackageVersion` alone, then
+/// restore. Under `CentralPackageTransitivePinningEnabled` that overrides the
+/// version a transitive package resolves to, with no reference in the project.
+/// [PKG-VULN-FIX] [NUGET-XML-DOM]
+pub fn pin_centrally(
+    project_path: &str,
+    package_id: &str,
+    version: &str,
+    runtime: &tokio::runtime::Runtime,
+    sender: Sender<Message>,
+    [csharp, fsharp]: Engines<'_>,
+) -> Result<serde_json::Value> {
+    info!("Pinning a transitive package centrally");
+    let Some(sidecar) = csharp else {
+        return no_editor_response();
+    };
+    let Some(props) = targets::find_packages_props(Path::new(project_path)) else {
+        let missing = "no Directory.Packages.props above the project".to_string();
+        return Ok(serde_json::to_value(failed_edit(missing))?);
+    };
+    let props = props.to_string_lossy().to_string();
+    let element = edit::PackageElement::Version;
+    let outcome = edit::add_package(sidecar, runtime, &props, package_id, version, element)?;
+    let response = types::PackageEditResponse {
+        success: true,
+        message: outcome.message,
+        modified_files: outcome.modified.then_some(props).into_iter().collect(),
+    };
+    let target = types::NuGetTarget::from_project_path(project_path);
+    finish_with_restore(response, runtime, sender, &target, [csharp, fsharp])
+}
+
 /// Install `package_id` at `version` into the project at `project_path` for an
 /// import quick fix, restoring in the background exactly as
 /// `sharplsp/nuget/install` does. [REFACTOR-IMPORT-REFERENCE]

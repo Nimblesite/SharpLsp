@@ -141,11 +141,24 @@ enforce_in_build = false  # true => error-mapped codes also fail `dotnet build`
   major (or `0.x` minor) boundary, the title says so (`… — major update 3 → 4`) and resolving it requires the
   explicit confirmation of [NUGET-REQUESTS-UPDATE-CONFIRM]. No known-good version → no fix, and the diagnostic
   says "no patched version published".
-- Transitive: the parent declares no version of the vulnerable package, so the fix is
-  `Pin <Package> to <version> as a direct reference (fixes <GHSA>)` — a direct `PackageReference` (or a
-  `PackageVersion` when CPM has `CentralPackageTransitivePinningEnabled`) at the known-good version, applied with
-  no stale-declaration snapshot. Updating the direct parent when a parent version that pulls the fixed one exists
-  is offered first once implemented — the lower-impact choice.
+- Transitive: the parent declares no version of the vulnerable package, so two fixes are offered, the
+  lower-impact one first:
+  - `Update <Parent> to <version> (brings <Package> <fixed>, fixes <GHSA>)` — the project's own direct reference
+    moves to its lowest newer stable version whose dependency chain asks for a version of the vulnerable package
+    outside every advisory range. Each hop is followed at the lowest version its parent's `.nuspec` admits, taking
+    the lowest across target frameworks so the answer holds whichever one the project builds; a range with no
+    inclusive floor decides nothing. The `.nuspec` comes from the source's flat container, or from the `.nupkg` of
+    a folder feed. At most twenty newer versions are examined. It carries the parent's resolved version, so a
+    declaration that moved refuses as stale. No such parent version → only the pin is offered.
+  - `Pin <Package> to <version> as a direct reference (fixes <GHSA>)` — a direct `PackageReference` at the
+    known-good version, applied with no stale-declaration snapshot. Under CPM with
+    `CentralPackageTransitivePinningEnabled` (the project's own setting winning over the props files') the pin is
+    `Pin <Package> to <version> in Directory.Packages.props (fixes <GHSA>)`: a `PackageVersion` alone, the project
+    gaining no reference.
+  At most one fix is `isPreferred`: the parent update when it stays on its line, else the pin when no parent
+  update is offered.
+- A successful restore republishes the restored file and the nearest `Directory.Build.props` and
+  `Directory.Packages.props`: a finding anchors on whichever of them declares the version.
 - **Sources** are those `NuGet` merges: the user-level config, then every `NuGet.Config` (any casing) from the
   filesystem root down to the project, nearer keys overriding, `<clear />` dropping inherited entries,
   `<disabledPackageSources>` hiding a key, relative folder feeds resolved against their own config file; with no

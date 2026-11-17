@@ -39,6 +39,11 @@ fn document_input(request: &Request) -> Option<(Uri, Option<String>)> {
         "textDocument/rename" => serde_json::from_value::<RenameParams>(request.params.clone())
             .ok()
             .map(|params| (params.text_document_position.text_document.uri, None)),
+        // A position request is superseded by its document's changes only,
+        // never by another position: clients ask about several at once.
+        method if crate::semantic::requests::handles(method) => {
+            document_uri(&request.params).map(|uri| (uri, None))
+        }
         _ => None,
     }
 }
@@ -54,11 +59,19 @@ pub(super) fn changed(cancellation: &CancellationHandle, notification: &Notifica
     let Some(key) = change_uri(notification).and_then(|uri| resource(&uri)) else {
         return;
     };
-    for method in [
+    if notification.method == "textDocument/didChange" {
+        crate::semantic::requests::edited();
+    }
+    crate::semantic::requests::document_changed(&key);
+    let compiler_backed = [
         "textDocument/diagnostic",
         "textDocument/codeLens",
         "textDocument/rename",
-    ] {
+    ];
+    for method in compiler_backed
+        .into_iter()
+        .chain(crate::semantic::requests::METHODS)
+    {
         cancellation.supersede(method, &key);
     }
     cancellation.supersede(WORKSPACE, WORKSPACE_RESOURCE);
@@ -70,10 +83,15 @@ fn change_uri(notification: &Notification) -> Option<Uri> {
         notification.method.as_str(),
         "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
     ) {
-        serde_json::from_value(notification.params.pointer("/textDocument/uri")?.clone()).ok()
+        document_uri(&notification.params)
     } else {
         None
     }
+}
+
+/// The `textDocument.uri` of a request's or notification's params.
+fn document_uri(params: &serde_json::Value) -> Option<Uri> {
+    serde_json::from_value(params.pointer("/textDocument/uri")?.clone()).ok()
 }
 
 /// URI conversion and Windows equality remain in the sole path tier without disk I/O.
