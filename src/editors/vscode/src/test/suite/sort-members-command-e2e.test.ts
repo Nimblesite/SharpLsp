@@ -12,6 +12,7 @@ import {
   assertNonTypeRejected,
   buildLiveText,
   cleanupSortHarness,
+  finishSortHarness,
   configureSort,
   exerciseTypeSurface,
   fixtureDocument,
@@ -140,7 +141,7 @@ suite('Sort Members command E2E — real explorer node and real LSP', function (
   });
   setup(prepareSortCase);
   teardown(cleanupSortHarness);
-  suiteTeardown(cleanupSortHarness);
+  suiteTeardown(finishSortHarness);
   test('default policy, no-op re-entry, undo, and redo', runDefaultScenario);
   test('category-first hierarchy moves private fields ahead of public methods', runCategoryFirst);
   test('reversed accessibility and category lists still alphabetize ties', runReversedPolicy);

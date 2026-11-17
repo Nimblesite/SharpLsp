@@ -31,6 +31,7 @@ import * as projectDeps from './project-deps-store.js';
 import { runBrowserUpdate } from './nuget-update.js';
 import * as solutionState from './state.js';
 import {
+  type InitialLoadOutcome,
   installKey,
   type LoadingKey,
   type NuGetSearchResult,
@@ -43,7 +44,11 @@ import {
 const PROJECT_SYNC_MS = 250;
 
 // Re-export types so existing call sites and tests keep working.
-export type { NuGetSearchResult, WebviewMessage } from './nuget-browser/types.js';
+export type {
+  InitialLoadOutcome,
+  NuGetSearchResult,
+  WebviewMessage,
+} from './nuget-browser/types.js';
 
 // ── Panel ───────────────────────────────────────────────────────
 
@@ -73,8 +78,8 @@ export class NuGetBrowserPanel {
   private readonly loading = new Set<LoadingKey>();
   private toast: ToastState | undefined;
 
-  /** Resolves when the constructor's async initial load completes. */
-  private readonly initialLoadDone: Promise<void>;
+  /** Settles with what the constructor's async initial load did. */
+  private readonly initialLoadDone: Promise<InitialLoadOutcome>;
 
   private constructor(
     context: vscode.ExtensionContext,
@@ -167,7 +172,12 @@ export class NuGetBrowserPanel {
 
   // ── Initial load ────────────────────────────────────────────
 
-  private async initialLoad(): Promise<void> {
+  /**
+   * With no target selected nothing is listed or searched, so the load reports
+   * `unresolved` rather than completing on an empty tab (#293). The failure that
+   * left it unresolved is already on the panel's toast.
+   */
+  private async initialLoad(): Promise<InitialLoadOutcome> {
     await this.loadTargets();
     // Register the active project(s) with the deps store so the watcher
     // picks up external csproj edits for them.
@@ -175,16 +185,19 @@ export class NuGetBrowserPanel {
     for (const target of this.targets) {
       projectDeps.ensureTracked(target.path);
     }
-    if (this.selectedTargetId !== undefined) {
-      await this.loadInstalledPackages();
-      await this.performSearch('');
+    if (this.selectedTargetId === undefined) {
+      log.warn('NuGetBrowserPanel: initial load unresolved, no target project selected');
+      return 'unresolved';
     }
+    await this.loadInstalledPackages();
+    await this.performSearch('');
     this.updateContent();
     log.info('NuGetBrowserPanel: initial load complete');
+    return 'loaded';
   }
   // ── Test accessors ──────────────────────────────────────────
-  public async waitForInitialLoad(): Promise<void> {
-    await this.initialLoadDone;
+  public async waitForInitialLoad(): Promise<InitialLoadOutcome> {
+    return await this.initialLoadDone;
   }
   public getSearchResultsCount(): number {
     return this.searchResults.length;

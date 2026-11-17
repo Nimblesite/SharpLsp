@@ -32,12 +32,6 @@ export interface ExtensionApi {
   readonly getLspClient: () => LanguageClient | undefined;
 }
 
-export interface SavedSettings {
-  readonly hierarchy: string[] | undefined;
-  readonly accessibilityOrder: string[] | undefined;
-  readonly categoryOrder: string[] | undefined;
-}
-
 export interface SortPolicy {
   readonly hierarchy: readonly string[];
   readonly accessibilityOrder: readonly string[];

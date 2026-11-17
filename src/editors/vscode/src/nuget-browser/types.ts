@@ -113,3 +113,10 @@ export function uninstallKey(packageId: string): LoadingKey {
 export function restoreKey(targetId: string): LoadingKey {
   return `restore:${targetId}`;
 }
+
+/**
+ * What the panel's initial load did. `unresolved` means no target project was
+ * selected, so nothing was searched or listed: an empty tab then is not a
+ * finished load (#293, [NUGET-BROWSER-SPEC]).
+ */
+export type InitialLoadOutcome = 'loaded' | 'unresolved';
