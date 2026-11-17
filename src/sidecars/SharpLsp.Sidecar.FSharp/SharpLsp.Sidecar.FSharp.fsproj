@@ -31,8 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="10.1.403" />
-    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.403" />
+    <PackageReference Include="FSharp.Core" Version="11.0.101" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.13.404" />
     <!-- Roslyn compiles the C# projects an F# project references, in memory, so the
          sidecar ships it like the C# sidecar does: restore full asset flow.
          [SHARPLSP-ARCHITECTURE-PROJECTS-FSHARP-CSHARP-REFERENCES] -->
@@ -41,7 +41,7 @@
     <PackageReference Include="FSharpLint.Core" Version="0.27.2" />
     <PackageReference Include="MessagePack" Version="3.1.12" />
     <!-- Override transitive 9.0.0 from FSharpLint.Core/Microsoft.Build chain (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf, fixed in 9.0.15). -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.14" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="11.0.0" />
   </ItemGroup>
 
   <ItemGroup>
