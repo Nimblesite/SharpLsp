@@ -1265,7 +1265,7 @@
   "dependencies": {
     "@nimblesite/shipwright-vscode": "^0.11.0",
     "d3-force": "^3.0.1",
-    "fast-xml-parser": "^5.12.0",
+    "fast-xml-parser": "^5.12.1",
     "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
@@ -1274,19 +1274,19 @@
     "@types/mocha": "^10.0.6",
     "@types/node": "^26.6.6",
     "@types/vscode": "^1.105.0",
-    "@typescript-eslint/eslint-plugin": "^8.72.1",
-    "@typescript-eslint/parser": "^8.72.1",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
+    "@typescript-eslint/parser": "^8.72.2",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^4.1.0",
+    "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.28.2",
-    "eslint": "^10.14.0",
-    "glob": "^14.0.4",
+    "eslint": "^10.15.0",
+    "glob": "^14.0.6",
     "mocha": "^12.0.3",
-    "playwright": "^1.65.0",
-    "prettier": "3.9.10",
+    "playwright": "^1.65.1",
+    "prettier": "3.10.1",
     "typescript": "~7.0.2",
-    "typescript-eslint": "^8.72.1"
+    "typescript-eslint": "^8.72.2"
   },
   "files": [
     "bin/",
