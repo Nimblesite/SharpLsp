@@ -39,6 +39,7 @@ pub(crate) fn handle(
     let config = pull_diagnostics::state::configuration()?;
 
     for sidecar in running {
+        let _already = sidecar.request_workspace_open();
         let sidecar = Arc::clone(sidecar);
         let target = sln_path.to_owned();
         let sender = connection.sender.clone();
@@ -62,6 +63,7 @@ async fn open_solution(
 ) {
     let opened = workspace_open::open_workspace(&sidecar, target).await;
     pull_diagnostics::state::load_finished().await;
+    sidecar.mark_workspace_open_finished();
     if let Err(err) = opened {
         error!("{} sidecar workspace/open failed: {err:#}", sidecar.name());
         return;
@@ -76,6 +78,8 @@ async fn open_solution(
     {
         warn!(%error, sidecar = sidecar.name(), "Diagnostic configuration failed");
     }
+    // The selection may be this compiler's first open. [SCRIPT-ROUTE-HEALTH]
+    drop(tokio::spawn(workspace_open::watch(Arc::clone(&sidecar))));
     if pull_diagnostics::state::is_pull() {
         pull_diagnostics::state::engine_loaded();
         return;

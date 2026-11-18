@@ -114,3 +114,35 @@ async fn a_diagnostic_pull_preempts_the_warm_up_and_the_hosts_polling_never_does
     // 3. The walk retries project 1 and completes.
     finishes(&mut compiler, 1, 2).await
 }
+
+/// Shutting down while a project warms must not wait out the warm-up: the
+/// compiler would never be asked to stop and would be killed instead.
+/// [SIDECAR-SHUTDOWN-PROTOCOL]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shutdown_preempts_the_warm_up_in_flight_and_is_acknowledged() -> Result<()> {
+    let (manager, mut compiler) = opened(LangId::FSharp).await?;
+
+    // 1. The walk is warming project 0, and the compiler has not answered.
+    let warming = expect_warm(&mut compiler, 0).await?;
+
+    // 2. The host shuts down: the warm-up is cancelled at once.
+    let stopping = {
+        let manager = Arc::clone(&manager);
+        tokio::spawn(async move { manager.shutdown().await })
+    };
+    compiler.cancels(&warming).await?;
+    compiler.answer(&warming, b"").await?;
+
+    // 3. The compiler is then asked to stop, and its acknowledgement ends the
+    //    shutdown.
+    let stop = compiler.request("the shutdown request").await?;
+    ensure!(stop.method.as_deref() == Some("shutdown"), "asked to stop");
+    ensure!(stop.id != warming.id, "its own request");
+    compiler.answer(&stop, &rmp_serde::to_vec("ok")?).await?;
+    stopping.await?;
+    ensure!(manager.is_shutting_down(), "the manager is stopping");
+    // The host closed its side: the walk asked for nothing more.
+    let more = compiler.request("anything after the shutdown").await;
+    ensure!(more.is_err(), "a stopping compiler is asked nothing more");
+    Ok(())
+}

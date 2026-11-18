@@ -91,6 +91,10 @@ pub struct SidecarManager {
     monitored: AtomicBool,
     /// Set once the first `workspace/open` has answered, whatever it answered.
     workspace_open_finished: AtomicBool,
+    /// Whether any `workspace/open` was asked of this sidecar, even one still
+    /// queued: until then its first document opens its own workspace.
+    /// [SCRIPT-ROUTE-LAZY]
+    workspace_open_requested: AtomicBool,
     /// A new process must receive its previous compiler inputs before serving requests.
     ever_connected: AtomicBool,
     /// Compiler-specific session metadata, with weak access to canonical VFS inputs.
@@ -140,6 +144,7 @@ impl SidecarManager {
             shutting_down: AtomicBool::new(false),
             monitored: AtomicBool::new(false),
             workspace_open_finished: AtomicBool::new(false),
+            workspace_open_requested: AtomicBool::new(false),
             ever_connected: AtomicBool::new(false),
             session: recovery::SessionInputs::default(),
             preemption: preemption::Preemption::default(),
@@ -177,6 +182,24 @@ impl SidecarManager {
     /// not loaded is not on its way to being loaded.
     pub fn workspace_open_finished(&self) -> bool {
         self.workspace_open_finished.load(Ordering::Acquire)
+    }
+
+    /// A request of `method` has arrived for this compiler: the background
+    /// work it preempts yields now, before the request's first exchange, which
+    /// need not be `method` itself. [SHARPLSP-FEATURES-CODE-LENS]
+    pub fn yield_to(&self, method: &str) {
+        self.preemption.preempt_for(method);
+    }
+
+    /// Record that a `workspace/open` is on its way to this sidecar. Returns
+    /// whether one already was.
+    pub fn request_workspace_open(&self) -> bool {
+        self.workspace_open_requested.swap(true, Ordering::AcqRel)
+    }
+
+    /// Whether a `workspace/open` was ever asked of this sidecar.
+    pub fn workspace_open_requested(&self) -> bool {
+        self.workspace_open_requested.load(Ordering::Acquire)
     }
 
     /// Record that the first `workspace/open` has answered.

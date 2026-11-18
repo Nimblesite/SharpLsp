@@ -77,6 +77,18 @@ public sealed class WorkspaceRestoreDigestTests : IDisposable
         File.WriteAllText(Project, xml.ToString());
     }
 
+    private void BlockProof()
+    {
+        var proof = WorkspaceRestoreDigest.ProofFile(Project);
+        File.Delete(proof);
+        _ = Directory.CreateDirectory(proof);
+    }
+
+    private void UnblockProof()
+    {
+        Directory.Delete(WorkspaceRestoreDigest.ProofFile(Project));
+    }
+
     private string RestoredVersion()
     {
         using var assets = JsonDocument.Parse(
@@ -145,6 +157,24 @@ public sealed class WorkspaceRestoreDigestTests : IDisposable
         WriteLibrary(nullable: true);
         Assert.Equal(7, await RestoresAfterOpenAsync());
         Assert.Equal(7, await RestoresAfterOpenAsync());
+
+        // 7. The proof cannot be kept (a folder stands where its file goes): every open
+        //    restores, and nothing fails. Once it can be kept again, one restore settles it.
+        BlockProof();
+        Assert.Equal(8, await RestoresAfterOpenAsync());
+        Assert.Equal(9, await RestoresAfterOpenAsync());
+        UnblockProof();
+        Assert.Equal(10, await RestoresAfterOpenAsync());
+        Assert.Equal(10, await RestoresAfterOpenAsync());
+        Assert.Equal("13.0.1", RestoredVersion());
+
+        // 8. A referenced project that is gone leaves the graph unknown: the SDK is asked on
+        //    every open, and whatever it reports is the answer.
+        File.Delete(Library);
+        _ = await WorkspaceRestore.EnsureTargetAsync(Project, CancellationToken.None);
+        Assert.Equal(11, WorkspaceRestore.RestoresOf(Project));
+        _ = await WorkspaceRestore.EnsureTargetAsync(Project, CancellationToken.None);
+        Assert.Equal(12, WorkspaceRestore.RestoresOf(Project));
     }
 
     public void Dispose()

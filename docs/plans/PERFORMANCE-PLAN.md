@@ -16,7 +16,11 @@ user never waits on projects they are not looking at.
 
 - [ ] F# sidecar opens the selected or configured solution first and never the
       recursive folder glob while a solution is selected (today it restores and loads
-      all 33 `.fsproj` under the repo before TestFixtures.sln)
+      all 33 `.fsproj` under the repo before TestFixtures.sln). Done for a configured
+      `csharp.solution_path`: both compilers open it — `selected_solution_open.rs`. Still
+      open for a solution the client picks after start: opening nothing until the pick
+      broke everything that loads without one (122 VS Code suite failures), so it needs
+      the progressive load below first
 - [x] Restore skips projects whose restore succeeded and whose inputs are unchanged: a
       digest of the graph's bytes and its restore output proves an SDK-evaluated graph
       current ([DIAG-RESTORE]). This repo's own projects were restored on every open because

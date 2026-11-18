@@ -100,3 +100,39 @@ async fn an_interactive_request_preempts_the_code_lens_in_flight() -> Result<()>
     an_uninterrupted_lens_completes(&manager, &mut compiler, &client).await?;
     polling_never_preempts(&manager, &mut compiler, &client).await
 }
+
+/// A hover does not begin with a document request: the host first hands the
+/// F# compiler the open C# buffers. The lens must yield when the hover
+/// arrives, not when its own request finally reaches the compiler, or the
+/// hover waits out the whole count behind that first exchange.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_arriving_request_preempts_the_lens_before_its_first_exchange() -> Result<()> {
+    let (manager, mut compiler) = Compiler::attach(None).await?;
+    let client = CancellationToken::new();
+
+    // 1. The host's polling arrives while a lens counts: the lens goes on.
+    let (held, counted) = counting(&manager, &mut compiler, &client).await?;
+    manager.yield_to("workspace/diagnostics/documents");
+    anyhow::ensure!(compiler.hears_no_notice().await, "polling preempts nothing");
+
+    // 2. A hover arrives: the lens is cancelled before the hover asks anything.
+    manager.yield_to("textDocument/hover");
+    compiler.cancels(&counted).await?;
+    compiler.answer(&counted, b"").await?;
+    assert_preempted(held, &client).await?;
+
+    // 3. Its preliminary exchange, which is no document request, is served at
+    //    once: nothing is left in front of it.
+    let preliminary = {
+        let manager = Arc::clone(&manager);
+        tokio::spawn(async move { manager.request("workspace/csharpBuffers", Vec::new()).await })
+    };
+    let asked = compiler.request("the buffers").await?;
+    anyhow::ensure!(
+        asked.method.as_deref() == Some("workspace/csharpBuffers"),
+        "the buffers"
+    );
+    compiler.answer(&asked, b"handed").await?;
+    anyhow::ensure!(preliminary.await?? == b"handed", "answered in its turn");
+    Ok(())
+}

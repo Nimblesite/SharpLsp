@@ -105,6 +105,7 @@ pub mod razor_selection;
 pub mod razor_workspace_pull_session;
 pub mod references;
 pub mod region_session;
+pub mod selected_solution_open;
 pub mod selection;
 pub mod semantic_coverage;
 pub mod semantic_memo_session;
