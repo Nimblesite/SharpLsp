@@ -73,9 +73,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         using var manager = new WorkspaceManager();
         await OpenAndSettleAsync(manager, edited);
         var onDisk = await ProjectlessWorkspaceFixture.ErrorsAsync(manager, edited);
-        Assert.Contains(
-            onDisk,
-            error => string.Equals(error.Code, "CS0103", StringComparison.Ordinal)
+        Assert.Contains(onDisk, error =>
+            string.Equals(error.Code, "CS0103", StringComparison.Ordinal)
         );
 
         // 2 — the user fixes it in the editor. Nothing is written to disk, so the
@@ -148,9 +147,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
 
         // 4 — the original direction still holds: the package must NOT leak.
         var leaked = await SettledErrorsAsync(manager, unpackaged);
-        Assert.Contains(
-            leaked,
-            error => string.Equals(error.Code, "CS0246", StringComparison.Ordinal)
+        Assert.Contains(leaked, error =>
+            string.Equals(error.Code, "CS0246", StringComparison.Ordinal)
         );
 
         // 5 — and the packaged root is STILL bound after the neighbour settled too.
@@ -184,9 +182,8 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
         // 3 — and the reopened root is served exactly once, not duplicated.
         await AssertNoErrorsAsync(manager, second, "the reopened root");
         var reopened = await ProjectlessWorkspaceFixture.DiagnosticsAsync(manager, second);
-        Assert.DoesNotContain(
-            reopened,
-            diagnostic => string.Equals(diagnostic.Code, "CS0017", StringComparison.Ordinal)
+        Assert.DoesNotContain(reopened, diagnostic =>
+            string.Equals(diagnostic.Code, "CS0017", StringComparison.Ordinal)
         );
     }
 
@@ -261,14 +258,12 @@ public sealed class FileBasedRootIsolationEndToEndTests : IDisposable
             .Where(diagnostic => PackageBindingErrorCodes.Contains(diagnostic.Code))
             .ToList();
         Assert.True(binding.Count == 0, $"{when} — {Describe(binding)}");
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ProjectlessWorkspaceFixture.RestorePendingCode,
-                    StringComparison.Ordinal
-                )
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            string.Equals(
+                diagnostic.Code,
+                ProjectlessWorkspaceFixture.RestorePendingCode,
+                StringComparison.Ordinal
+            )
         );
     }
 

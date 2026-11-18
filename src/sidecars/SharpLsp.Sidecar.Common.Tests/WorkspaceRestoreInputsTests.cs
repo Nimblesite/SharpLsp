@@ -130,8 +130,8 @@ public sealed class WorkspaceRestoreInputsTests : IDisposable
 
     private string InputPath(string kind, string? inheritedName)
     {
-        var name =
-            inheritedName ?? (kind == "inherited" ? "Directory.Build.props" : "Packages.props");
+        var name = inheritedName
+            ?? (kind == "inherited" ? "Directory.Build.props" : "Packages.props");
         return NativePaths.Resolve(_root, name);
     }
 

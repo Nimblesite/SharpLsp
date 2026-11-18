@@ -51,14 +51,12 @@ public sealed class RazorMarkupTokensTests : IClassFixture<RazorFixture>
         Assert.DoesNotContain(tokens, token => token.At == At("<button @onclick", "button"));
 
         // No token overlaps the one before it.
-        Assert.All(
-            tokens.Zip(tokens.Skip(1)),
-            pair =>
-                Assert.True(
-                    pair.Second.At.Line > pair.First.At.Line
-                        || pair.Second.At.Character >= pair.First.At.Character + pair.First.Length,
-                    $"{pair.First} overlaps {pair.Second}"
-                )
+        Assert.All(tokens.Zip(tokens.Skip(1)), pair =>
+            Assert.True(
+                pair.Second.At.Line > pair.First.At.Line
+                    || pair.Second.At.Character >= pair.First.At.Character + pair.First.Length,
+                $"{pair.First} overlaps {pair.Second}"
+            )
         );
     }
 

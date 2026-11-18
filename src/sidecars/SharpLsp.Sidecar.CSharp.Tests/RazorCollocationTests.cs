@@ -76,9 +76,8 @@ public sealed class RazorCollocationTests : IClassFixture<RazorFixture>
 
         // Never text that is not a class selector: a comment, a declaration value, a number,
         // a string or a url.
-        Assert.DoesNotContain(
-            items,
-            item => item.Kind == "Value" && NotClasses.Contains(item.Label, StringComparer.Ordinal)
+        Assert.DoesNotContain(items, item =>
+            item.Kind == "Value" && NotClasses.Contains(item.Label, StringComparer.Ordinal)
         );
 
         // A class after a bare attribute, single-quoted, still completes the class at the caret.
@@ -105,10 +104,8 @@ public sealed class RazorCollocationTests : IClassFixture<RazorFixture>
             await manager.GetDefinitionAsync(Card, inValue.Line, inValue.Character + 2)
         );
         Assert.Equal(5, found.Locations.Count);
-        Assert.All(
-            found.Locations,
-            location =>
-                Assert.True(NativePaths.AreEqual(Stylesheet, location.FilePath), location.FilePath)
+        Assert.All(found.Locations, location =>
+            Assert.True(NativePaths.AreEqual(Stylesheet, location.FilePath), location.FilePath)
         );
         var lines = await File.ReadAllLinesAsync(Stylesheet);
         Assert.All(found.Locations, location => Assert.Equal("title", TextAt(lines, location)));

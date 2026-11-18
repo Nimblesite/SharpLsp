@@ -180,8 +180,7 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
-        var root =
-            await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
+        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Syntax root unavailable for {document.Name}");
         var candidates = ProjectableTokens(root, projection.CurrentName);
         if (candidates.Count == 0)
@@ -189,8 +188,7 @@ internal sealed partial class WorkspaceManager
             return null;
         }
 
-        _ =
-            document.FilePath
+        _ = document.FilePath
             ?? throw new InvalidOperationException($"Rename path unavailable for {document.Name}");
         return new ProjectionDocument(document, root, candidates, projection);
     }
@@ -203,8 +201,7 @@ internal sealed partial class WorkspaceManager
         var annotations = CreateCandidateAnnotations(source.Candidates);
         var root = ProjectProjectionRoot(source, annotations);
         var projected = source.Document.WithSyntaxRoot(root);
-        var model =
-            await projected.GetSemanticModelAsync(ct).ConfigureAwait(false)
+        var model = await projected.GetSemanticModelAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Semantic model unavailable for {source.Document.Name}"
             );
@@ -253,9 +250,8 @@ internal sealed partial class WorkspaceManager
         string newName
     )
     {
-        return root.ReplaceTokens(
-            candidates,
-            (token, _) => ProjectToken(token, newName, annotations[token.SpanStart])
+        return root.ReplaceTokens(candidates, (token, _) =>
+            ProjectToken(token, newName, annotations[token.SpanStart])
         );
     }
 

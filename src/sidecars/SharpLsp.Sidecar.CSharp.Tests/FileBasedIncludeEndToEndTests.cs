@@ -133,9 +133,8 @@ public sealed class FileBasedIncludeEndToEndTests : IDisposable
         Assert.NotEmpty(errors);
         Assert.All(errors, error => Assert.Equal(2, error.StartLine));
         Assert.All(errors, error => Assert.Equal("CS0103", error.Code));
-        Assert.All(
-            errors,
-            error => Assert.Contains("'field'", error.Message, StringComparison.Ordinal)
+        Assert.All(errors, error =>
+            Assert.Contains("'field'", error.Message, StringComparison.Ordinal)
         );
     }
 

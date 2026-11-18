@@ -52,9 +52,8 @@ public sealed class RazorFSharpTests : IClassFixture<RazorFixture>
         var signature = Assert.Single(help.Signatures);
         Assert.Contains("standing", signature.Label, StringComparison.Ordinal);
         Assert.Equal(2, signature.Parameters.Count);
-        Assert.Contains(
-            signature.Parameters,
-            parameter => parameter.Contains("field", StringComparison.Ordinal)
+        Assert.Contains(signature.Parameters, parameter =>
+            parameter.Contains("field", StringComparison.Ordinal)
         );
         Assert.Equal(0, help.ActiveParameter);
     }
@@ -144,20 +143,17 @@ public sealed class RazorFSharpTests : IClassFixture<RazorFixture>
 
         // The C# sidecar edits its Razor and C# uses; F#'s come from the F# sidecar.
         var edit = RazorFixture.Ok(await manager.RenameAsync(Leaders, line, character, "Points"));
-        var razor = Assert.Single(
-            edit.DocumentChanges,
-            d => NativePaths.AreEqual(Leaders, d.FilePath)
+        var razor = Assert.Single(edit.DocumentChanges, d =>
+            NativePaths.AreEqual(Leaders, d.FilePath)
         );
         var renamed = Assert.Single(razor.Edits);
         Assert.Equal((line, character), (renamed.StartLine, renamed.StartCharacter));
         Assert.Equal("Points", renamed.NewText);
-        Assert.DoesNotContain(
-            edit.DocumentChanges,
-            d => NativePaths.HasExtension(d.FilePath, ".g.cs")
+        Assert.DoesNotContain(edit.DocumentChanges, d =>
+            NativePaths.HasExtension(d.FilePath, ".g.cs")
         );
-        Assert.DoesNotContain(
-            edit.DocumentChanges,
-            d => NativePaths.HasExtension(d.FilePath, ".fs")
+        Assert.DoesNotContain(edit.DocumentChanges, d =>
+            NativePaths.HasExtension(d.FilePath, ".fs")
         );
 
         // The identity the host asks F# with comes through the projection too.
@@ -201,9 +197,8 @@ public sealed class RazorFSharpTests : IClassFixture<RazorFixture>
             )
         );
         Assert.Equal(3, player.Locations.Count);
-        Assert.All(
-            player.Locations,
-            location => Assert.True(NativePaths.AreEqual(Leaders, location.FilePath))
+        Assert.All(player.Locations, location =>
+            Assert.True(NativePaths.AreEqual(Leaders, location.FilePath))
         );
         Assert.Contains(
             At("private readonly Player[]", "Player"),

@@ -71,9 +71,8 @@ internal static class FSharpProjectSymbols
             )
             .ToList();
         return stale
-            .Aggregate(
-                solution,
-                (current, reference) => current.RemoveMetadataReference(projectId, reference)
+            .Aggregate(solution, (current, reference) =>
+                current.RemoveMetadataReference(projectId, reference)
             )
             .AddMetadataReference(projectId, Reference(dll));
     }

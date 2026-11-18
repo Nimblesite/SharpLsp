@@ -253,19 +253,15 @@ public static partial class NativePaths
     /// <summary><paramref name="name"/> as a file name every platform accepts, one spelling everywhere.</summary>
     public static string SafeName(string name)
     {
-        return string.Create(
-            name.Length,
-            name,
-            static (destination, source) =>
+        return string.Create(name.Length, name, static (destination, source) =>
+        {
+            for (var index = 0; index < source.Length; index++)
             {
-                for (var index = 0; index < source.Length; index++)
-                {
-                    var candidate = source[index];
-                    destination[index] =
-                        Array.IndexOf(UnsafeNameChars, candidate) >= 0 ? '_' : candidate;
-                }
+                var candidate = source[index];
+                destination[index] =
+                    Array.IndexOf(UnsafeNameChars, candidate) >= 0 ? '_' : candidate;
             }
-        );
+        });
     }
 
     /// <summary>Directories a workspace walk never enters, besides every dot-directory.</summary>

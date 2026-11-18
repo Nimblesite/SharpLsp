@@ -55,15 +55,13 @@ internal static class AnalyzerDiagnosticResolver
             : await ResolveWithCompilationAsync(document, model, span, analyzers, ct)
                 .ConfigureAwait(false);
         var reported = await ReportedByDocument
-            .GetValue(
-                document,
-                snapshot =>
-                    ResolveDocumentAsync(
-                        snapshot,
-                        model,
-                        DiscoverDocumentAnalyzers(snapshot.Project),
-                        CancellationToken.None
-                    )
+            .GetValue(document, snapshot =>
+                ResolveDocumentAsync(
+                    snapshot,
+                    model,
+                    DiscoverDocumentAnalyzers(snapshot.Project),
+                    CancellationToken.None
+                )
             )
             .WaitAsync(ct)
             .ConfigureAwait(false);

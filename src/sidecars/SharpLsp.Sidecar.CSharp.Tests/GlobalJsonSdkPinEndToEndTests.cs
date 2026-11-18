@@ -148,8 +148,7 @@ internal sealed class ExternalSidecar : IAsyncDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        var process =
-            Process.Start(startInfo)
+        var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start sidecar '{appHost}'");
 
         try

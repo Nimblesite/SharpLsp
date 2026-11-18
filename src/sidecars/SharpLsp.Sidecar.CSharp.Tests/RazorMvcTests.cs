@@ -88,9 +88,8 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
         var markup = await manager.FindRazorMarkupAsync(Index, default);
         Assert.NotNull(markup);
         var anchor = Assert.Single(markup.Tags, tag => tag.Name == "a");
-        Assert.Contains(
-            anchor.MvcTagHelpers,
-            helper => helper.Name.EndsWith("AnchorTagHelper", StringComparison.Ordinal)
+        Assert.Contains(anchor.MvcTagHelpers, helper =>
+            helper.Name.EndsWith("AnchorTagHelper", StringComparison.Ordinal)
         );
     }
 
@@ -171,11 +170,9 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
 
         // A legacy file binds no component by its tag, so none completes. [RAZOR-MVC-SCOPE]
         Assert.DoesNotContain(items, item => item.Label is "ErrorBoundary" or "Virtualize");
-        Assert.DoesNotContain(
-            items,
-            item =>
-                item.Detail?.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
-                == true
+        Assert.DoesNotContain(items, item =>
+            item.Detail?.StartsWith("Microsoft.AspNetCore.Components", StringComparison.Ordinal)
+            == true
         );
     }
 
@@ -204,16 +201,14 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
         var rename = RazorFixture.Ok(
             await manager.RenameAsync(code, title.Line, title.Character, "Heading")
         );
-        var view = Assert.Single(
-            rename.DocumentChanges,
-            d => NativePaths.AreEqual(Edit, d.FilePath)
+        var view = Assert.Single(rename.DocumentChanges, d =>
+            NativePaths.AreEqual(Edit, d.FilePath)
         );
         Assert.Equal(4, view.Edits.Count);
         Assert.Contains(view.Edits, e => (e.StartLine, e.StartCharacter) == at);
         Assert.All(view.Edits, e => Assert.Equal("Heading", e.NewText));
-        Assert.DoesNotContain(
-            rename.DocumentChanges,
-            d => NativePaths.HasExtension(d.FilePath, ".g.cs")
+        Assert.DoesNotContain(rename.DocumentChanges, d =>
+            NativePaths.HasExtension(d.FilePath, ".g.cs")
         );
 
         // The C# inside a `@section` block answers through the projection too.
@@ -273,9 +268,8 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
 
         // Each element a tag helper binds is a tag of the file, with its tag helpers.
         string[] bound = ["form", "label", "input", "span", "a"];
-        Assert.All(
-            bound,
-            name => Assert.Contains(markup.Tags, tag => tag.Name == name && tag.MvcTagHelpers.Any())
+        Assert.All(bound, name =>
+            Assert.Contains(markup.Tags, tag => tag.Name == name && tag.MvcTagHelpers.Any())
         );
     }
 
@@ -291,15 +285,13 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
             "@removeTagHelper Microsoft.AspNetCore.Mvc.TagHelpers.AnchorTagHelper, "
             + "Microsoft.AspNetCore.Mvc.TagHelpers";
         var removed = await EditedAsync(manager, original + "\n" + anchor + "\n<a asp-");
-        Assert.DoesNotContain(
-            removed.Items,
-            item => item.Label.StartsWith("asp-", StringComparison.Ordinal)
+        Assert.DoesNotContain(removed.Items, item =>
+            item.Label.StartsWith("asp-", StringComparison.Ordinal)
         );
         Assert.DoesNotContain(removed.Markup.Tags, tag => tag.Name == "a");
         var form = Assert.Single(removed.Markup.Tags, tag => tag.Name == "form");
-        Assert.Contains(
-            form.MvcTagHelpers,
-            helper => helper.Name.EndsWith(".FormTagHelper", StringComparison.Ordinal)
+        Assert.Contains(form.MvcTagHelpers, helper =>
+            helper.Name.EndsWith(".FormTagHelper", StringComparison.Ordinal)
         );
 
         // `@tagHelperPrefix` makes only prefixed elements tag helpers: they bind, complete and
@@ -321,9 +313,8 @@ public sealed class RazorMvcTests : IClassFixture<RazorFixture>
             manager,
             "@tagHelperPrefix th:\n" + original + "\n<a asp-"
         );
-        Assert.DoesNotContain(
-            unprefixed.Items,
-            item => item.Label.StartsWith("asp-", StringComparison.Ordinal)
+        Assert.DoesNotContain(unprefixed.Items, item =>
+            item.Label.StartsWith("asp-", StringComparison.Ordinal)
         );
     }
 

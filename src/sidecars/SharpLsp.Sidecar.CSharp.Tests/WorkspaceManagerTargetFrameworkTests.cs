@@ -326,9 +326,8 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     private static (int Line, int Character) Locate(string source, string identifier)
     {
         var lines = source.Split('\n');
-        var line = Array.FindIndex(
-            lines,
-            text => text.Contains(identifier, StringComparison.Ordinal)
+        var line = Array.FindIndex(lines, text =>
+            text.Contains(identifier, StringComparison.Ordinal)
         );
         return (line, lines[line].IndexOf(identifier, StringComparison.Ordinal) + 1);
     }
@@ -355,9 +354,8 @@ public sealed class WorkspaceManagerTargetFrameworkTests : IDisposable
     )
     {
         var lines = (source ?? ProbeSource).Split('\n');
-        var line = Array.FindIndex(
-            lines,
-            text => text.Contains(identifier, StringComparison.Ordinal)
+        var line = Array.FindIndex(lines, text =>
+            text.Contains(identifier, StringComparison.Ordinal)
         );
         var character = lines[line].IndexOf(identifier, StringComparison.Ordinal) + 1;
         return AssertOk(await manager.GetHoverAsync(_probe, line, character))?.Contents;

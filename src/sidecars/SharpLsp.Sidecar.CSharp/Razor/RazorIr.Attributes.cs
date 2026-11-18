@@ -181,8 +181,7 @@ internal static partial class RazorIr
     private static int? EndOf(IntermediateNode node, TextSpan? name)
     {
         var structure = Structure(node);
-        var value =
-            LastEnd(node)
+        var value = LastEnd(node)
             ?? (IsDirective(node) || structure == AttributeStructure.Minimized ? name?.End : null);
         return value is { } found ? Closing(structure, found) : null;
     }

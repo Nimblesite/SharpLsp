@@ -329,23 +329,19 @@ public sealed class HtmlMarkupContextTests
 
     private static string Map(string html)
     {
-        return string.Create(
-            html.Length + 1,
-            html,
-            static (span, text) =>
+        return string.Create(html.Length + 1, html, static (span, text) =>
+        {
+            for (var i = 0; i <= text.Length; i++)
             {
-                for (var i = 0; i <= text.Length; i++)
+                span[i] = HtmlMarkupContext.At(text, i) switch
                 {
-                    span[i] = HtmlMarkupContext.At(text, i) switch
-                    {
-                        MarkupContext.Content => 'C',
-                        MarkupContext.TagName => 'T',
-                        MarkupContext.AttributeName => 'N',
-                        MarkupContext.AttributeValue => 'V',
-                        _ => '?',
-                    };
-                }
+                    MarkupContext.Content => 'C',
+                    MarkupContext.TagName => 'T',
+                    MarkupContext.AttributeName => 'N',
+                    MarkupContext.AttributeValue => 'V',
+                    _ => '?',
+                };
             }
-        );
+        });
     }
 }

@@ -267,9 +267,8 @@ public sealed class MoveTypeToFileTests : IDisposable
             "    public class Inner { }",
             "Inner"
         );
-        Assert.Contains(
-            actions,
-            action => action.Title == "Move 'Inner' out of 'Outer' to Inner.cs"
+        Assert.Contains(actions, action =>
+            action.Title == "Move 'Inner' out of 'Outer' to Inner.cs"
         );
         var edit = await _project.ApplyAsync(
             manager,
@@ -307,9 +306,8 @@ public sealed class MoveTypeToFileTests : IDisposable
             "AlreadyMatched"
         );
 
-        Assert.DoesNotContain(
-            actions,
-            action => action.Title.StartsWith("Move type to ", StringComparison.Ordinal)
+        Assert.DoesNotContain(actions, action =>
+            action.Title.StartsWith("Move type to ", StringComparison.Ordinal)
         );
     }
 

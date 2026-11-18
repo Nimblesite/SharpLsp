@@ -125,9 +125,8 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
             "Tally",
             Assert.Single(symbols.Single(symbol => symbol.Name == "Panel").Children).Name
         );
-        Assert.Contains(
-            symbols.Single(symbol => symbol.Name == "@code").Children,
-            child => child.Name == "Add"
+        Assert.Contains(symbols.Single(symbol => symbol.Name == "@code").Children, child =>
+            child.Name == "Add"
         );
         var linked = await AtAsync<LocationListResult>(
                 "textDocument/linkedEditingRange",
@@ -203,14 +202,11 @@ public sealed class RazorSidecarTests(CSharpSidecarFixture socket, RazorFixture 
             )
             .ConfigureAwait(true);
         Assert.Equal(3, player.Locations.Count);
-        Assert.All(
-            player.Locations,
-            location =>
-            {
-                Assert.True(NativePaths.AreEqual(leaders, location.FilePath), location.FilePath);
-                Assert.Equal("Player".Length, location.EndCharacter - location.Character);
-            }
-        );
+        Assert.All(player.Locations, location =>
+        {
+            Assert.True(NativePaths.AreEqual(leaders, location.FilePath), location.FilePath);
+            Assert.Equal("Player".Length, location.EndCharacter - location.Character);
+        });
         Assert.Contains(
             RazorFixture.Locate(leaders, "private readonly Player[]", "Player"),
             player.Locations.Select(location => (location.Line, location.Character))

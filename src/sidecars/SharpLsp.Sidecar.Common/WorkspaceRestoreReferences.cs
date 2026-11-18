@@ -69,8 +69,7 @@ internal static class WorkspaceRestoreReferences
     private static (string Id, string Version)? LiteralReference(XElement element)
     {
         var id = element.Attribute("Include")?.Value;
-        var version =
-            element.Attribute("Version")?.Value
+        var version = element.Attribute("Version")?.Value
             ?? element
                 .Elements()
                 .SingleOrDefault(child => child.Name.LocalName == "Version")

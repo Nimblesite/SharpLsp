@@ -66,9 +66,8 @@ internal static class MoveTypeOutSyntax
             .Select(name => (name, model.GetSymbolInfo(name, ct).Symbol))
             .Where(pair => IsBorrowed(target, pair.Symbol))
             .ToDictionary(pair => pair.name, pair => pair.Symbol!);
-        return target.Declaration.ReplaceNodes(
-            borrowed.Keys,
-            (name, _) => Qualified(borrowed[name], name)
+        return target.Declaration.ReplaceNodes(borrowed.Keys, (name, _) =>
+            Qualified(borrowed[name], name)
         );
     }
 

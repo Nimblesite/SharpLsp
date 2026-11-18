@@ -73,9 +73,8 @@ public sealed class StyleCopAnalyzerDiagnosticsTests : IDisposable
 
         var diagnostics = await ProjectlessWorkspaceFixture.DiagnosticsAsync(manager, _sourcePath);
 
-        var classViolation = Assert.Single(
-            diagnostics,
-            diagnostic => diagnostic.Code == "SA1600" && diagnostic.StartLine == 2
+        var classViolation = Assert.Single(diagnostics, diagnostic =>
+            diagnostic.Code == "SA1600" && diagnostic.StartLine == 2
         );
         Assert.Equal("Warning", classViolation.Severity);
         Assert.Equal(13, classViolation.StartCharacter);
@@ -84,9 +83,8 @@ public sealed class StyleCopAnalyzerDiagnosticsTests : IDisposable
 
         // The undocumented method violates the same rule: StyleCop reports each
         // element, on the element's identifier span.
-        var methodViolation = Assert.Single(
-            diagnostics,
-            diagnostic => diagnostic.Code == "SA1600" && diagnostic.StartLine == 4
+        var methodViolation = Assert.Single(diagnostics, diagnostic =>
+            diagnostic.Code == "SA1600" && diagnostic.StartLine == 4
         );
         Assert.Equal("Warning", methodViolation.Severity);
         Assert.Equal(15, methodViolation.StartCharacter);

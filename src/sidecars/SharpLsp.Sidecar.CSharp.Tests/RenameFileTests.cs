@@ -88,13 +88,11 @@ public sealed class RenameFileTests : IDisposable
         );
 
         Assert.NotEmpty(actions);
-        Assert.DoesNotContain(
-            actions,
-            action => action.Title.StartsWith("Rename file to ", StringComparison.Ordinal)
+        Assert.DoesNotContain(actions, action =>
+            action.Title.StartsWith("Rename file to ", StringComparison.Ordinal)
         );
-        Assert.Contains(
-            actions,
-            action => action.Title.Contains("Matching", StringComparison.Ordinal)
+        Assert.Contains(actions, action =>
+            action.Title.Contains("Matching", StringComparison.Ordinal)
         );
     }
 }

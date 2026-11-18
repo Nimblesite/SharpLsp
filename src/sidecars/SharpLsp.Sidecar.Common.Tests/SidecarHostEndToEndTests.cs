@@ -29,10 +29,8 @@ public sealed class SidecarHostEndToEndTests
         public TestHost()
             : base("test")
         {
-            Register(
-                "echo",
-                (payload, _) =>
-                    Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
+            Register("echo", (payload, _) =>
+                Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
             );
             Register("boom", (_, _) => Task.FromResult(ByteResult.Failure("handler said no")));
             Register("throw", (_, _) => throw new InvalidOperationException("handler exploded"));

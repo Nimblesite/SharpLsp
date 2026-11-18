@@ -78,9 +78,8 @@ internal static class SolutionLoader
     private static string PickBestSolution(string[] solutionFiles, string workspacePath)
     {
         var dirName = NativePaths.NameOf(workspacePath);
-        var match = Array.Find(
-            solutionFiles,
-            s => string.Equals(NativePaths.StemOf(s), dirName, NativePaths.Comparison)
+        var match = Array.Find(solutionFiles, s =>
+            string.Equals(NativePaths.StemOf(s), dirName, NativePaths.Comparison)
         );
         return match ?? solutionFiles[0];
     }
@@ -103,8 +102,7 @@ internal static class SolutionLoader
         var found = NativePaths.WorkspaceFiles(workspacePath, ProjectOrSolutionExtensions);
         var solutionFiles = Array.FindAll(found, IsSolution);
         var projectFiles = Array.FindAll(found, path => !IsSolution(path));
-        var target =
-            RootTarget(workspacePath, solutionFiles, projectFiles)
+        var target = RootTarget(workspacePath, solutionFiles, projectFiles)
             ?? solutionFiles.Length switch
             {
                 1 => solutionFiles[0],

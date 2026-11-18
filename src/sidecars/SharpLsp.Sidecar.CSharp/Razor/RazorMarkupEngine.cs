@@ -69,22 +69,18 @@ internal static class RazorMarkupEngine
         RazorMarkupCapture capture
     )
     {
-        return RazorProjectEngine.Create(
-            settings.Configuration,
-            fileSystem,
-            builder =>
-            {
-                builder.Features.Add(new RazorTagHelpers.Feature(tagHelpers));
-                CompilerFeatures.Register(builder);
-                RazorExtensions.Register(builder);
-                capture.Register(builder);
-                _ = builder.SetRootNamespace(settings.RootNamespace);
-                _ = builder.SetCSharpLanguageVersion(settings.Configuration.CSharpLanguageVersion);
-                _ = settings.LocalizedComponentNames
-                    ? builder.SetSupportLocalizedComponentNames()
-                    : builder;
-            }
-        );
+        return RazorProjectEngine.Create(settings.Configuration, fileSystem, builder =>
+        {
+            builder.Features.Add(new RazorTagHelpers.Feature(tagHelpers));
+            CompilerFeatures.Register(builder);
+            RazorExtensions.Register(builder);
+            capture.Register(builder);
+            _ = builder.SetRootNamespace(settings.RootNamespace);
+            _ = builder.SetCSharpLanguageVersion(settings.Configuration.CSharpLanguageVersion);
+            _ = settings.LocalizedComponentNames
+                ? builder.SetSupportLocalizedComponentNames()
+                : builder;
+        });
     }
 
     private static void LogOnce(Project project, Exception ex)

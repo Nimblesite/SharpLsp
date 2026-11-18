@@ -49,13 +49,11 @@ public sealed class RazorProjectionTests
                 (entry.RazorStart, projection.RazorText.ToString(Razor(entry)))
             )
         );
-        Assert.All(
-            projection.Map.Mappings,
-            entry =>
-                Assert.Equal(
-                    projection.RazorText.ToString(Razor(entry)),
-                    projection.GeneratedText.ToString(Generated(entry))
-                )
+        Assert.All(projection.Map.Mappings, entry =>
+            Assert.Equal(
+                projection.RazorText.ToString(Razor(entry)),
+                projection.GeneratedText.ToString(Generated(entry))
+            )
         );
     }
 

@@ -245,9 +245,8 @@ public sealed class WorkspaceManagerQueryCoverageTests : IClassFixture<Workspace
         var document = Assert.Single(edit.DocumentChanges);
         Assert.Equal(SourcePath, document.FilePath);
         Assert.Equal(5, document.Edits.Count);
-        Assert.All(
-            document.Edits,
-            edit => Assert.Equal("Add", ReplacedText(WorkspaceManagerQueryFixture.Source, edit))
+        Assert.All(document.Edits, edit =>
+            Assert.Equal("Add", ReplacedText(WorkspaceManagerQueryFixture.Source, edit))
         );
         Assert.All(document.Edits, edit => Assert.Equal("Renamed", edit.NewText));
         var rewritten = ApplyEdits(WorkspaceManagerQueryFixture.Source, document.Edits);

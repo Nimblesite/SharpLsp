@@ -63,8 +63,7 @@ internal static class HotReloadSignatureGuard
         CancellationToken ct
     )
     {
-        var root =
-            await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
+        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Hot reload requires a parsed syntax tree.");
         return [.. root.DescendantNodes().OfType<MethodDeclarationSyntax>().Select(ShapeOf)];
     }

@@ -117,13 +117,12 @@ internal static class RazorSelectionRanges
     /// </summary>
     private static ImmutableList<TextSpan> Nested(IEnumerable<TextSpan> candidates, int offset)
     {
-        return candidates.Aggregate(
-            ImmutableList<TextSpan>.Empty,
-            (chain, candidate) =>
-                chain.Count == 0 && !candidate.Contains(offset) ? chain
-                : chain.Count > 0 && !StrictlyHolds(chain[^1], candidate) ? chain
-                : chain.Add(candidate)
-        );
+        return candidates.Aggregate(ImmutableList<TextSpan>.Empty, (chain, candidate) => chain.Count
+                == 0
+            && !candidate.Contains(offset)
+                ? chain
+            : chain.Count > 0 && !StrictlyHolds(chain[^1], candidate) ? chain
+            : chain.Add(candidate));
     }
 
     /// <summary>Whether <paramref name="outer"/> contains <paramref name="inner"/> with room to spare.</summary>

@@ -269,8 +269,7 @@ internal static class DefinitionResolver
         CancellationToken ct
     )
     {
-        var root =
-            await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
+        var root = await document.GetSyntaxRootAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Syntax root is null");
 
         var token = root.FindToken(position);

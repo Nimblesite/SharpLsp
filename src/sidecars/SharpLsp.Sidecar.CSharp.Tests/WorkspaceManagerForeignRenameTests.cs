@@ -289,9 +289,8 @@ public sealed class WorkspaceManagerForeignRenameTests : IClassFixture<ForeignRe
     private static (int Line, int Character) LocateFile(string path, string anchor, string token)
     {
         var lines = File.ReadAllLines(path);
-        var line = Array.FindIndex(
-            lines,
-            value => value.Contains(anchor, StringComparison.Ordinal)
+        var line = Array.FindIndex(lines, value =>
+            value.Contains(anchor, StringComparison.Ordinal)
         );
         Assert.True(line >= 0, $"missing line anchor {anchor}");
         var character = lines[line].IndexOf(token, StringComparison.Ordinal);
@@ -335,9 +334,8 @@ public sealed class ForeignRenameFixture : IDisposable
     public (int Line, int Character) Locate(string lineAnchor, string token)
     {
         var lines = File.ReadAllLines(SourcePath);
-        var line = Array.FindIndex(
-            lines,
-            value => value.Contains(lineAnchor, StringComparison.Ordinal)
+        var line = Array.FindIndex(lines, value =>
+            value.Contains(lineAnchor, StringComparison.Ordinal)
         );
         Assert.True(line >= 0, $"missing line anchor {lineAnchor}");
         var character = lines[line].IndexOf(token, StringComparison.Ordinal);

@@ -70,9 +70,8 @@ public sealed class RegexHighlightingTests : IAsyncLifetime, IDisposable
     private static List<(string Text, string Type)> LiteralTokens(int[] data, string marker)
     {
         var lines = Source.Split('\n');
-        var wanted = Array.FindIndex(
-            lines,
-            line => line.Contains(marker, StringComparison.Ordinal)
+        var wanted = Array.FindIndex(lines, line =>
+            line.Contains(marker, StringComparison.Ordinal)
         );
         var types = SemanticTokensResolver.GetTokenTypes();
         var tokens = new List<(string, string)>();
@@ -196,13 +195,11 @@ public sealed class RegexHighlightingTests : IAsyncLifetime, IDisposable
         Assert.Equal(expected, Syntax(pattern));
         // Ranges are in order, inside the pattern, and never overlap.
         var ranges = RegexPatternTokens.Of(pattern);
-        Assert.All(
-            ranges,
-            range => Assert.True(range.Start < range.End && range.End <= pattern.Length)
+        Assert.All(ranges, range =>
+            Assert.True(range.Start < range.End && range.End <= pattern.Length)
         );
-        Assert.All(
-            ranges.Zip(ranges.Skip(1)),
-            pair => Assert.True(pair.First.End <= pair.Second.Start)
+        Assert.All(ranges.Zip(ranges.Skip(1)), pair =>
+            Assert.True(pair.First.End <= pair.Second.Start)
         );
     }
 }

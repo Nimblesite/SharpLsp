@@ -33,8 +33,7 @@ public static class WellKnownPackages
 
     private static IReadOnlyList<WellKnownType> Load()
     {
-        using var stream =
-            typeof(WellKnownPackages).Assembly.GetManifestResourceStream(Resource)
+        using var stream = typeof(WellKnownPackages).Assembly.GetManifestResourceStream(Resource)
             ?? throw new InvalidOperationException($"{Resource} is not embedded");
         using var document = JsonDocument.Parse(stream);
         return

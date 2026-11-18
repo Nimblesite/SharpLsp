@@ -28,8 +28,7 @@ public static class SolutionFileReader
                 return SolutionReadResult.Failure(unsupported);
             }
 
-            var serializer =
-                SolutionSerializers.GetSerializerByMoniker(fullPath)
+            var serializer = SolutionSerializers.GetSerializerByMoniker(fullPath)
                 ?? throw new InvalidOperationException(
                     $"No solution serializer found for '{fullPath}'."
                 );

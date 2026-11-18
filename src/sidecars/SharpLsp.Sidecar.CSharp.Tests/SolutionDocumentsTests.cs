@@ -118,13 +118,11 @@ public sealed class SolutionDocumentsTests : IClassFixture<SolutionDocumentsFixt
 
         var documents = await DocumentsAsync(manager);
 
-        Assert.DoesNotContain(
-            documents,
-            document => NativePaths.SameName(document.FilePath, "Widget.g.cs")
+        Assert.DoesNotContain(documents, document =>
+            NativePaths.SameName(document.FilePath, "Widget.g.cs")
         );
-        Assert.DoesNotContain(
-            documents,
-            document => NativePaths.HasDirectory(document.FilePath, "obj")
+        Assert.DoesNotContain(documents, document =>
+            NativePaths.HasDirectory(document.FilePath, "obj")
         );
     }
 

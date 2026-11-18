@@ -33,8 +33,7 @@ internal static class RazorQuickFixes
         CancellationToken ct
     )
     {
-        var model =
-            await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false)
+        var model = await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The projection has no semantic model");
         var names = model
             .GetDiagnostics(cancellationToken: ct)

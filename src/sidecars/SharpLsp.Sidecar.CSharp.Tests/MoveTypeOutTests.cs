@@ -200,9 +200,8 @@ public sealed class MoveTypeOutTests : IDisposable
 
         Assert.Contains("internal class Shielded { }", _project.After(edit, "Shielded.cs"));
         // The derived class named it bare; nothing there needed to change.
-        Assert.DoesNotContain(
-            edit.DocumentChanges,
-            change => NativePathsEqual(change.FilePath, _project.PathOf(Consumers))
+        Assert.DoesNotContain(edit.DocumentChanges, change =>
+            NativePathsEqual(change.FilePath, _project.PathOf(Consumers))
         );
     }
 
@@ -224,11 +223,9 @@ public sealed class MoveTypeOutTests : IDisposable
         using var manager = await _project.OpenAsync();
         var actions = await _project.ActionsAtAsync(manager, Shapes, anchor, token);
 
-        Assert.DoesNotContain(
-            actions,
-            action =>
-                action.Title.StartsWith("Move '", StringComparison.Ordinal)
-                && action.Title.Contains(" out of ")
+        Assert.DoesNotContain(actions, action =>
+            action.Title.StartsWith("Move '", StringComparison.Ordinal)
+            && action.Title.Contains(" out of ")
         );
     }
 
@@ -257,9 +254,8 @@ public sealed class MoveTypeOutTests : IDisposable
             "Free"
         );
 
-        Assert.Contains(
-            actions,
-            action => action.Title == "Move 'Free' out of 'Generic' to Free.cs"
+        Assert.Contains(actions, action =>
+            action.Title == "Move 'Free' out of 'Generic' to Free.cs"
         );
     }
 

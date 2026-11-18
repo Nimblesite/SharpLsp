@@ -39,9 +39,8 @@ public sealed class RazorMarkupReferencesTests : IClassFixture<RazorFixture>
         );
         Assert.Equal(expected.Order(), InFile(fromTag.Locations, Board));
         Assert.All(fromTag.Locations, location => Assert.Equal("Tally", TextAt(location)));
-        Assert.DoesNotContain(
-            fromTag.Locations,
-            location => NativePaths.HasExtension(location.FilePath, ".g.cs")
+        Assert.DoesNotContain(fromTag.Locations, location =>
+            NativePaths.HasExtension(location.FilePath, ".g.cs")
         );
 
         // From C#, the field's type: the tags are references too.
@@ -63,10 +62,8 @@ public sealed class RazorMarkupReferencesTests : IClassFixture<RazorFixture>
         );
 
         Assert.Equal(new[] { start, end }.Order(), InFile(references.Locations, Board));
-        var declared = Assert.Single(
-            references.Locations,
-            location =>
-                NativePaths.AreEqual(_fixture.Path("Widgets", "Panel.razor"), location.FilePath)
+        var declared = Assert.Single(references.Locations, location =>
+            NativePaths.AreEqual(_fixture.Path("Widgets", "Panel.razor"), location.FilePath)
         );
         Assert.Equal((0, 0), (declared.Line, declared.Character));
     }
@@ -87,9 +84,8 @@ public sealed class RazorMarkupReferencesTests : IClassFixture<RazorFixture>
             new[] { start, end, field }.Order(),
             highlights.Highlights.Select(h => (h.StartLine, h.StartCharacter)).Order()
         );
-        Assert.All(
-            highlights.Highlights,
-            h => Assert.Equal("Tally".Length, h.EndCharacter - h.StartCharacter)
+        Assert.All(highlights.Highlights, h =>
+            Assert.Equal("Tally".Length, h.EndCharacter - h.StartCharacter)
         );
     }
 

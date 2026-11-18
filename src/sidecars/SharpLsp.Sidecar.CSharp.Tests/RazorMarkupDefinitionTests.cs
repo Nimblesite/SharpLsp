@@ -40,14 +40,12 @@ public sealed class RazorMarkupDefinitionTests : IClassFixture<RazorFixture>
             await manager.GetDefinitionAsync(Board, badge.Line, badge.Character + 1)
         );
         Assert.Equal(2, both.Locations.Count);
-        var razor = Assert.Single(
-            both.Locations,
-            l => NativePaths.AreEqual(Shared("Badge.razor"), l.FilePath)
+        var razor = Assert.Single(both.Locations, l =>
+            NativePaths.AreEqual(Shared("Badge.razor"), l.FilePath)
         );
         Assert.Equal((0, 0), (razor.Line, razor.Character));
-        var codeBehind = Assert.Single(
-            both.Locations,
-            l => NativePaths.AreEqual(Shared("Badge.razor.cs"), l.FilePath)
+        var codeBehind = Assert.Single(both.Locations, l =>
+            NativePaths.AreEqual(Shared("Badge.razor.cs"), l.FilePath)
         );
         Assert.Equal(
             RazorFixture.Locate(Shared("Badge.razor.cs"), "public partial class Badge", "Badge"),

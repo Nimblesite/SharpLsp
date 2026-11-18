@@ -141,9 +141,8 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         Assert.False((await OpenAsync(manager, first)).IsError);
 
         var errors = await ErrorsAsync(manager, first);
-        Assert.DoesNotContain(
-            errors,
-            d => string.Equals(d.Code, "CS0017", StringComparison.Ordinal)
+        Assert.DoesNotContain(errors, d =>
+            string.Equals(d.Code, "CS0017", StringComparison.Ordinal)
         );
         Assert.Empty(errors);
     }
@@ -363,9 +362,8 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
 
         // CS0103 is "name does not exist in the current context" — proof the root file's own
         // code lost its references, which is the failure mode this guards against.
-        Assert.DoesNotContain(
-            await ErrorsAsync(manager, app),
-            d => string.Equals(d.Code, "CS0103", StringComparison.Ordinal)
+        Assert.DoesNotContain(await ErrorsAsync(manager, app), d =>
+            string.Equals(d.Code, "CS0103", StringComparison.Ordinal)
         );
     }
 
@@ -436,9 +434,8 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
         );
 
         Assert.Equal(64, closure.Files.Count);
-        Assert.Contains(
-            closure.Issues,
-            issue => issue.Contains("exceeded 64 files", StringComparison.Ordinal)
+        Assert.Contains(closure.Issues, issue =>
+            issue.Contains("exceeded 64 files", StringComparison.Ordinal)
         );
     }
 
@@ -462,9 +459,8 @@ public sealed class WorkspaceManagerSingleFileTests : IDisposable
             CancellationToken.None
         );
 
-        Assert.Contains(
-            closure.Issues,
-            issue => issue.Contains("levels of #:include nesting", StringComparison.Ordinal)
+        Assert.Contains(closure.Issues, issue =>
+            issue.Contains("levels of #:include nesting", StringComparison.Ordinal)
         );
     }
 

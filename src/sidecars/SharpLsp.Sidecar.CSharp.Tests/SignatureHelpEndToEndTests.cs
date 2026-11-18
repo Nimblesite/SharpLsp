@@ -48,14 +48,10 @@ public sealed class SignatureHelpEndToEndTests : IDisposable
         Assert.Equal(1, help.ActiveSignature);
         Assert.Equal(1, help.ActiveParameter);
         Assert.Equal(["string name", "int times"], help.Signatures[1].Parameters);
-        Assert.All(
-            help.Signatures,
-            signature =>
-                Assert.All(
-                    signature.Parameters,
-                    parameter =>
-                        Assert.Contains(parameter, signature.Label, StringComparison.Ordinal)
-                )
+        Assert.All(help.Signatures, signature =>
+            Assert.All(signature.Parameters, parameter =>
+                Assert.Contains(parameter, signature.Label, StringComparison.Ordinal)
+            )
         );
     }
 
@@ -131,14 +127,8 @@ public sealed class SignatureHelpEndToEndTests : IDisposable
 
         Assert.NotNull(help);
         Assert.True(help.Signatures.Count >= 10, $"{help.Signatures.Count} overloads");
-        Assert.All(
-            help.Signatures,
-            signature =>
-                Assert.StartsWith(
-                    "void Console.WriteLine(",
-                    signature.Label,
-                    StringComparison.Ordinal
-                )
+        Assert.All(help.Signatures, signature =>
+            Assert.StartsWith("void Console.WriteLine(", signature.Label, StringComparison.Ordinal)
         );
         Assert.Contains(help.Signatures, signature => signature.Parameters.Count == 0);
     }

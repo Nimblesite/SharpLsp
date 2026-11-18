@@ -312,8 +312,7 @@ internal sealed class HotReloadSession : IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(_ended, this);
-            var pending =
-                _pending
+            var pending = _pending
                 ?? throw new InvalidOperationException("Hot reload has no update to commit.");
             _enc.Commit();
             _solution = pending;
@@ -412,8 +411,8 @@ internal sealed class HotReloadSession : IAsyncDisposable
     {
         var fullPath = NativePaths.WithLinksResolved(filePath);
         return solution
-                .Projects.SelectMany(project => project.Documents)
-                .FirstOrDefault(document => PathsEqual(document.FilePath, fullPath))
+            .Projects.SelectMany(project => project.Documents)
+            .FirstOrDefault(document => PathsEqual(document.FilePath, fullPath))
             ?? throw new InvalidOperationException($"Hot reload document not found: {filePath}");
     }
 
