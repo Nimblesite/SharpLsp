@@ -163,33 +163,34 @@ fn reparse(parsers: &TsParsers, trees: &mut HashMap<Uri, Tree>, uri: &Uri, sourc
     }
 }
 
-/// Lazily open the workspace for the first opened document when the client supplied no
-/// workspace root, through the same `start_sidecar` path as an eager open so analyzers,
-/// diagnostics and health monitoring are wired identically.
+/// Lazily open a document's own workspace in a compiler nothing was opened in:
+/// no workspace root was supplied, or the client has not settled a solution
+/// yet. It goes through the same `start_sidecar` path as an eager open, so
+/// analyzers, diagnostics and health monitoring are wired identically.
 ///
-/// Returns `true` only when a sidecar workspace was actually opened. Returning `true` for an
-/// unsupported document would latch `workspace_initialized` on, so opening a `.md` or `.json`
-/// before any source file would permanently prevent the real workspace from loading.
-/// Implements [SCRIPT-ROUTE-LAZY].
+/// A document no compiler reads opens nothing, so opening a `.md` or `.json`
+/// first never keeps a later source file from loading, and each language's
+/// compiler waits for its own first document. Implements [SCRIPT-ROUTE-LAZY].
 pub(crate) fn init_workspace_for_file(
     notif: &Notification,
     runtime: &tokio::runtime::Runtime,
     sidecars: [Option<&Arc<SidecarManager>>; 2],
     follow_up: workspace_open::OpenFollowUp,
-) -> bool {
+) {
     let Some(file_path) = opened_document_path(notif) else {
-        return false;
+        return;
     };
-    let Some(sidecar) = sidecar_for_path(&file_path, sidecars) else {
-        return false;
+    let waiting = sidecar_for_path(&file_path, sidecars)
+        .filter(|sidecar| !sidecar.workspace_open_requested());
+    let Some(sidecar) = waiting else {
+        return;
     };
     // The sidecar is given the FILE PATH, not its parent directory. Sending a directory is what
     // forces the sidecar to glob the folder and compile unrelated programs together.
     // Implements [SCRIPT-ROUTE-TARGET]; health monitoring waits for the open ([SCRIPT-ROUTE-HEALTH]).
-    info!("No workspace root — opening single-document workspace for {file_path}");
+    info!("No workspace opened — opening single-document workspace for {file_path}");
     let target = std::path::PathBuf::from(file_path);
     workspace_open::start_sidecar(Some(sidecar), Some(&target), follow_up, runtime);
-    true
 }
 
 /// Extract the file path from a `textDocument/didOpen` notification.

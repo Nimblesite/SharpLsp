@@ -207,12 +207,12 @@ A `.fsi` signature file with no owning project has no meaningful semantic closur
 
 ### Lazy workspace initialization `[SCRIPT-ROUTE-LAZY]`
 
-When the LSP client supplies no workspace root, the host defers `workspace/open` until the first `textDocument/didOpen` that resolves to a supported `DocumentKind`.
+When nothing was opened in a compiler before a document arrives, the host defers that compiler's `workspace/open` until the first `textDocument/didOpen` of its language that resolves to a supported `DocumentKind`. That is the case when the LSP client supplies no workspace root.
 
 Requirements:
-- The "initialized" latch is set **only** when a workspace was actually opened. A `didOpen` for an `Unsupported` document must leave the latch clear so a later `.cs`/`.fs` open still initializes.
+- Each compiler keeps its own latch, set when any `workspace/open` is asked of it, an eager or a selected one included, even while that open is still queued. A `didOpen` for an `Unsupported` document asks nothing of any compiler, so a later `.cs`/`.fs` open still initializes.
 - Only the sidecar matching the document's language is started. Opening a `.cs` file must not spawn the F# sidecar and vice versa.
-- The second language's sidecar is started on demand when a document of that language is first opened, so a mixed-language folder works without a restart.
+- The second language's sidecar is started on demand when a document of that language is first opened, through the same lazy open, so a mixed-language folder works without a restart and a project's source opened second loads its project.
 - Lazy initialization performs the same steps as eager initialization — workspace open, analyzer configuration, diagnostics wiring, then health monitoring. It must share one implementation with the eager path rather than duplicating a subset of it.
 
 ### Workspace target `[SCRIPT-ROUTE-TARGET]`

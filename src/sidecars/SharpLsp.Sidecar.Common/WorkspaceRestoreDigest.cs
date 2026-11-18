@@ -19,45 +19,58 @@ internal static class WorkspaceRestoreDigest
     /// <summary>Remember the SDK's successful restore of <paramref name="project"/>.</summary>
     internal static void Record(string project)
     {
-        try
-        {
-            if (Compute(project) is { } digest)
-            {
-                var proof = new FileInfo(ProofFile(project));
-                proof.Directory?.Create();
-                using var writer = proof.CreateText();
-                writer.Write(digest);
-            }
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Log.Debug(
-                "Restore proof not recorded; failure kind {FailureKind}",
-                error.GetType().Name
-            );
-        }
+        _ = Guarded(() => Write(project));
     }
 
     /// <summary>Whether the last recorded restore read exactly what is on disk now.</summary>
     internal static bool Matches(string project)
     {
+        return Guarded(() => Read(project) is { } proof && proof == Compute(project));
+    }
+
+    /// <summary>A proof that cannot be read or written is no proof: the SDK restores.</summary>
+    private static bool Guarded(Func<bool> proof)
+    {
         try
         {
-            var proof = new FileInfo(ProofFile(project));
-            if (!proof.Exists || Compute(project) is not { } digest)
-            {
-                return false;
-            }
-            using var reader = proof.OpenText();
-            return string.Equals(reader.ReadToEnd(), digest, StringComparison.Ordinal);
+            return proof();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
+            Log.Debug(
+                "Restore proof unavailable; failure kind {FailureKind}",
+                error.GetType().Name
+            );
             return false;
         }
     }
 
-    private static string ProofFile(string project)
+    private static bool Write(string project)
+    {
+        if (Compute(project) is not { } digest)
+        {
+            return false;
+        }
+        var proof = new FileInfo(ProofFile(project));
+        proof.Directory?.Create();
+        using var writer = proof.CreateText();
+        writer.Write(digest);
+        return true;
+    }
+
+    private static string? Read(string project)
+    {
+        var proof = new FileInfo(ProofFile(project));
+        if (!proof.Exists)
+        {
+            return null;
+        }
+        using var reader = proof.OpenText();
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>Where the proof of <paramref name="project"/> is kept.</summary>
+    internal static string ProofFile(string project)
     {
         var name = Hex(Encoding.UTF8.GetBytes(NativePaths.NormalizeFullPath(project)));
         return NativePaths.Temp("sharplsp", "restore-proofs", $"{name}.sha256");

@@ -110,7 +110,7 @@ impl Compiler {
     }
 
     /// The next notice cancels exactly `request`, within [`PROMPTLY`].
-    async fn cancels(&mut self, request: &Envelope) -> Result<()> {
+    pub(super) async fn cancels(&mut self, request: &Envelope) -> Result<()> {
         let cancel = tokio::time::timeout(PROMPTLY, self.notices.recv())
             .await
             .context("timed out waiting for a cancellation")?
@@ -148,7 +148,7 @@ impl Compiler {
     }
 
     /// Whether the host sends no notice within [`QUIET`].
-    async fn hears_no_notice(&mut self) -> bool {
+    pub(super) async fn hears_no_notice(&mut self) -> bool {
         tokio::time::timeout(QUIET, self.notices.recv())
             .await
             .is_err()

@@ -75,15 +75,22 @@ pub(crate) fn start_sidecar(
         sidecar.set_document_source(&follow_up.vfs);
     }
     if let (Some(sidecar), Some(target)) = (sidecar, target) {
+        let _already = sidecar.request_workspace_open();
         let sidecar = Arc::clone(sidecar);
         let target = target.to_string_lossy().to_string();
         drop(runtime.spawn(async move {
             if open_and_follow_up(&sidecar, &target, follow_up).await {
-                drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
-                sidecar.start_health_monitor().await;
+                watch(sidecar).await;
             }
         }));
     }
+}
+
+/// After a successful open: warm the compiler and monitor its health. Each
+/// runs at most once per sidecar, so every successful open asks for both.
+pub(crate) async fn watch(sidecar: Arc<SidecarManager>) {
+    drop(tokio::spawn(Arc::clone(&sidecar).start_warm_up()));
+    sidecar.start_health_monitor().await;
 }
 
 /// Open `target`, then configure analyzers and start the diagnostics scan.
@@ -302,9 +309,31 @@ impl SolutionChoice {
         }
     }
 
-    /// The path the C# sidecar opens.
+    /// The path configuration resolves to: the configured solution, else the root.
+    #[cfg(test)]
     pub(crate) fn target(&self) -> Option<&PathBuf> {
         self.target.as_ref()
+    }
+
+    /// The configured solution or project, when `csharp.solution_path` names
+    /// one: a target that is not the workspace root itself.
+    fn configured(&self) -> Option<&PathBuf> {
+        let (root, target) = (self.root.as_deref()?, self.target.as_ref()?);
+        let same = native_paths_equal(&root.to_string_lossy(), &target.to_string_lossy());
+        (!same).then_some(target)
+    }
+
+    /// What the C# and then the F# compiler open before any document does. A
+    /// configured solution is opened by both, so F# loads that solution's
+    /// projects and never every project under the folder. Otherwise each gets
+    /// the root: discovery for C#, every project beneath it for F#.
+    /// Implements [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH] and
+    /// [PERF-PROGRESSIVE-LOAD].
+    pub(crate) fn eager_targets(&self) -> [Option<&PathBuf>; 2] {
+        match self.configured() {
+            Some(configured) => [Some(configured), Some(configured)],
+            None => [self.target.as_ref(), self.root.as_ref()],
+        }
     }
 
     /// Where open failures are shown, when they are.

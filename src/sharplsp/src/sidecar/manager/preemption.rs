@@ -98,6 +98,14 @@ impl Preemption {
         }
     }
 
+    /// Cancel every background request: the compiler is stopping, and nothing
+    /// nobody waits on may keep it from being asked to. [SIDECAR-SHUTDOWN-PROTOCOL]
+    pub(super) fn preempt_all(&self) {
+        for (_, _, token) in self.with_running(std::mem::take) {
+            token.cancel();
+        }
+    }
+
     /// The registry, still usable after a panic elsewhere left its lock poisoned.
     fn with_running<T>(&self, change: impl FnOnce(&mut Vec<Running>) -> T) -> T {
         change(&mut self.running.lock().unwrap_or_else(PoisonError::into_inner))
