@@ -387,7 +387,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1020,9 +1020,9 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lsp-profiler"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cd35d265e1ed15dd5b07675e0253108b6d9409ec4856d9e830d79b618e4b51"
+checksum = "2ed08a15f032ac1f5fa1c3da91fea5edc47aee952d4c24f5c4caf6907cacd514"
 dependencies = [
  "async-trait",
  "inferno",
@@ -1038,9 +1038,9 @@ dependencies = [
 
 [[package]]
 name = "lsp-profiler-dotnet"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92ae41d9d626e62518fe7acf0a51e23a8f9fa5858412538a45efd34f6ad0ecc8"
+checksum = "6a751628485051faa7b4353350ff8cb05103c8d34f8c6b2fb1933a18737559dc"
 dependencies = [
  "async-trait",
  "lsp-profiler",
@@ -1079,9 +1079,9 @@ dependencies = [
 
 [[package]]
 name = "lspkit"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbb367f58b41ac9b7748c6632008805f0b9f8e37dcacb8b4147b2a216e9d7755"
+checksum = "5784a8d329e17985a9224c83ffbbf095158d87ddb605955ba685cc093b6608bc"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -1092,13 +1092,14 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
+ "tracing",
 ]
 
 [[package]]
 name = "lspkit-server"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb5b4a8e624514d4adcd4d013dd21f867b7cdf9a5eed99b9b327537d432c4fe8"
+checksum = "2c64b5bd1c1d691ae642ca872623c81c67e70d12f31dd569f920acd7c06d76f4"
 dependencies = [
  "async-trait",
  "lsp-types",
@@ -1549,7 +1550,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1838,7 +1839,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1896,7 +1897,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2365,7 +2366,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2958,7 +2959,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
