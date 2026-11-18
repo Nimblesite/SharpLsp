@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{ensure, Context, Result};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 use super::SidecarManager;
 use crate::sidecar::protocol::Envelope;
@@ -72,7 +72,7 @@ pub(super) struct Compiler {
     /// Requests, read in the order the host wrote them.
     transport: FramedTransport,
     /// Notices such as `$/cancelRequest`, which carry no request identity.
-    notices: UnboundedReceiver<Envelope>,
+    notices: Receiver<Envelope>,
 }
 
 impl Compiler {

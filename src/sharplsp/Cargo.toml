@@ -54,10 +54,10 @@ tracing-opentelemetry = "0.34"
 anyhow = "1"
 
 # Shared toolkit and profiler ([PROFILER-SHARED-LIBRARY]), https://lspkit.dev
-lsp-profiler = "0.6"
-lsp-profiler-dotnet = "0.6"
-lspkit = "0.6"
-lspkit-server = { version = "0.6", features = ["pull"] }
+lsp-profiler = "0.10"
+lsp-profiler-dotnet = "0.10"
+lspkit = "0.10"
+lspkit-server = { version = "0.10", features = ["pull"] }
 # The semantic memo; the version lspkit-server memoizes diagnostics with. [DEFINITION-CACHE]
 salsa = "0.28.5"
 globset = "0.4"
