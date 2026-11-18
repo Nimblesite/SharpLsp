@@ -6,6 +6,7 @@ module internal SharpLsp.Sidecar.FSharp.FSharpScriptPackages
 
 open System
 open System.Collections.Concurrent
+open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.Syntax
@@ -27,7 +28,9 @@ type Plan =
 // Directive sets already resolved once: FCS's dependency manager answers them from its
 // own cache from then on. Keys only, never compiler results.
 let private settled = ConcurrentDictionary<string, unit>()
-let private inFlight = ConcurrentDictionary<string, Lazy<Task>>()
+// The restore each script is running: its directive set and how to cancel it. A later
+// directive set supersedes it, so typing a package name never piles up restores.
+let private restores = Collections.Generic.Dictionary<string, string * CancellationTokenSource>()
 let private resolved = Event<string>()
 
 /// Fires with the script's path when its package directives have been resolved.
@@ -77,31 +80,62 @@ let private blank (source: string) (ranges: range list) =
 let private keyOf (scriptPath: string) (found: (range * string) list) =
     String.Join("\n", NativePaths.NormalizeFullPath scriptPath :: (found |> List.map snd))
 
-/// Resolve the whole text once, then let every later request use it.
-let private settle (key: string) (scriptPath: string) (resolve: unit -> Task) : Task =
+/// Forget `script`'s restore when it is still `cts`'s.
+let private release (script: string) (cts: CancellationTokenSource) =
+    lock restores (fun () ->
+        match restores.TryGetValue script with
+        | true, (_, current) when Object.ReferenceEquals(current, cts) -> restores.Remove script |> ignore
+        | _ -> ())
+    cts.Dispose()
+
+/// Resolve the whole text once, then let every later request use it. A restore a later
+/// directive set superseded is cancelled and reports nothing.
+let private settle (key: string) (scriptPath: string) (cts: CancellationTokenSource) (resolve: CancellationToken -> Task) : Task =
     task {
         try
             try
-                do! resolve ()
+                do! resolve cts.Token
             with ex ->
-                Log.Warning(ex, "F# script package resolution failed for {Script}", scriptPath)
+                if not cts.IsCancellationRequested then
+                    Log.Warning(ex, "F# script package resolution failed for {Script}", scriptPath)
         finally
-            settled[key] <- ()
-            inFlight.TryRemove key |> ignore
-            Log.Information("F# script packages resolved for {Script}", scriptPath)
-            resolved.Trigger scriptPath
+            let superseded = cts.IsCancellationRequested
+            release (NativePaths.NormalizeFullPath scriptPath) cts
+            if not superseded then
+                settled[key] <- ()
+                Log.Information("F# script packages resolved for {Script}", scriptPath)
+                resolved.Trigger scriptPath
     }
+
+/// Cancel `script`'s running restore unless it is for `key`; true when one for `key` runs.
+let private supersede (script: string) (key: string option) =
+    match restores.TryGetValue script with
+    | true, (current, _) when Some current = key -> true
+    | true, (_, cts) ->
+        cts.Cancel()
+        restores.Remove script |> ignore
+        false
+    | _ -> false
+
+/// Start resolving `key` for the script unless it already is, cancelling any other.
+let private start (key: string) (scriptPath: string) (resolve: CancellationToken -> Task) =
+    let script = NativePaths.NormalizeFullPath scriptPath
+    lock restores (fun () ->
+        if not (supersede script (Some key)) then
+            let cts = new CancellationTokenSource()
+            restores[script] <- (key, cts)
+            Task.Run<unit>(fun () -> task { do! settle key scriptPath cts resolve }) |> ignore)
 
 /// Decide what `source` is resolved from, starting the background resolution of its
 /// packages when they are not resolved yet. `resolve` resolves the whole text.
-let plan (checker: FSharpChecker) (scriptPath: string) (source: string) (resolve: unit -> Task) =
+let plan (checker: FSharpChecker) (scriptPath: string) (source: string) (resolve: CancellationToken -> Task) =
     task {
         let! found = directives checker scriptPath source
         let key = keyOf scriptPath found
         if found.IsEmpty || settled.ContainsKey key then
+            lock restores (fun () -> supersede (NativePaths.NormalizeFullPath scriptPath) None |> ignore)
             return Whole
         else
-            let start = Lazy<Task>(fun () -> Task.Run<unit>(fun () -> task { do! settle key scriptPath resolve }) :> Task)
-            inFlight.GetOrAdd(key, start).Value |> ignore
+            start key scriptPath resolve
             return WithoutPackages(blank source (found |> List.map fst))
     }

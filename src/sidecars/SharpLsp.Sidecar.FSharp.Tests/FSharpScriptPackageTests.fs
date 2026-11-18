@@ -88,3 +88,34 @@ type ScriptPackageTests(fixture: EngineDiagnosticsFixture) =
 
         do! restoreProject fixture [ path ]
     }
+
+/// Typing a package name is a directive edit per keystroke: each later directive set
+/// supersedes the earlier ones, whose restores are cancelled rather than left running
+/// side by side, and only the surviving one reports itself resolved. [SCRIPT-FSX-NUGET]
+[<Fact>]
+let ``A directive edit cancels the restore it supersedes`` () = task {
+    let checker = FSharp.Compiler.CodeAnalysis.FSharpChecker.Create()
+    let path = NativePaths.Resolve(Path.GetTempPath(), $"supersede-{Guid.NewGuid():N}.fsx")
+    let mutable running = 0
+    let mutable fired = 0
+    let last = Threading.Tasks.TaskCompletionSource()
+    use _resolved = SharpLsp.Sidecar.FSharp.FSharpScriptPackages.Resolved.Subscribe(fun _ -> Threading.Interlocked.Increment(&fired) |> ignore)
+    let resolve (final: bool) (token: Threading.CancellationToken) : Threading.Tasks.Task = task {
+        Threading.Interlocked.Increment(&running) |> ignore
+        if final then last.TrySetResult() |> ignore
+        try
+            try do! Threading.Tasks.Task.Delay(Threading.Timeout.Infinite, token)
+            with :? OperationCanceledException -> ()
+        finally Threading.Interlocked.Decrement(&running) |> ignore
+    }
+    let names = [ "N"; "Ne"; "Newtonsoft" ]
+    for name in names do
+        let! plan = SharpLsp.Sidecar.FSharp.FSharpScriptPackages.plan checker path $"#r \"nuget: {name}\"\n" (resolve (name = List.last names))
+        Assert.True(plan.IsWithoutPackages, $"{name}: checked without its packages while they restore")
+    let! started = Threading.Tasks.Task.WhenAny(last.Task, Threading.Tasks.Task.Delay 10000)
+    Assert.Same(last.Task, started)
+    do! Threading.Tasks.Task.Delay 300
+    Assert.Equal(1, running)
+    Assert.Equal(0, fired)
+}
+

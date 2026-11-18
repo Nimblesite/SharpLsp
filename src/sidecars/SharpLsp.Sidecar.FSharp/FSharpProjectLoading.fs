@@ -214,7 +214,7 @@ let private resolveScript (checker: FSharpChecker) (arguments: string array) (sc
 /// package directives, so no request waits for a restore. [SCRIPT-FSX-NUGET]
 let scriptResolution (checker: FSharpChecker) (arguments: string array) (scriptPath: string) (source: string) (ct: CancellationToken) =
     task {
-        let whole () = resolveScript checker arguments scriptPath source CancellationToken.None :> Tasks.Task
+        let whole token = resolveScript checker arguments scriptPath source token :> Tasks.Task
         match! FSharpScriptPackages.plan checker scriptPath source whole with
         | FSharpScriptPackages.Whole ->
             let! options, diagnostics = resolveScript checker arguments scriptPath source ct
