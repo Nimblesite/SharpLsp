@@ -55,6 +55,8 @@
     <Compile Include="FSharpOwnerRestoreNotificationsTests.fs" />
     <Compile Include="NativeHeldSource.fs" />
     <Compile Include="FSharpScriptDiagnosticsTests.fs" />
+    <Compile Include="FSharpScriptPackageTests.fs" />
+    <Compile Include="FSharpScriptArgumentTests.fs" />
     <Compile Include="FSharpLintDiagnosticsTests.fs" />
     <Compile Include="FSharpScriptCancellationEndToEndTests.fs" />
     <Compile Include="FSharpForeignSymbolsTests.fs" />

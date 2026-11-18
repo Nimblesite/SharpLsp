@@ -118,6 +118,11 @@ pub fn configure(debounce_ms: u64) {
     DEBOUNCE_MS.store(debounce_ms, Ordering::Release);
 }
 
+/// The debounce window in milliseconds, as configured.
+pub fn debounce_ms() -> u64 {
+    DEBOUNCE_MS.load(Ordering::Acquire)
+}
+
 /// A document changed: requests arriving inside the debounce window wait it
 /// out before they reach a compiler.
 pub fn edited() {

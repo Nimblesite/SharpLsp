@@ -189,9 +189,15 @@ Compiler option-resolution errors appear once on their actual owning script rang
 
 Scripts opened in the editor define both `INTERACTIVE` and `EDITING`. `COMPILED` is **not** defined. Getting this wrong makes `#if INTERACTIVE` blocks appear greyed-out-dead in the editor while being live at runtime.
 
+### Script arguments `[SCRIPT-FSX-ARGUMENTS]`
+
+`fsharp.script_arguments` in `sharplsp.toml` lists extra compiler arguments every script is checked with, as `dotnet fsi` would be started with them: `--define:`, `--langversion:`, `--nowarn:`, `--warnaserror:`. They follow the arguments of [SCRIPT-FSX-SYMBOLS], so a script reads the same under the editor as it runs. The host sends them to the F# sidecar as the fifth field of `diagnostics/configure`; an older host sends none. A change of the setting applies without a restart: the next check of every script uses the new arguments. Projects are unaffected, since their arguments are MSBuild's.
+
 ### NuGet references `[SCRIPT-FSX-NUGET]`
 
 `#r "nuget: ..."` resolution is performed by FCS's dependency manager and requires network or local package-store access. It is slow on first use (seconds). Resolution runs off the request path; the script is first checked without the package references so the editor is responsive, then re-checked once resolution completes and diagnostics are republished.
+
+The package directives are read from the script's syntax tree. Until a directive set has been resolved once, the script's options are those of its text with those directives blanked, so hover, completion and navigation answer at once; the whole text resolves in the background ([FSharpScriptPackages.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpScriptPackages.fs)). While it does, the script's diagnostics are one `SLSPF0002` information notice and nothing else: what a check without the packages finds is not the truth about the script, so no phantom error is shown for a namespace a package will bring. When the resolution lands the sidecar raises `diagnostics/refresh`; a client served by `textDocument/publishDiagnostics` is re-fetched until the notice is gone. An edit that leaves the directives unchanged never resolves again.
 
 ### Signature files `[SCRIPT-FSX-FSI]`
 
@@ -223,9 +229,13 @@ Per [SIDECAR-HEALTH-ACTIVITY](SIDECAR-LIFECYCLE-SPEC.md), the per-language super
 
 Editing a `#:package`, `#:project`, `#:sdk`, or `#:include` directive changes the compilation closure and reference set. On `didChange`, the sidecar re-parses directives from the in-memory text and, if the directive set changed, schedules a workspace reload debounced by `sharplsp.toml`'s `server.debounce_ms`. Text-only edits never trigger reload.
 
+The project falls back to its tier-2 references at once, and the package restore waits out the window: a later directive edit inside it supersedes the earlier one, whose packages are never restored. The host sends the window to the sidecar as the fourth field of `diagnostics/configure`; an older host sends none and the reload is immediate.
+
 ### Closure membership changes `[SCRIPT-RELOAD-CLOSURE]`
 
 A file entering or leaving the `#:include` / `#:load` closure adds or removes a Roslyn document. Removal must also clear published diagnostics for that file, otherwise stale squiggles persist in files no longer part of the app.
+
+The sidecar raises `diagnostics/refresh` when a closure's membership changes. For a client served by `textDocument/publishDiagnostics`, the host then reconciles what it published with the documents the compiler lists: a file that left and that the editor does not hold open is published empty, and a file that entered is published. The app's implicit usings are a synthetic document: it is never listed, so nothing is published for it.
 
 A `didChange` can arrive for **any** member of a closure, not just its root: the host re-syncs on-disk text for every file it has published diagnostics against, and an `#:include`d file the editor never opened is one of them. The refresh is therefore always re-expanded from the **root** recorded on the project, with the changed file's in-memory text substituted wherever it appears in the closure. Re-expanding from the changed file instead treats a member as if it were a root, yields a closure that does not contain the real root, and prunes the root out of its own project — leaving the document the user is editing with no Roslyn document at all.
 

@@ -48,6 +48,7 @@ solution_path = ""
 
 [fsharp]
 enabled = true
+script_arguments = []
 
 [diagnostics]
 analyzers_enabled = true
@@ -84,6 +85,7 @@ The test platform's own DLLs can be prebuilt in Release. Their debugger warnings
 | `csharp.enabled` | Starts or skips the C# sidecar |
 | `csharp.solution_path` | Selects a `.sln` or `.slnx`, absolute or relative to the workspace |
 | `fsharp.enabled` | Starts or skips the F# sidecar |
+| `fsharp.script_arguments` | Extra compiler arguments every F# script is checked with, as `dotnet fsi` would be started with them, such as `--define:CI` or `--langversion:preview`; empty by default and updates live |
 | `diagnostics.analyzers_enabled` | Enables F# and C# analyzer diagnostics; compiler errors remain visible |
 | `diagnostics.solution_wide_analysis` | Includes closed F# and C# files in solution diagnostics; enabled by default |
 | `diagnostics.project_filter` | Filters F# and C# workspace results by project name or project path relative to the selected solution; direct document pulls remain unfiltered |

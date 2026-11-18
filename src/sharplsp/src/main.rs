@@ -236,6 +236,7 @@ fn run_server() -> Result<()> {
         sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
     semantic::requests::configure(sharplsp_config.server.debounce_ms);
+    workspace_open::configure_scripts(&sharplsp_config.fsharp.script_arguments);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -272,6 +273,7 @@ fn run_server() -> Result<()> {
         [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
         &runtime,
         &connection.sender,
+        &vfs,
     );
 
     let csharp_event_pump =

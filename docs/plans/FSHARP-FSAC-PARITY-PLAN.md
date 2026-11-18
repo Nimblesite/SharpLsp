@@ -78,7 +78,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing · ⭐ beyond FSAC (we have, FSA
 | Unused opens analyzer | ✅ | `[ANALYZERS-FSAC-UNUSED-OPEN]` — `SLSPF0102` hint (`UnusedOpens.getUnusedOpens`) |
 | SimplifyName analyzer | ✅ | `[ANALYZERS-FSAC-SIMPLIFY-NAME]` — `SLSPF0103` hint (`SimplifyNames.getSimplifiableNames`) |
 | FSharpLint linting | ✅ | `[DIAG-CATEGORIES-ANALYZER]` — [FSharpLintDiagnostics.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpLintDiagnostics.fs): real FSharpLint findings from the same FCS check; the nearest `fsharplint.json` configures them |
-| FSI / `.fsx` script type-check (`UseSdkScripts`, `fsiExtraParameters`) | 🟡 | `.fsx`/`.fsi` recognized + routed; full FSI script checking missing — **gap** |
+| FSI / `.fsx` script type-check (`UseSdkScripts`, `fsiExtraParameters`) | ✅ | scripts check in their own context from their own directives, `#r "nuget:"` off the request path, and under `fsharp.script_arguments` — `[SCRIPT-FSX-OPTIONS]`, `[SCRIPT-FSX-NUGET]`, `[SCRIPT-FSX-ARGUMENTS]` |
 | `fsharp/workspacePeek` / `workspaceLoad` / `project` / `compile` | 🟡 | workspace loading + `.fsproj` cracking exist; Ionide custom endpoints not exposed |
 | `fsharp/documentation` / `f1Help` / `fsdn` | ❌ | **gap** — info-panel + FSDN search endpoints |
 | `fsharp/compilerLocation` | ❌ | **gap** |
@@ -118,7 +118,8 @@ Each item is sized to one focused change with e2e + sidecar tests.
 8. ~~**Compiler-error typo fix** ("did you mean") + **add `new` for IDisposable**~~ — ✅ **done**
    `[ANALYZERS-FSAC-CODEFIX-TYPO]` / `[ANALYZERS-FSAC-CODEFIX-ADD-NEW]`
    ([FSharpNameFixes.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpNameFixes.fs)).
-9. **FSI/`.fsx`** full script type-checking incl. `fsiExtraParameters`.
+9. ~~**FSI/`.fsx`** full script type-checking incl. `fsiExtraParameters`.~~ — ✅ **done** `[SCRIPT-FSX-ARGUMENTS]`: `fsharp.script_arguments` reaches every script check
+   ([FSharpProjectLoading.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpProjectLoading.fs) `resolveScript`); e2e `fsharp_script_arguments.rs`.
 10. **Ionide custom endpoints**: `documentation`, `f1Help`, `fsdn`, `compilerLocation`, `workspacePeek`.
 11. ~~**completion auto-`open`**~~ — ✅ **done** `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]` (#122): the
     entity index ([FSharpEntityIndex.fs](../../src/sidecars/SharpLsp.Sidecar.FSharp/FSharpEntityIndex.fs)) feeds
@@ -144,6 +145,8 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 | Diagnostic tags: unused open, dead code, never-matched rule → `Unnecessary`; obsolete use → `Deprecated` | `diagnostic_tags.rs` | ✅ |
 | Scripts with no project and no root: hover after any token, only FCS started, then a C# file too | `lazy_routing.rs` | ✅ |
 | Cross-language references, F# ↔ C# | `definition_cross_language.rs` | ✅ |
+| Scripts: `#r "nuget:"` binds off the request path, configured arguments apply and follow a settings change | `fsharp_script_packages.rs`, `fsharp_script_arguments.rs`; sidecar `FSharpScriptPackageTests`, `FSharpScriptArgumentTests` | ✅ |
+| A project's signature or source opened with no workspace root loads its project | `lazy_routing.rs` `a_signature_file_starts_fcs_only_inside_a_project_cone` | ✅ |
 
 **TODO — e2e to add as the impl lands each gap:**
 - [x] rename (prepare + apply) full-stack — `test_full_stack_fsharp_rename`

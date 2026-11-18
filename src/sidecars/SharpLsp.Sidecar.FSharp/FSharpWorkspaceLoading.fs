@@ -77,7 +77,7 @@ let private logScriptDiagnostics (scriptPath: string) (diagnostics: FSharp.Compi
 let private loadScript (state: FSharpWorkspaceState) scriptPath ct =
     task {
         let source = readSource state scriptPath
-        let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker scriptPath source ct
+        let! options, diagnostics = FSharpProjectLoading.scriptOptions state.Checker state.ScriptArguments scriptPath source ct
         logScriptDiagnostics scriptPath diagnostics
         clearWorkspace state
         state.LastLoadWasEmpty <- false

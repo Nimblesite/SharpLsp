@@ -721,8 +721,8 @@ code plus a regression test, and each test's chunk is green.
       a set is provisional. `src/sharplsp/src/diagnostics.rs:135` `publish_provisional`,
       `:167`; test `diagnostics.rs:666`
       `provisional_filebased_set_must_be_republished_once_restore_settles`.
-      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE] — tracked in
-      [SCRIPTING-FILEBASED-PLAN.md](SCRIPTING-FILEBASED-PLAN.md)
+      [SCRIPT-FILEBASED-REFERENCES-FALLBACK], [DIAG-PUSH-GATE] — specified in
+      [SCRIPTING-FILEBASED-SPEC.md](../specs/SCRIPTING-FILEBASED-SPEC.md)
 - [x] **F# same-line step coalescing.** `for index in 1 .. 3 do` emits a sequence point for the
       loop construct AND one for the range enumerator on the same line, so F10 came to rest
       where it started and the user had to press twice to move one statement.

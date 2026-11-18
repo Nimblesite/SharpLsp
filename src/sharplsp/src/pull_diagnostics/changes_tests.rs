@@ -310,14 +310,20 @@ mod contract {
             "an external restore reloads"
         );
         let configured = compiler.since(mark, "diagnostics/configure")?;
-        let (_, _, restores) = rmp_serde::from_slice::<(bool, bool, bool)>(
-            configured
-                .last()
-                .context("the reload configures diagnostics")?,
-        )?;
+        let (_, _, restores, debounce_ms, _scripts) =
+            rmp_serde::from_slice::<(bool, bool, bool, u64, Vec<String>)>(
+                configured
+                    .last()
+                    .context("the reload configures diagnostics")?,
+            )?;
         assert!(
             !restores,
             "the reload uses the restored outputs without restoring again"
+        );
+        assert_eq!(
+            debounce_ms,
+            crate::semantic::requests::debounce_ms(),
+            "the directive reload window is `server.debounce_ms` [SCRIPT-RELOAD]"
         );
         // Removing the outputs (`dotnet clean`) reloads, still without restoring:
         // a restore here would rewrite them and feed the next batch.

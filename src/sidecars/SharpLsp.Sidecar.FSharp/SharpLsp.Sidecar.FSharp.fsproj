@@ -73,6 +73,7 @@
     <Compile Include="FSharpMetadataNavigator.fs" />
     <Compile Include="FSharpWorkspaceRuntime.fs" />
     <Compile Include="FSharpScriptSource.fs" />
+    <Compile Include="FSharpScriptPackages.fs" />
     <Compile Include="FSharpProjectLoading.fs" />
     <Compile Include="FSharpDesignTime.fs" />
     <Compile Include="FSharpCSharpReferences.fs" />

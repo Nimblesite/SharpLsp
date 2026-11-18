@@ -172,13 +172,38 @@ pub(crate) async fn open_workspace_locked(
     Ok(())
 }
 
+/// `fsharp.script_arguments`, sent to the compilers with their configuration.
+static SCRIPT_ARGUMENTS: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+/// Replace the arguments scripts are checked with. [SCRIPT-FSX-ARGUMENTS]
+pub(crate) fn configure_scripts(arguments: &[String]) {
+    let mut current = SCRIPT_ARGUMENTS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    arguments.clone_into(&mut current);
+}
+
 /// Configure diagnostic analysis without changing compiler-error visibility.
 pub(crate) async fn configure_diagnostics(
     sidecar: &SidecarManager,
     analyzers_enabled: bool,
     auto_restore_on_open: bool,
 ) -> Result<()> {
-    let payload = rmp_serde::to_vec(&(analyzers_enabled, true, auto_restore_on_open))?;
+    // The fourth field is `server.debounce_ms`, the directive reload window
+    // [SCRIPT-RELOAD]; the fifth is `fsharp.script_arguments` [SCRIPT-FSX-ARGUMENTS].
+    let debounce_ms = crate::semantic::requests::debounce_ms();
+    let scripts = SCRIPT_ARGUMENTS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let fields = (
+        analyzers_enabled,
+        true,
+        auto_restore_on_open,
+        debounce_ms,
+        scripts,
+    );
+    let payload = rmp_serde::to_vec(&fields)?;
     let _response = sidecar.request("diagnostics/configure", payload).await?;
     Ok(())
 }

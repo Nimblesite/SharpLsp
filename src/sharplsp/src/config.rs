@@ -75,6 +75,10 @@ pub struct CSharpConfig {
 pub struct FSharpConfig {
     /// Whether F# support is enabled.
     pub enabled: bool,
+    /// Extra compiler arguments every script is checked with, as `dotnet fsi`
+    /// would be started with them: `--define:`, `--langversion:`, `--nowarn:`.
+    /// Implements [SCRIPT-FSX-ARGUMENTS].
+    pub script_arguments: Vec<String>,
 }
 
 /// Diagnostics configuration.
@@ -183,7 +187,10 @@ impl CSharpConfig {
 
 impl Default for FSharpConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            script_arguments: Vec::new(),
+        }
     }
 }
 

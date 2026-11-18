@@ -49,6 +49,7 @@ solution_path = ""
 
 [fsharp]
 enabled = true
+script_arguments = []
 
 [diagnostics]
 analyzers_enabled = true
@@ -85,6 +86,7 @@ output_directory = ".sharplsp/profiles"
 | `csharp.enabled` | C# サイドカーを起動するかスキップします |
 | `csharp.solution_path` | ワークスペースからの絶対パスまたは相対パスで `.sln` または `.slnx` を選択します |
 | `fsharp.enabled` | F# サイドカーを起動するかスキップします |
+| `fsharp.script_arguments` | すべての F# スクリプトの検査に渡す追加のコンパイラー引数です。`dotnet fsi` の起動引数と同じもの (`--define:CI`、`--langversion:preview` など) を指定します。既定は空で、変更は再起動なしで反映されます |
 | `diagnostics.analyzers_enabled` | F# と C# のアナライザー診断を有効にします。コンパイラーエラーは無効になりません |
 | `diagnostics.solution_wide_analysis` | 開いていない F# と C# のファイルもソリューションの診断に含めます。既定で有効です |
 | `diagnostics.project_filter` | F# と C# のワークスペース結果をプロジェクト名または選択したソリューションからの相対パスで絞り込みます。直接の文書プルは除外されません |
