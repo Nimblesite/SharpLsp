@@ -104,8 +104,8 @@ export class NuGetBrowserPanel {
       },
     );
 
-    this.panel.onDidDispose(
-      () => {
+    this.context.subscriptions.push(
+      this.panel.onDidDispose(() => {
         log.info('NuGetBrowserPanel: panel disposed');
         this.disposed = true;
         this.restoreProgressDisposable?.dispose();
@@ -113,9 +113,7 @@ export class NuGetBrowserPanel {
         this.solutionSubscription();
         this.stopProjectRefreshTimer();
         NuGetBrowserPanel.instance = undefined;
-      },
-      null,
-      this.context.subscriptions,
+      }),
     );
 
     // React to external csproj edits so Install/Remove reflects the file on disk.
@@ -132,12 +130,10 @@ export class NuGetBrowserPanel {
     });
     this.startProjectRefreshTimer();
 
-    this.panel.webview.onDidReceiveMessage(
-      (message: WebviewMessage) => {
+    this.context.subscriptions.push(
+      this.panel.webview.onDidReceiveMessage((message: WebviewMessage) => {
         void this.handleMessage(message);
-      },
-      null,
-      this.context.subscriptions,
+      }),
     );
 
     this.subscribeToRestoreProgress();

@@ -165,6 +165,8 @@ export default tseslint.config(
       '@typescript-eslint/strict-boolean-expressions': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
+      // Fakes stand in for vscode API classes structurally, like the unsafe-* rules above.
+      '@typescript-eslint/no-unsafe-class-instance-assignment': 'off',
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
       '@typescript-eslint/no-unused-vars': UNUSED_VARS,
       '@typescript-eslint/require-await': 'off',

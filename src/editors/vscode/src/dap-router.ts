@@ -79,7 +79,10 @@ function withRefusalReason(message: DapMessage): DapMessage {
  * Proxies DAP between VS Code and a netcoredbg child process, enriching and
  * emulating the messages the spec requires the router to serve.
  */
-export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, StackHost {
+export class DapRouter
+  extends vscode.Disposable
+  implements vscode.DebugAdapter, ReplayHost, StopHost, StackHost
+{
   /**
    * The ONLY options netcoredbg is spawned with, exposed so the contract is
    * observable rather than merely commented. No `cwd` and no `env` override is
@@ -175,6 +178,9 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
     public readonly adapterPath: string,
     shutdownDeadlineMs: number = SHUTDOWN_DEADLINE_MS,
   ) {
+    // A real vscode.Disposable, as DebugAdapterInlineImplementation expects;
+    // `dispose()` below overrides the base and owns the teardown.
+    super(() => undefined);
     this.shutdown = new ShutdownDeadline(shutdownDeadlineMs, () => {
       this.onShutdownWedged();
     });
@@ -456,7 +462,7 @@ export class DapRouter implements vscode.DebugAdapter, ReplayHost, StopHost, Sta
         return false;
     }
   }
-  public dispose(): void {
+  public override dispose(): void {
     // Kill the child BEFORE disposing the emitter: netcoredbg can have output
     // frames still in flight, and firing into a disposed EventEmitter throws,
     // which takes the whole extension host down with it.
