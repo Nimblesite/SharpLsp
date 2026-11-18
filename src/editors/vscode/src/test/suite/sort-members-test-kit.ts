@@ -1,5 +1,6 @@
 // Real command/LSP harness for [SE-CONTEXT-SORT-IMPLEMENTATION]. No providers are mocked.
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
   activateRealSharpLsp,
@@ -26,7 +27,6 @@ import {
 import type {
   ExplorerProvider,
   ExtensionApi,
-  SavedSettings,
   SortOutcome,
   SortPolicy,
   SurfaceCase,
@@ -42,18 +42,21 @@ const COMMAND = 'sharplsp.sortMembers';
 const FIXTURE_FILE = 'SortMembersCommand.cs';
 const FIXTURE_SOLUTION = workspaceFixturePath('TestFixtures.sln');
 const CLASS_NAME = 'SortMembersCommand';
+const FIXTURE_SETTINGS = workspaceFixturePath('.vscode/settings.json');
+const SORT_KEYS = ['hierarchy', 'accessibilityOrder', 'categoryOrder'] as const;
 
 let document: vscode.TextDocument;
 let provider: ExplorerProvider;
 let originalText: string;
-let savedSettings: SavedSettings;
+let committedSettings: unknown;
 
 export async function initializeSortHarness(initialOrder: readonly string[]): Promise<void> {
   const client = await activateRealSharpLsp();
   assert.ok(client, 'the command suite must activate a real LanguageClient');
   ({ document } = await openFixtureDocument(FIXTURE_FILE));
   originalText = document.getText();
-  savedSettings = captureSettings();
+  committedSettings = readFixtureSettings();
+  assertNoSortPolicy();
   await assert.doesNotReject(async () => {
     await vscode.commands.executeCommand('sharplsp.openSolution', FIXTURE_SOLUTION);
   });
@@ -74,6 +77,16 @@ export async function cleanupSortHarness(): Promise<void> {
   await restoreSettings();
   await revertDocument(document);
   await closeAllEditors();
+}
+
+/** Final cleanup: the committed fixture settings must read as they did before the suite. */
+export async function finishSortHarness(): Promise<void> {
+  await cleanupSortHarness();
+  assert.deepStrictEqual(
+    readFixtureSettings(),
+    committedSettings,
+    'the committed test-fixtures/workspace/.vscode/settings.json must be unchanged after the suite',
+  );
 }
 
 export function fixtureDocument(): vscode.TextDocument {
@@ -99,28 +112,31 @@ function sortConfiguration(): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('sharplsp.memberSortOrder', document.uri);
 }
 
-function captureSettings(): SavedSettings {
-  const config = sortConfiguration();
-  return {
-    hierarchy: config.inspect<string[]>('hierarchy')?.workspaceValue,
-    accessibilityOrder: config.inspect<string[]>('accessibilityOrder')?.workspaceValue,
-    categoryOrder: config.inspect<string[]>('categoryOrder')?.workspaceValue,
-  };
+function readFixtureSettings(): unknown {
+  return JSON.parse(fs.readFileSync(FIXTURE_SETTINGS, 'utf8'));
 }
 
+/**
+ * The committed fixture carries no sort policy. A policy found here was left by
+ * an interrupted run, and restoring "what was there" would keep it forever (#303).
+ */
+function assertNoSortPolicy(): void {
+  const config = sortConfiguration();
+  for (const key of SORT_KEYS) {
+    assert.strictEqual(
+      config.inspect<string[]>(key)?.workspaceValue,
+      undefined,
+      `the committed fixture settings must not set sharplsp.memberSortOrder.${key}`,
+    );
+  }
+}
+
+/** Remove every key the suite writes: `undefined` deletes it from the fixture. */
 async function restoreSettings(): Promise<void> {
   const config = sortConfiguration();
-  await config.update('hierarchy', savedSettings.hierarchy, vscode.ConfigurationTarget.Workspace);
-  await config.update(
-    'accessibilityOrder',
-    savedSettings.accessibilityOrder,
-    vscode.ConfigurationTarget.Workspace,
-  );
-  await config.update(
-    'categoryOrder',
-    savedSettings.categoryOrder,
-    vscode.ConfigurationTarget.Workspace,
-  );
+  for (const key of SORT_KEYS) {
+    await config.update(key, undefined, vscode.ConfigurationTarget.Workspace);
+  }
 }
 
 export async function configureSort(policy: SortPolicy): Promise<void> {

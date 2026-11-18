@@ -243,6 +243,7 @@
         "scaffolding-e2e.test.js",
         "scaffolding-solution-add-e2e.test.js",
         "nuget-browser.test.js",
+        "nuget-browser-initial-load.test.js",
         "nuget-deps-e2e.test.js",
         "nuget-update-e2e.test.js",
         "nuget-vulnerability-e2e.test.js",
