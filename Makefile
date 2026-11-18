@@ -93,8 +93,8 @@ PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 # crates.io crates and the @nimblesite/lsp-profiler-ui npm package. Its .NET
 # engine and fixtures ship only in the release source, which `_fetch-lspkit`
 # unpacks to LSPKIT_DIR; `_build-dotnet` publishes the engine to PROFILER_ENGINE_OUT.
-LSPKIT_VERSION      := 0.5.0
-LSPKIT_SHA256       := 501ebd470634dd72c2796e6c19e815c4c9df04b6319f9e9cc7d4eba4ff8a3cca
+LSPKIT_VERSION      := 0.6.0
+LSPKIT_SHA256       := 89bc2979912f57ed5c3f7a456724764c8ab563417ea2f95cefe2c6e35ec78627
 # Outside target/: CI caches restore target/ partially, which would skip the fetch.
 export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine

@@ -639,12 +639,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
-name = "humantime"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15cdd26707701c53297e2fa6afb323d55fbc1d0810c3aec078ae3ef0424c3c15"
-
-[[package]]
 name = "hyper"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1026,12 +1020,11 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "lsp-profiler"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c994bb6d8f1b9871c1e47288ad986c5c4bf1b14a6e04c45776d26595501f4ba0"
+checksum = "cb298f202dd03c38469fa71a50e8332853570610ffcb200a72f0117d7b2bbd40"
 dependencies = [
  "async-trait",
- "humantime",
  "inferno",
  "num-traits",
  "serde",
@@ -1045,9 +1038,9 @@ dependencies = [
 
 [[package]]
 name = "lsp-profiler-dotnet"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ceedcba016d89a664c2c13bc68328213006010095048d224c35142c44bc376b"
+checksum = "26955cb431119caa6ee92b578e26408ed47455ed79ff45bae83ceb52de8d4be7"
 dependencies = [
  "async-trait",
  "lsp-profiler",
@@ -1086,31 +1079,28 @@ dependencies = [
 
 [[package]]
 name = "lspkit"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fca7d7fad6b009b01fef2706904f1960dd5b8e6fc74cc8210558fcde40cf5ce7"
+checksum = "bb9daedaef6866d13f20ace87f4f815974b171c6b9aefb78dff86d5d76f9bb45"
 dependencies = [
  "async-trait",
  "dashmap",
  "futures-core",
- "rmp-serde",
  "ropey",
  "serde",
  "thiserror",
  "tokio",
  "tokio-util",
  "toml",
- "tracing",
 ]
 
 [[package]]
 name = "lspkit-server"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1472ab3543a14ddb6a5f932f325bda13be4597c87641909117080993242231f2"
+checksum = "f6d9f1e816e41bfc5b171b5f01f929467c88cbac2555c34df6010383e3608cd2"
 dependencies = [
  "async-trait",
- "futures-util",
  "lsp-types",
  "lspkit",
  "notify",
@@ -1906,7 +1896,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
