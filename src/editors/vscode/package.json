@@ -1866,12 +1866,12 @@
     "format:check": "prettier --check \"src/**/*.{ts,mts}\""
   },
   "dependencies": {
-    "@nimblesite/lsp-profiler-ui": "^0.10.0",
+    "@nimblesite/lsp-profiler-ui": "^0.10.1",
     "@nimblesite/shipwright-vscode": "^0.11.0",
     "@preact/signals-core": "^1.14.4",
     "d3-force": "^3.0.1",
     "fast-xml-parser": "^5.12.1",
-    "vscode-languageclient": "^10.1.2"
+    "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
