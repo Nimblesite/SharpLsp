@@ -71,8 +71,8 @@ mod contract {
         );
         release_closed(&source(0)?);
         assert_eq!(
-            first[0].strong_count(),
-            0,
+            first.first().map(Weak::strong_count),
+            Some(0),
             "closing a document frees its memo"
         );
         assert_eq!(
