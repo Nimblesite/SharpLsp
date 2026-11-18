@@ -1869,18 +1869,14 @@
     "@nimblesite/lsp-profiler-ui": "^0.10.1",
     "@nimblesite/shipwright-vscode": "^0.11.0",
     "@preact/signals-core": "^1.14.4",
-    "d3-force": "^3.0.1",
     "fast-xml-parser": "^5.12.1",
     "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/d3-force": "^3.0.10",
     "@types/mocha": "^10.0.6",
     "@types/node": "^26.6.6",
     "@types/vscode": "~1.140.0",
-    "@typescript-eslint/eslint-plugin": "^8.72.2",
-    "@typescript-eslint/parser": "^8.72.2",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.1",
@@ -1899,7 +1895,6 @@
   "files": [
     "bin/",
     "dist/extension.js",
-    "dist/profiler-graph-licenses.txt",
     "icons/",
     "language-configuration/",
     "media/",
