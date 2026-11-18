@@ -61,6 +61,15 @@ mod contract {
             sender,
         )?;
 
+        let memo = crate::semantic_memo::memo();
+        let hover = crate::semantic_memo::Key {
+            uri: source(0)?.as_str().to_owned(),
+            method: "textDocument/hover",
+            line: 0,
+            character: 0,
+        };
+        let _answer = memo.answer(&hover, 1, Box::new(|| Ok((json!("hover"), true))))?;
+        assert_eq!(memo.held(), 1, "a semantic answer is memoized");
         let first = pull_all(5, 1)?;
         assert_eq!(held(&first), 5, "the store memoizes every pulled document");
         begin_change();
@@ -74,6 +83,11 @@ mod contract {
             first.first().map(Weak::strong_count),
             Some(0),
             "closing a document frees its memo"
+        );
+        assert_eq!(
+            memo.held(),
+            0,
+            "closing a document frees the stale semantic answers"
         );
         assert_eq!(
             held(&first),

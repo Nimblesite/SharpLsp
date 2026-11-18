@@ -244,8 +244,10 @@ pub fn begin_change() {
 
 /// A closed document's Salsa input and memo are released, not just invalidated;
 /// otherwise every document ever pulled stays resident for the host's life.
-/// Every other open document's memo stays warm. [LSPKIT-MEM-ADOPT] (#566)
+/// Every other open document's memo stays warm; the semantic memo, stale once
+/// any input moves, is dropped whole. [LSPKIT-MEM-ADOPT] (#566)
 pub fn release_closed(uri: &Uri) {
+    crate::semantic_memo::memo().release();
     if let Err(error) = change_store(|store| Ok(store.forget(uri.as_str())?)) {
         warn!(%error, uri = uri.as_str(), "Closed document diagnostic memo could not be released");
     }
