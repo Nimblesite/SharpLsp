@@ -94,9 +94,8 @@ internal static class MoveTypeOutRewriter
             .Select(name => (Name: name, Qualified: MoveTypeOutSyntax.QualifiedParent(name)))
             .Where(pair => pair.Qualified is not null)
             .ToDictionary(pair => pair.Qualified!, pair => pair.Name);
-        return root.ReplaceNodes(
-            qualified.Keys,
-            (node, _) => MoveTypeOutSyntax.WithoutContainer(node, qualified[node])
+        return root.ReplaceNodes(qualified.Keys, (node, _) =>
+            MoveTypeOutSyntax.WithoutContainer(node, qualified[node])
         );
     }
 

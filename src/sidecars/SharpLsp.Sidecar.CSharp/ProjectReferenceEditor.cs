@@ -57,7 +57,7 @@ internal static class ProjectReferenceEditor
     private static ProjectItemGroupElement GroupFor(ProjectRootElement root)
     {
         return root.ItemGroups.FirstOrDefault(group =>
-                group.Items.Any(item => item.ItemType == ProjectReference)
-            ) ?? root.AddItemGroup();
+            group.Items.Any(item => item.ItemType == ProjectReference)
+        ) ?? root.AddItemGroup();
     }
 }

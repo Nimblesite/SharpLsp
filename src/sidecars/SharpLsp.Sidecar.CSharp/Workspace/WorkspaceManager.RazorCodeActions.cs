@@ -58,8 +58,7 @@ internal sealed partial class WorkspaceManager
     )
     {
         var span = markup.Text.Lines.GetTextSpan(range);
-        var model =
-            await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false)
+        var model = await projection.Generated.GetSemanticModelAsync(ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The projection has no semantic model");
         var fixes = await RazorQuickFixes
             .ForAsync(projection, markup, span, ct)

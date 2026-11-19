@@ -111,13 +111,11 @@ public sealed class DocumentClosureCaseTests : IDisposable
         );
 
         Assert.Equal(3, closure.Files.Count);
-        Assert.Contains(
-            closure.Files,
-            file => string.Equals(file.Path, upper, StringComparison.Ordinal)
+        Assert.Contains(closure.Files, file =>
+            string.Equals(file.Path, upper, StringComparison.Ordinal)
         );
-        Assert.Contains(
-            closure.Files,
-            file => string.Equals(file.Path, lower, StringComparison.Ordinal)
+        Assert.Contains(closure.Files, file =>
+            string.Equals(file.Path, lower, StringComparison.Ordinal)
         );
         Assert.Empty(closure.Issues);
 

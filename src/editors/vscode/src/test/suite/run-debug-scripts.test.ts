@@ -40,7 +40,7 @@ import {
   requireWorkspaceRoot,
 } from './test-helpers';
 import { DEBUG_SESSION_MS, DOTNET_CLI_MS, FIXTURE_BUILD_MS } from './test-timeouts';
-import { dotnet } from './dotnet-project-kit';
+import { dotnet, sdkMajor } from './dotnet-project-kit';
 import { assertSamePath } from './debug-e2e-kit';
 import { assertTaskIdentity, processExecutionOf } from './run-task-assertions';
 import { installUiStubs, type UiStubs } from './ui-stubs';
@@ -105,15 +105,15 @@ function writeFixtureFile(dir: string, name: string, body: string): string {
   return file;
 }
 
-/** `bin/<config-lowercased>/<name>.dll`, with NO TFM segment (rule 4). */
-function assertFileBasedProgram(program: string, name: string, why: string): void {
+/** Rule 4, no TFM: `bin/debug/<name>.dll`, under `bin/<name>.cs/` from SDK 11. */
+async function assertFileBasedProgram(program: string, appDir: string, name: string, why: string) {
   assert.strictEqual(typeof program, 'string', `${why}: the launch config needs a program`);
   assert.ok(path.isAbsolute(program), `${why}: the program must be absolute`);
   assert.strictEqual(path.extname(program), '.dll', `${why}: netcoredbg launches a managed dll`);
   assert.strictEqual(path.basename(program), `${name}.dll`, `${why}: named after the entry file`);
-  const tail = comparablePath(path.join('bin', 'debug', `${name}.dll`));
-  const laidOut = comparablePath(program).endsWith(tail);
-  assert.ok(laidOut, `${why}: bin/debug/<name>.dll, got '${program}'`);
+  const owner = (await sdkMajor(appDir)) >= 11 ? [`${name}.cs`] : [];
+  const tail = comparablePath(path.join('bin', ...owner, 'debug', `${name}.dll`));
+  assert.ok(comparablePath(program).endsWith(tail), `${why}: ${tail}, got '${program}'`);
   const tfms = program.split(/[\\/]/).filter((segment) => /^net\d/i.test(segment));
   assert.deepStrictEqual(tfms, [], `${why}: file-based output carries NO TFM segment`);
   assert.ok(fs.existsSync(program), `${why}: the built program must exist on disk`);
@@ -370,7 +370,8 @@ suite('Run and debug: script targets [DEBUG-FEATURES-LAUNCH-SCRIPT]', () => {
     assert.strictEqual(session.configuration.request, 'launch', 'launched, never attached');
     assert.notStrictEqual(session.configuration.noDebug, true, 'debugProgram must not set noDebug');
     assert.notStrictEqual(session.name.trim().length, 0, 'the session must be named for the UI');
-    assertFileBasedProgram(String(session.configuration.program), 'FileApp', 'the program'); // B44
+    const program = String(session.configuration.program);
+    await assertFileBasedProgram(program, appDir, 'FileApp', 'the program'); // B44
     const cwd = String(session.configuration.cwd);
     assert.strictEqual(typeof session.configuration.cwd, 'string', 'the launch cwd is a path');
     assert.ok(path.isAbsolute(cwd), `the launch cwd is absolute: '${cwd}'`);

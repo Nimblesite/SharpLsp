@@ -236,6 +236,7 @@ fn run_server() -> Result<()> {
         sharplsp_config.server.log_level, sharplsp_config.server.debounce_ms
     );
     semantic::requests::configure(sharplsp_config.server.debounce_ms);
+    workspace_open::configure_scripts(&sharplsp_config.fsharp.script_arguments);
 
     // Create tokio runtime for async sidecar IPC.
     let runtime = tokio::runtime::Runtime::new().context("create tokio runtime")?;
@@ -272,6 +273,7 @@ fn run_server() -> Result<()> {
         [fsharp_sidecar.as_ref(), csharp_sidecar.as_ref()],
         &runtime,
         &connection.sender,
+        &vfs,
     );
 
     let csharp_event_pump =
@@ -294,28 +296,27 @@ fn run_server() -> Result<()> {
         !workspace_open::client_picks_solution(options),
     );
 
-    if workspace_root.is_some() {
-        if let Some(target) = solution.target() {
-            pull_diagnostics::state::select_workspace(&target.to_string_lossy())?;
-        }
-        workspace_open::start_sidecar(
-            csharp_sidecar.as_ref(),
-            solution.target(),
-            OpenFollowUp::new(
-                &sharplsp_config,
-                &vfs,
-                Some(&connection.sender),
-                solution.report(),
-            ),
-            &runtime,
-        );
-        workspace_open::start_sidecar(
-            fsharp_sidecar.as_ref(),
-            workspace_root.as_ref(),
-            OpenFollowUp::new(&sharplsp_config, &vfs, Some(&connection.sender), None),
-            &runtime,
-        );
+    let [csharp_target, fsharp_target] = solution.eager_targets();
+    if let Some(target) = csharp_target {
+        pull_diagnostics::state::select_workspace(&target.to_string_lossy())?;
     }
+    workspace_open::start_sidecar(
+        csharp_sidecar.as_ref(),
+        csharp_target,
+        OpenFollowUp::new(
+            &sharplsp_config,
+            &vfs,
+            Some(&connection.sender),
+            solution.report(),
+        ),
+        &runtime,
+    );
+    workspace_open::start_sidecar(
+        fsharp_sidecar.as_ref(),
+        fsharp_target,
+        OpenFollowUp::new(&sharplsp_config, &vfs, Some(&connection.sender), None),
+        &runtime,
+    );
 
     let profiler_root = config_root.as_deref().unwrap_or(&fallback_root);
     let mut services = host_services(
@@ -342,7 +343,6 @@ fn run_server() -> Result<()> {
         csharp_sidecar.as_ref(),
         fsharp_sidecar.as_ref(),
         &vfs,
-        workspace_root.is_some(),
     )?;
 
     shutdown_services(
@@ -493,7 +493,6 @@ fn main_loop(
     csharp_sidecar: Option<&Arc<SidecarManager>>,
     fsharp_sidecar: Option<&Arc<SidecarManager>>,
     vfs: &Arc<Vfs>,
-    mut workspace_initialized: bool,
 ) -> Result<()> {
     let parsers = TsParsers::new();
     let mut trees: HashMap<Uri, Tree> = HashMap::new();
@@ -572,8 +571,8 @@ fn main_loop(
                     info!("Exit notification received");
                     return Ok(());
                 }
-                if !workspace_initialized && notif.method == DidOpenTextDocument::METHOD {
-                    workspace_initialized = notifications::init_workspace_for_file(
+                if notif.method == DidOpenTextDocument::METHOD {
+                    notifications::init_workspace_for_file(
                         &notif,
                         runtime,
                         [csharp_sidecar, fsharp_sidecar],

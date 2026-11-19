@@ -37,9 +37,8 @@ public sealed class RazorMarkupCompletionTests : IClassFixture<RazorFixture>
         Assert.Contains(items, item => item.Label == "Counter");
         Assert.Contains(items, item => item.Label == "Routes");
         // Not imported: by its full name, never its short one.
-        Assert.Contains(
-            items,
-            item => item.Label == "Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize"
+        Assert.Contains(items, item =>
+            item.Label == "Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize"
         );
         Assert.DoesNotContain(items, item => item.Label == "Virtualize");
 
@@ -91,9 +90,8 @@ public sealed class RazorMarkupCompletionTests : IClassFixture<RazorFixture>
         Assert.Equal("Items", first.Label);
         Assert.Contains("required", first.Detail, StringComparison.Ordinal);
         Assert.Contains(items, item => item.Label == "Format" && item.Kind == "Property");
-        Assert.DoesNotContain(
-            items.Where(item => item != first),
-            item => item.Detail?.Contains("required", StringComparison.Ordinal) == true
+        Assert.DoesNotContain(items.Where(item => item != first), item =>
+            item.Detail?.Contains("required", StringComparison.Ordinal) == true
         );
         Assert.Contains(items, item => item.Label == "@bind-Label");
         Assert.Contains(items, item => item.Label == "@key");
@@ -130,9 +128,8 @@ public sealed class RazorMarkupCompletionTests : IClassFixture<RazorFixture>
         var (items, at) = await CompleteAfterAsync(manager, "\n    @pa");
 
         // Every directive the parser offers a component, each replacing what was typed.
-        Assert.All(
-            markup.AvailableDirectives,
-            directive => Assert.Contains(items, item => item.Label == "@" + directive.Directive)
+        Assert.All(markup.AvailableDirectives, directive =>
+            Assert.Contains(items, item => item.Label == "@" + directive.Directive)
         );
         var page = Assert.Single(items, item => item.Label == "@page");
         Assert.Equal("Keyword", page.Kind);

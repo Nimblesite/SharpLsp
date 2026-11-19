@@ -1,6 +1,6 @@
-//! Closing a document or finishing a solution load frees every diagnostic memo
-//! the pull store held, so documents never pulled again cannot stay resident.
-//! [LSPKIT-MEM-ADOPT] (#566)
+//! Closing a document frees its diagnostic memo and keeps every other open
+//! document's memo warm; finishing a solution load frees every memo, so
+//! documents never pulled again cannot stay resident. [LSPKIT-MEM-ADOPT] (#566)
 use super::*;
 
 #[expect(
@@ -23,12 +23,16 @@ mod contract {
         let store = store()?;
         (0..count)
             .map(|index| {
-                let path = std::env::temp_dir().join(format!("sharplsp-release-{index}.cs"));
-                let uri = crate::paths::path_to_lsp_uri(&path.to_string_lossy())?;
-                let report = store.diagnostics(uri.as_str(), version)?;
+                let report = store.diagnostics(source(index)?.as_str(), version)?;
                 Ok(Arc::downgrade(&report.items))
             })
             .collect()
+    }
+
+    /// The URI of the `index`th C# source.
+    fn source(index: usize) -> Result<Uri> {
+        let path = std::env::temp_dir().join(format!("sharplsp-release-{index}.cs"));
+        crate::paths::path_to_lsp_uri(&path.to_string_lossy())
     }
 
     /// How many pulled results something still owns.
@@ -40,7 +44,8 @@ mod contract {
     }
 
     #[test]
-    fn closing_a_document_or_loading_a_solution_frees_every_pulled_memo() -> Result<()> {
+    fn closing_a_document_frees_only_its_memo_and_loading_a_solution_frees_every_memo() -> Result<()>
+    {
         let runtime = tokio::runtime::Runtime::new()?;
         let compiler = Fake::connect(&runtime, answering(empty()));
         shutdown()?;
@@ -56,6 +61,15 @@ mod contract {
             sender,
         )?;
 
+        let memo = crate::semantic_memo::memo();
+        let hover = crate::semantic_memo::Key {
+            uri: source(0)?.as_str().to_owned(),
+            method: "textDocument/hover",
+            line: 0,
+            character: 0,
+        };
+        let _answer = memo.answer(&hover, 1, Box::new(|| Ok((json!("hover"), true))))?;
+        assert_eq!(memo.held(), 1, "a semantic answer is memoized");
         let first = pull_all(5, 1)?;
         assert_eq!(held(&first), 5, "the store memoizes every pulled document");
         begin_change();
@@ -64,8 +78,26 @@ mod contract {
             5,
             "invalidating alone keeps every memo resident"
         );
-        release_closed();
-        assert_eq!(held(&first), 0, "closing a document frees every memo");
+        release_closed(&source(0)?);
+        assert_eq!(
+            first.first().map(Weak::strong_count),
+            Some(0),
+            "closing a document frees its memo"
+        );
+        assert_eq!(
+            memo.held(),
+            0,
+            "closing a document frees the stale semantic answers"
+        );
+        assert_eq!(
+            held(&first),
+            4,
+            "closing one document keeps the others warm"
+        );
+        for index in 1..5 {
+            release_closed(&source(index)?);
+        }
+        assert_eq!(held(&first), 0, "closing every document frees every memo");
 
         let second = pull_all(3, 2)?;
         assert_eq!(held(&second), 3, "pulls after a close memoize again");

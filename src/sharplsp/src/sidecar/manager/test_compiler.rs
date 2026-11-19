@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{ensure, Context, Result};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 use super::SidecarManager;
 use crate::sidecar::protocol::Envelope;
@@ -72,7 +72,7 @@ pub(super) struct Compiler {
     /// Requests, read in the order the host wrote them.
     transport: FramedTransport,
     /// Notices such as `$/cancelRequest`, which carry no request identity.
-    notices: UnboundedReceiver<Envelope>,
+    notices: Receiver<Envelope>,
 }
 
 impl Compiler {
@@ -110,7 +110,7 @@ impl Compiler {
     }
 
     /// The next notice cancels exactly `request`, within [`PROMPTLY`].
-    async fn cancels(&mut self, request: &Envelope) -> Result<()> {
+    pub(super) async fn cancels(&mut self, request: &Envelope) -> Result<()> {
         let cancel = tokio::time::timeout(PROMPTLY, self.notices.recv())
             .await
             .context("timed out waiting for a cancellation")?
@@ -148,7 +148,7 @@ impl Compiler {
     }
 
     /// Whether the host sends no notice within [`QUIET`].
-    async fn hears_no_notice(&mut self) -> bool {
+    pub(super) async fn hears_no_notice(&mut self) -> bool {
         tokio::time::timeout(QUIET, self.notices.recv())
             .await
             .is_err()

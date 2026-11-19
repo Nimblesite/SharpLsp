@@ -304,8 +304,7 @@ internal sealed partial class WorkspaceManager
 
     private static bool HasNamedTypeConflict(INamedTypeSymbol symbol, string valueText)
     {
-        var candidates =
-            symbol.ContainingType?.GetTypeMembers(valueText)
+        var candidates = symbol.ContainingType?.GetTypeMembers(valueText)
             ?? symbol.ContainingNamespace.GetTypeMembers(valueText);
         // [RENAME-CSHARP] A generic type and a non-generic type may share a name.
         return HasDifferentSymbol(

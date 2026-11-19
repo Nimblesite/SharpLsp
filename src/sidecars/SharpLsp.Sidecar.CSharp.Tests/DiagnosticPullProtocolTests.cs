@@ -25,9 +25,8 @@ public sealed class DiagnosticPullProtocolTests(CSharpSidecarFixture fixture)
         var documents = await fixture
             .SendAndDeserializeAsync<DiagnosticDocument[]>("workspace/diagnostics/documents", [])
             .ConfigureAwait(false);
-        var source = Assert.Single(
-            documents,
-            document => NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
+        var source = Assert.Single(documents, document =>
+            NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
         );
         Assert.Equal("TestProject", source.ProjectName);
         Assert.True(NativePaths.IsRooted(source.ProjectPath));
@@ -42,9 +41,8 @@ public sealed class DiagnosticPullProtocolTests(CSharpSidecarFixture fixture)
             )
             .ConfigureAwait(false);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == "Error");
-        Assert.All(
-            diagnostics,
-            diagnostic => Assert.True(NativePaths.AreEqual(fixture.SourceFile, diagnostic.FilePath))
+        Assert.All(diagnostics, diagnostic =>
+            Assert.True(NativePaths.AreEqual(fixture.SourceFile, diagnostic.FilePath))
         );
     }
 }

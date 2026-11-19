@@ -653,9 +653,8 @@ public sealed class SidecarEndToEndTests(CSharpSidecarFixture fixture)
             "workspace/diagnostics/documents",
             []
         );
-        Assert.Contains(
-            documents,
-            document => NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
+        Assert.Contains(documents, document =>
+            NativePaths.AreEqual(document.FilePath, fixture.SourceFile)
         );
         foreach (var document in documents)
         {

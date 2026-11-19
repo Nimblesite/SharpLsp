@@ -100,9 +100,8 @@ public sealed class RazorStylesheetTests
         const string Css = ".card .title { } .title { } .title:is(.muted) { }";
         var classes = Read(Css);
         Assert.Equal(5, classes.Count);
-        Assert.All(
-            classes,
-            cssClass => Assert.Equal(cssClass.Name, Css[cssClass.Span.Start..cssClass.Span.End])
+        Assert.All(classes, cssClass =>
+            Assert.Equal(cssClass.Name, Css[cssClass.Span.Start..cssClass.Span.End])
         );
         Assert.Equal(1, classes[0].Span.Start);
         Assert.Equal(7, classes[1].Span.Start);

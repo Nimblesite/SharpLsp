@@ -63,15 +63,11 @@ internal static class RazorHtmlComments
         CommentPass comments
     )
     {
-        return RazorProjectEngine.Create(
-            original.Configuration,
-            original.FileSystem,
-            builder =>
-            {
-                CompilerFeatures.Register(builder);
-                builder.Features.Add(comments);
-            }
-        );
+        return RazorProjectEngine.Create(original.Configuration, original.FileSystem, builder =>
+        {
+            CompilerFeatures.Register(builder);
+            builder.Features.Add(comments);
+        });
     }
 
     private sealed class CommentPass : IntermediateNodePassBase, IRazorDirectiveClassifierPass

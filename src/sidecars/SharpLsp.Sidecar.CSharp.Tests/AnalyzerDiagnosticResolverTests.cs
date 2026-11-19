@@ -114,13 +114,10 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
         // Every selected analyzer must actually support one of the four rewrite
         // ids; anything else is dead weight run on every code-action request.
         var rewriteIds = new[] { "IDE0007", "IDE0008", "IDE0160", "IDE0161" };
-        Assert.All(
-            analyzers,
-            analyzer =>
-                Assert.Contains(
-                    analyzer.SupportedDiagnostics.Select(descriptor => descriptor.Id),
-                    id => rewriteIds.Contains(id, StringComparer.Ordinal)
-                )
+        Assert.All(analyzers, analyzer =>
+            Assert.Contains(analyzer.SupportedDiagnostics.Select(descriptor => descriptor.Id), id =>
+                rewriteIds.Contains(id, StringComparer.Ordinal)
+            )
         );
     }
 
@@ -154,9 +151,8 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
             await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character)
         );
 
-        Assert.Contains(
-            actions,
-            action => action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
+        Assert.Contains(actions, action =>
+            action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
         );
     }
 
@@ -176,9 +172,8 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
             await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character)
         );
 
-        Assert.DoesNotContain(
-            actions,
-            action => action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
+        Assert.DoesNotContain(actions, action =>
+            action.Title.Contains("file-scoped", StringComparison.OrdinalIgnoreCase)
         );
     }
 
@@ -191,9 +186,8 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
             await manager.GetCodeActionsAsync(_sourcePath, line, character, line, character)
         );
 
-        Assert.Contains(
-            actions,
-            action => action.Title.Contains("var", StringComparison.OrdinalIgnoreCase)
+        Assert.Contains(actions, action =>
+            action.Title.Contains("var", StringComparison.OrdinalIgnoreCase)
         );
     }
 
@@ -222,9 +216,8 @@ public sealed class AnalyzerDiagnosticResolverTests : IDisposable
     private static (int Line, int Character) Locate(string anchor, string token)
     {
         var lines = Source.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
-        var index = Array.FindIndex(
-            lines,
-            value => value.Contains(anchor, StringComparison.Ordinal)
+        var index = Array.FindIndex(lines, value =>
+            value.Contains(anchor, StringComparison.Ordinal)
         );
         Assert.True(index >= 0, $"anchor not found: {anchor}");
         var character = lines[index].IndexOf(token, StringComparison.Ordinal);

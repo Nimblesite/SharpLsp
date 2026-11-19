@@ -76,17 +76,20 @@ internal sealed class HotReloadEncService
     )
     {
         var wrapperType = Type.GetType(WrapperTypeName, throwOnError: true)!;
-        var wrapper =
-            Activator.CreateInstance(wrapperType, Anything, binder: null, [services], culture: null)
-            ?? throw new InvalidOperationException($"Could not construct {wrapperType.FullName}.");
+        var wrapper = Activator.CreateInstance(
+            wrapperType,
+            Anything,
+            binder: null,
+            [services],
+            culture: null
+        ) ?? throw new InvalidOperationException($"Could not construct {wrapperType.FullName}.");
         var start = RequiredMethod(wrapperType, "StartSessionAsync");
         _ = await AwaitReflectedAsync(
                 start.Invoke(wrapper, [solution, capabilities, ct])
                     ?? throw new InvalidOperationException("StartSessionAsync returned no task.")
             )
             .ConfigureAwait(false);
-        var encService =
-            RequiredField(wrapperType, "_encService").GetValue(wrapper)
+        var encService = RequiredField(wrapperType, "_encService").GetValue(wrapper)
             ?? throw new InvalidOperationException("The Edit-and-Continue service is missing.");
         return new HotReloadEncService(
             wrapper,
@@ -98,13 +101,11 @@ internal sealed class HotReloadEncService
     /// <summary>Emit deltas for the candidate WITHOUT committing Roslyn's baseline.</summary>
     public async Task<EncEmitResult> EmitAsync(Solution candidate, CancellationToken ct)
     {
-        var invocation =
-            _emit.Invoke(
-                _encService,
-                [_sessionId, candidate, _emptyRunningProjects, _spanProvider, ct]
-            ) ?? throw new InvalidOperationException("EmitSolutionUpdateAsync returned no task.");
-        var results =
-            await AwaitReflectedAsync(invocation).ConfigureAwait(false)
+        var invocation = _emit.Invoke(
+            _encService,
+            [_sessionId, candidate, _emptyRunningProjects, _spanProvider, ct]
+        ) ?? throw new InvalidOperationException("EmitSolutionUpdateAsync returned no task.");
+        var results = await AwaitReflectedAsync(invocation).ConfigureAwait(false)
             ?? throw new InvalidOperationException("EmitSolutionUpdateAsync returned no results.");
         var moduleUpdates = RequiredProperty(results, "ModuleUpdates");
         var ready = string.Equals(
@@ -136,15 +137,11 @@ internal sealed class HotReloadEncService
     private static Type EncContract(object encService)
     {
         return encService
-                .GetType()
-                .GetInterfaces()
-                .FirstOrDefault(candidate =>
-                    string.Equals(
-                        candidate.Name,
-                        "IEditAndContinueService",
-                        StringComparison.Ordinal
-                    )
-                )
+            .GetType()
+            .GetInterfaces()
+            .FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, "IEditAndContinueService", StringComparison.Ordinal)
+            )
             ?? throw new MissingMethodException(
                 encService.GetType().FullName,
                 "IEditAndContinueService"
@@ -170,8 +167,7 @@ internal sealed class HotReloadEncService
 
     private static List<Diagnostic> ReadDiagnostics(object results)
     {
-        var method =
-            results.GetType().GetMethod("GetAllDiagnostics", Anything)
+        var method = results.GetType().GetMethod("GetAllDiagnostics", Anything)
             ?? throw new MissingMethodException(results.GetType().FullName, "GetAllDiagnostics");
         var diagnostics = (IEnumerable)(
             method.Invoke(results, null)
@@ -194,8 +190,7 @@ internal sealed class HotReloadEncService
             return task.GetType().GetProperty("Result")?.GetValue(task);
         }
 
-        var asTask =
-            awaitable.GetType().GetMethod("AsTask")
+        var asTask = awaitable.GetType().GetMethod("AsTask")
             ?? throw new MissingMethodException(awaitable.GetType().FullName, "AsTask");
         var converted = (Task)asTask.Invoke(awaitable, null)!;
         await converted.ConfigureAwait(false);
@@ -204,8 +199,7 @@ internal sealed class HotReloadEncService
 
     private static object RequiredProperty(object target, string name)
     {
-        var property =
-            target.GetType().GetProperty(name, Anything)
+        var property = target.GetType().GetProperty(name, Anything)
             ?? throw new MissingMemberException(target.GetType().FullName, name);
         return property.GetValue(target)
             ?? throw new InvalidOperationException($"{name} was unexpectedly null.");

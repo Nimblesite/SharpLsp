@@ -24,22 +24,18 @@ internal sealed partial class CSharpSidecar : SidecarHost
         Register("workspace/diagnostics", HandleDiagnosticsAsync);
         // Enumeration only: the host pulls per document afterwards. The payload is
         // reserved; the answer never compiles anything ([DIAG-ARCHITECTURE-EAGER-SCAN]).
-        Register(
-            "workspace/diagnostics/documents",
-            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: false, ct)
+        Register("workspace/diagnostics/documents", (payload, ct) =>
+            HandleDiagnosticMetadataAsync(payload, projectsOnly: false, ct)
         );
-        Register(
-            "workspace/diagnostics/projects",
-            (payload, ct) => HandleDiagnosticMetadataAsync(payload, projectsOnly: true, ct)
+        Register("workspace/diagnostics/projects", (payload, ct) =>
+            HandleDiagnosticMetadataAsync(payload, projectsOnly: true, ct)
         );
-        Register(
-            "workspace/diagnostics/project",
-            (payload, ct) =>
-                HandleRequestAsync(
-                    payload,
-                    (string projectPath) => _workspace.GetProjectDiagnosticsAsync(projectPath, ct),
-                    ct
-                )
+        Register("workspace/diagnostics/project", (payload, ct) =>
+            HandleRequestAsync(
+                payload,
+                (string projectPath) => _workspace.GetProjectDiagnosticsAsync(projectPath, ct),
+                ct
+            )
         );
         Register("diagnostics/configure", HandleConfigureDiagnosticsAsync);
         Register("textDocument/didChange", HandleDidChangeAsync);
@@ -139,6 +135,9 @@ internal sealed partial class CSharpSidecar : SidecarHost
             );
             _workspace.ConfigureDiagnostics(request.AnalyzersEnabled);
             _workspace.AutoRestoreOnOpen = request.AutoRestoreOnOpen ?? true;
+            _workspace.DirectiveReloadDebounce = TimeSpan.FromMilliseconds(
+                request.ReloadDebounceMs ?? 0
+            );
             _refreshSupported = request.RefreshSupported;
             var bytes = MessagePackSerializer.Serialize("ok", cancellationToken: ct);
             return Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(bytes));

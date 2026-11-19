@@ -140,7 +140,7 @@ internal sealed partial class WorkspaceManager
             // capture must never see the tier-2 solution without its pending notice.
             // The didChange path already starts resolution under this lock; the open
             // path must match it. [SCRIPT-FILEBASED-REFERENCES-FALLBACK]
-            StartPackageResolution(kind, rootPath, projectInfo.Id, closure);
+            StartPackageResolution(kind, rootPath, projectInfo.Id, closure, TimeSpan.Zero);
         }
         finally
         {
@@ -226,7 +226,23 @@ internal sealed partial class WorkspaceManager
         var closure = await ExpandAsync(kind, rootPath, live, ct).ConfigureAwait(false);
 
         _solution = ReconcileClosureDocuments(currentProject, document.FilePath!, closure, kind);
-        return RebuildProjectModel(kind, rootPath, currentProject.Id, closure);
+        var rebuilt = RebuildProjectModel(kind, rootPath, currentProject.Id, closure);
+        if (ClosureMembershipChanged(currentProject))
+        {
+            await NotifyDiagnosticsChangedAsync(ct).ConfigureAwait(false);
+        }
+
+        return rebuilt;
+    }
+
+    /// <summary>
+    /// Whether a file entered or left the closure. The host is told, so what it published for a
+    /// file that left is cleared. Implements [SCRIPT-RELOAD-CLOSURE].
+    /// </summary>
+    private bool ClosureMembershipChanged(Project before)
+    {
+        return _solution?.GetProject(before.Id) is { } after
+            && !after.DocumentIds.ToHashSet().SetEquals(before.DocumentIds);
     }
 
     /// <summary>
@@ -298,7 +314,7 @@ internal sealed partial class WorkspaceManager
             .WithCompilationOptions(BuildCompilationOptions(isScript, rootPath))
             .WithParseOptions(BuildParseOptions(isScript, closure))
             .Solution;
-        StartPackageResolution(kind, rootPath, projectId, closure);
+        StartPackageResolution(kind, rootPath, projectId, closure, DirectiveReloadDebounce);
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }
 

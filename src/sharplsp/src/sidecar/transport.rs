@@ -23,7 +23,7 @@ pub struct FramedTransport {
     /// Responses separated from unsolicited compiler-workspace changes.
     responses: tokio::sync::mpsc::UnboundedReceiver<std::result::Result<Envelope, String>>,
     /// Notification receiver handed to the manager once per connection.
-    notifications: Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>>,
+    notifications: Option<tokio::sync::mpsc::Receiver<Envelope>>,
     /// Reader ownership ends with this transport.
     reader_task: tokio::task::JoinHandle<()>,
     /// Write half of the IPC stream.
@@ -77,7 +77,7 @@ impl FramedTransport {
     }
 
     /// Hand idle and in-flight notifications to the manager exactly once.
-    pub fn take_notifications(&mut self) -> Option<tokio::sync::mpsc::UnboundedReceiver<Envelope>> {
+    pub fn take_notifications(&mut self) -> Option<tokio::sync::mpsc::Receiver<Envelope>> {
         self.notifications.take()
     }
 

@@ -111,9 +111,8 @@ public sealed class WorkspaceManagerFSharpOwnershipTests : IDisposable
 
         AssertNoFSharpDesignTimeBuild("a mixed solution");
         var lines = await File.ReadAllLinesAsync(_program);
-        var line = Array.FindIndex(
-            lines,
-            text => text.Contains("Widget", StringComparison.Ordinal)
+        var line = Array.FindIndex(lines, text =>
+            text.Contains("Widget", StringComparison.Ordinal)
         );
         var column = lines[line].IndexOf("Widget", StringComparison.Ordinal);
         var definition = await manager.GetDefinitionAsync(_program, line, column);

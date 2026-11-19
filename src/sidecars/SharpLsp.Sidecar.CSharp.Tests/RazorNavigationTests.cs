@@ -74,14 +74,12 @@ public sealed class RazorNavigationTests : IClassFixture<RazorFixture>
         var implementations = RazorFixture.Ok(
             await manager.GetImplementationsAsync(Board, named.Line, named.Character)
         );
-        var board = Assert.Single(
-            implementations.Locations,
-            location => NativePaths.AreEqual(Board, location.FilePath)
+        var board = Assert.Single(implementations.Locations, location =>
+            NativePaths.AreEqual(Board, location.FilePath)
         );
         Assert.Equal((0, 0), (board.Line, board.Character));
-        Assert.DoesNotContain(
-            implementations.Locations,
-            location => NativePaths.HasExtension(location.FilePath, ".g.cs")
+        Assert.DoesNotContain(implementations.Locations, location =>
+            NativePaths.HasExtension(location.FilePath, ".g.cs")
         );
     }
 

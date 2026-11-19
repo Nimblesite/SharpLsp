@@ -43,13 +43,11 @@ public sealed class WorkspaceManagerPackagesCoverageTests
         Assert.False(string.IsNullOrEmpty(usage.PackagesRoot), "global packages folder resolved");
         Assert.NotEmpty(usage.AllPaths);
         // Newtonsoft.Json is referenced but never used → in All, not in Used.
-        Assert.Contains(
-            usage.AllPaths,
-            p => p.Contains("newtonsoft.json", StringComparison.OrdinalIgnoreCase)
+        Assert.Contains(usage.AllPaths, p =>
+            p.Contains("newtonsoft.json", StringComparison.OrdinalIgnoreCase)
         );
-        Assert.DoesNotContain(
-            usage.UsedPaths,
-            p => p.Contains("newtonsoft.json", StringComparison.OrdinalIgnoreCase)
+        Assert.DoesNotContain(usage.UsedPaths, p =>
+            p.Contains("newtonsoft.json", StringComparison.OrdinalIgnoreCase)
         );
         // Used is necessarily a subset of All.
         Assert.True(usage.UsedPaths.Length <= usage.AllPaths.Length);

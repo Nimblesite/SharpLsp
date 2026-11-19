@@ -160,7 +160,8 @@ internal sealed partial class WorkspaceManager
         ProjectlessKind kind,
         string rootPath,
         ProjectId projectId,
-        Closure closure
+        Closure closure,
+        TimeSpan debounce
     )
     {
         rootPath = NormalizeRootPath(rootPath);
@@ -188,7 +189,7 @@ internal sealed partial class WorkspaceManager
         TrackPackageResolution(
             rootPath,
             generation,
-            ResolveAndUpgradeAsync(rootPath, projectId, closure, generation)
+            ResolveAndUpgradeAsync(rootPath, projectId, closure, (generation, debounce))
         );
     }
 
@@ -223,16 +224,39 @@ internal sealed partial class WorkspaceManager
         }
     }
 
+    /// <summary>
+    /// Wait out the debounce window of a directive edit. False when a later edit of the
+    /// directives superseded this one meanwhile: its packages are never restored.
+    /// Implements [SCRIPT-RELOAD].
+    /// </summary>
+    private async Task<bool> SettledAsync(
+        string rootPath,
+        (long Generation, TimeSpan Debounce) edit,
+        CancellationToken ct
+    )
+    {
+        await Task.Delay(edit.Debounce, ct).ConfigureAwait(false);
+        return _packageResolutionGenerations.TryGetValue(rootPath, out var current)
+            && current == edit.Generation;
+    }
+
     private async Task ResolveAndUpgradeAsync(
         string rootPath,
         ProjectId projectId,
         Closure closure,
-        long generation
+        (long Generation, TimeSpan Debounce) edit
     )
     {
         var ct = _packageResolutionCancellation.Token;
+        var generation = edit.Generation;
         try
         {
+            if (!await SettledAsync(rootPath, edit, ct).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            _ = Interlocked.Increment(ref _packageRestores);
             var resolution = await FileBasedPackageResolver
                 .ResolveAsync(closure, rootPath, generation, ct)
                 .ConfigureAwait(false);

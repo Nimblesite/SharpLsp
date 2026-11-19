@@ -180,6 +180,8 @@ The host resolves the setting and sends the **solution file** rather than the ro
 
 When the C# `workspace/open` fails, the host shows a `window/showMessage` error (type 1) carrying the sidecar's reason. For a root that discovery refuses to guess for, that reason names every competing solution and `csharp.solution_path`. A client that settles the choice itself declares `initializationOptions.solutionPicker: true`, as VS Code does, and is shown no such error: its picker is the selection flow.
 
+**What opens before any document.** A configured `csharp.solution_path` is opened by both compilers, so the F# compiler loads that solution's projects and never every project under the folder; a project outside it is not restored or loaded on the user's behalf ([PERF-PROGRESSIVE-LOAD]). Without one, each compiler is opened the root: discovery for C#, every project beneath it for F#. A `sharplsp/loadSolution` that is a compiler's first successful open starts that compiler's health monitor and warm-up, as an eager open does.
+
 A reopen after a failed first open starts the sidecar's health monitor, which runs at most once per sidecar.
 
 #### [SHARPLSP-ARCHITECTURE-PROJECTS-DISCOVERY] Walking the Workspace for Projects

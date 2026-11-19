@@ -46,9 +46,8 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
         Assert.False((await ProjectlessWorkspaceFixture.OpenAsync(manager, app)).IsError);
 
         var errors = await ProjectlessWorkspaceFixture.ErrorsAsync(manager, app);
-        Assert.Contains(
-            errors,
-            diagnostic => string.Equals(diagnostic.Code, "CS0103", StringComparison.Ordinal)
+        Assert.Contains(errors, diagnostic =>
+            string.Equals(diagnostic.Code, "CS0103", StringComparison.Ordinal)
         );
     }
 
@@ -77,19 +76,15 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
         var diagnostics = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, app);
         // A degraded restore leaves the notice behind, so its absence is the precondition for
         // the binding assertion below meaning anything at all.
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ProjectlessWorkspaceFixture.DegradationCode,
-                    StringComparison.Ordinal
-                )
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            string.Equals(
+                diagnostic.Code,
+                ProjectlessWorkspaceFixture.DegradationCode,
+                StringComparison.Ordinal
+            )
         );
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic =>
-                string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase)
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase)
         );
         await AssertJsonConvertHoverAsync(manager, app);
     }
@@ -114,14 +109,12 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
         Assert.False(opened.IsError, opened.Match(_ => "ok", error => error));
         Assert.True(manager.IsLoaded);
         var diagnostics = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, app);
-        var notice = Assert.Single(
-            diagnostics,
-            diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ProjectlessWorkspaceFixture.DegradationCode,
-                    StringComparison.Ordinal
-                )
+        var notice = Assert.Single(diagnostics, diagnostic =>
+            string.Equals(
+                diagnostic.Code,
+                ProjectlessWorkspaceFixture.DegradationCode,
+                StringComparison.Ordinal
+            )
         );
         Assert.Equal("Info", notice.Severity);
         Assert.Contains(
@@ -168,14 +161,12 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
         Assert.False((await ProjectlessWorkspaceFixture.OpenAsync(manager, app)).IsError);
 
         var diagnostics = await ProjectlessWorkspaceFixture.SettledDiagnosticsAsync(manager, app);
-        var notice = Assert.Single(
-            diagnostics,
-            diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ProjectlessWorkspaceFixture.DegradationCode,
-                    StringComparison.Ordinal
-                )
+        var notice = Assert.Single(diagnostics, diagnostic =>
+            string.Equals(
+                diagnostic.Code,
+                ProjectlessWorkspaceFixture.DegradationCode,
+                StringComparison.Ordinal
+            )
         );
         Assert.Contains("sharplsp-cone-probe-reached", notice.Message, StringComparison.Ordinal);
     }
@@ -274,9 +265,8 @@ public sealed class FileBasedPackageRestoreEndToEndTests : IDisposable
 
         Assert.False(updated.IsError, updated.Match(_ => "ok", error => error));
         var errors = await ProjectlessWorkspaceFixture.ErrorsAsync(manager, app);
-        Assert.DoesNotContain(
-            errors,
-            diagnostic => string.Equals(diagnostic.Code, "CS0101", StringComparison.Ordinal)
+        Assert.DoesNotContain(errors, diagnostic =>
+            string.Equals(diagnostic.Code, "CS0101", StringComparison.Ordinal)
         );
         Assert.Empty(errors);
     }

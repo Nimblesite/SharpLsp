@@ -260,7 +260,11 @@ suite('NuGet Browser', () => {
     const panel = NuGetBrowserPanel.open(context, projectPath, 'NuGetTest', getClient);
 
     try {
-      await panel.waitForInitialLoad();
+      assert.strictEqual(
+        await panel.waitForInitialLoad(),
+        'loaded',
+        'a panel with a running client and a resolved target reports a completed load (#293)',
+      );
 
       // 1 — the defect was that the initial load never searched at all. Assert the
       //     request itself, not just its effect: an empty result set and a search

@@ -90,15 +90,13 @@ public abstract partial class SidecarHost : IAsyncDisposable
         Func<bool> notificationsSupported
     )
     {
-        Register(
-            "workspace/open",
-            async (payload, ct) =>
-                await CompleteWorkspaceAsync(
-                        await handler(payload, ct).ConfigureAwait(false),
-                        notificationsSupported(),
-                        ct
-                    )
-                    .ConfigureAwait(false)
+        Register("workspace/open", async (payload, ct) =>
+            await CompleteWorkspaceAsync(
+                    await handler(payload, ct).ConfigureAwait(false),
+                    notificationsSupported(),
+                    ct
+                )
+                .ConfigureAwait(false)
         );
     }
 

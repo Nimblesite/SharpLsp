@@ -116,9 +116,8 @@ public sealed class ScriptReferenceEndToEndTests : IDisposable
         Assert.Equal("Warning", nuget.Severity, ignoreCase: true);
         Assert.Contains("Newtonsoft.Json", nuget.Message, StringComparison.Ordinal);
         Assert.Contains("not resolved", nuget.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic => diagnostic.Code == "CS0006" && diagnostic.StartLine == 1
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.Code == "CS0006" && diagnostic.StartLine == 1
         );
 
         // The rest of the script still compiles.

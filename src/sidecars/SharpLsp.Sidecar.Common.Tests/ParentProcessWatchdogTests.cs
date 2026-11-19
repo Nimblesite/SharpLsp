@@ -26,14 +26,11 @@ public sealed class ParentProcessWatchdogTests
         using var host = StandInProcess.StartIdle();
         var fired = 0;
         var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var watchdog = Started(
-            host.Id,
-            () =>
-            {
-                _ = Interlocked.Increment(ref fired);
-                _ = exited.TrySetResult();
-            }
-        );
+        using var watchdog = Started(host.Id, () =>
+        {
+            _ = Interlocked.Increment(ref fired);
+            _ = exited.TrySetResult();
+        });
 
         await Task.Delay(300).ConfigureAwait(true);
         Assert.Equal(0, Volatile.Read(ref fired));

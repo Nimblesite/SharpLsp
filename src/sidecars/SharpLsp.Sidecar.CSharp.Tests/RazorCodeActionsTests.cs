@@ -44,9 +44,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
 
         // The fix names the namespace and is preferred: it is the only one. [RAZOR-CODE-ACTIONS-USING]
         var at = Find(text, "StringBuilder");
-        var action = Assert.Single(
-            await ActionsAsync(manager, Counter, at),
-            a => a.Title == "@using System.Text"
+        var action = Assert.Single(await ActionsAsync(manager, Counter, at), a =>
+            a.Title == "@using System.Text"
         );
         Assert.Equal("quickfix", action.Kind);
         Assert.True(action.IsPreferred);
@@ -79,9 +78,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
 
         // RZ10012 names an element the compiler cannot bind: its component's namespace fixes it.
         var at = Find(text, "Virtualize");
-        var action = Assert.Single(
-            await ActionsAsync(manager, Counter, at),
-            a => a.Title == "@using Microsoft.AspNetCore.Components.Web.Virtualization"
+        var action = Assert.Single(await ActionsAsync(manager, Counter, at), a =>
+            a.Title == "@using Microsoft.AspNetCore.Components.Web.Virtualization"
         );
         Assert.True(action.IsPreferred);
         var edit = await ResolveAsync(manager, action);
@@ -105,9 +103,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
         _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Counter, text));
 
         // The handler takes the event's argument type, as the file can name it. [RAZOR-CODE-ACTIONS-HANDLER]
-        var action = Assert.Single(
-            await ActionsAsync(manager, Counter, Find(text, "Reset")),
-            a => a.Title == "Generate event handler 'Reset'"
+        var action = Assert.Single(await ActionsAsync(manager, Counter, Find(text, "Reset")), a =>
+            a.Title == "Generate event handler 'Reset'"
         );
         var edit = await ResolveAsync(manager, action);
         var generated = ApplyEdits(text, Assert.Single(edit.DocumentChanges).Edits);
@@ -158,9 +155,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
         var text = await File.ReadAllTextAsync(Counter);
 
         // Offered on `@code` of a component with no code-behind. [RAZOR-CODE-ACTIONS-CODE-BEHIND]
-        var action = Assert.Single(
-            await ActionsAsync(manager, Counter, Find(text, "@code")),
-            a => a.Title == "Extract block to code behind"
+        var action = Assert.Single(await ActionsAsync(manager, Counter, Find(text, "@code")), a =>
+            a.Title == "Extract block to code behind"
         );
         Assert.Equal("refactor.extract", action.Kind);
         var edit = await ResolveAsync(manager, action);
@@ -196,9 +192,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
 
         // Badge has a block, but its code-behind already exists: no second one.
         var badge = _fixture.Path("BlazorApp", "Components", "Shared", "Badge.razor");
-        Assert.DoesNotContain(
-            await ActionsAsync(manager, badge, (0, 0)),
-            a => a.Title == "Extract block to code behind"
+        Assert.DoesNotContain(await ActionsAsync(manager, badge, (0, 0)), a =>
+            a.Title == "Extract block to code behind"
         );
     }
 
@@ -211,9 +206,8 @@ public sealed class RazorCodeActionsTests : IClassFixture<RazorFixture>
         var text = "@typeparam TItem where TItem : class\n" + await File.ReadAllTextAsync(Counter);
         _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Counter, text));
         Assert.Empty(await ErrorsAsync(manager, Counter));
-        var action = Assert.Single(
-            await ActionsAsync(manager, Counter, Find(text, "@code")),
-            a => a.Title == "Extract block to code behind"
+        var action = Assert.Single(await ActionsAsync(manager, Counter, Find(text, "@code")), a =>
+            a.Title == "Extract block to code behind"
         );
         var edit = await ResolveAsync(manager, action);
         var created = edit.DocumentChanges[0];

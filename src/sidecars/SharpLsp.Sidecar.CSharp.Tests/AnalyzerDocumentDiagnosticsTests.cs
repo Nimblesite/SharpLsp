@@ -193,9 +193,8 @@ public sealed class AnalyzerDocumentDiagnosticsTests : IDisposable
             NativePaths.Join(NativePaths.DirectoryOf(projectPath), SourceName)
         );
 
-        Assert.Contains(
-            diagnostics,
-            diagnostic => diagnostic.Code.StartsWith("CS", StringComparison.Ordinal)
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Code.StartsWith("CS", StringComparison.Ordinal)
         );
         Assert.Contains(diagnostics, IsCa1822Error);
     }
@@ -267,9 +266,8 @@ public sealed class AnalyzerDocumentDiagnosticsTests : IDisposable
 
         var diagnostics = await ProjectlessWorkspaceFixture.DiagnosticsAsync(manager, sourcePath);
 
-        Assert.Contains(
-            diagnostics,
-            diagnostic => diagnostic.Code.StartsWith("CS", StringComparison.Ordinal)
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Code.StartsWith("CS", StringComparison.Ordinal)
         );
         Assert.DoesNotContain(diagnostics, IsCa1822Error);
     }

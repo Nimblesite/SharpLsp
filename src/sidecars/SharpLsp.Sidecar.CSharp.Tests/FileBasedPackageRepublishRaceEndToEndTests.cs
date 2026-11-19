@@ -105,19 +105,15 @@ public sealed class FileBasedPackageRepublishRaceEndToEndTests : IDisposable
 
     private static void AssertSettledAnswerBinds(IReadOnlyList<DiagnosticResult> diagnostics)
     {
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic =>
-                string.Equals(
-                    diagnostic.Code,
-                    ProjectlessWorkspaceFixture.DegradationCode,
-                    StringComparison.Ordinal
-                )
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            string.Equals(
+                diagnostic.Code,
+                ProjectlessWorkspaceFixture.DegradationCode,
+                StringComparison.Ordinal
+            )
         );
-        Assert.DoesNotContain(
-            diagnostics,
-            diagnostic =>
-                string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase)
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            string.Equals(diagnostic.Severity, "error", StringComparison.OrdinalIgnoreCase)
         );
     }
 
@@ -134,9 +130,8 @@ public sealed class FileBasedPackageRepublishRaceEndToEndTests : IDisposable
         var diagnostics = await ProjectlessWorkspaceFixture
             .SettledDiagnosticsAsync(manager, app)
             .ConfigureAwait(false);
-        Assert.Contains(
-            diagnostics,
-            diagnostic => string.Equals(diagnostic.Code, "CS0246", StringComparison.Ordinal)
+        Assert.Contains(diagnostics, diagnostic =>
+            string.Equals(diagnostic.Code, "CS0246", StringComparison.Ordinal)
         );
     }
 

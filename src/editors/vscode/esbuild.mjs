@@ -1,6 +1,5 @@
 // @ts-check
 import * as esbuild from 'esbuild';
-import * as fs from 'node:fs';
 import { extensionBuildOptions } from './esbuild-options.mjs';
 
 const production = process.argv.includes('--production');
@@ -15,14 +14,3 @@ for (const options of [extensionBuildOptions(production)]) {
     await esbuild.build(options);
   }
 }
-const graphLicenses = [
-  'node_modules/d3-force/LICENSE',
-  'node_modules/d3-dispatch/LICENSE',
-  'node_modules/d3-quadtree/LICENSE',
-  'node_modules/d3-timer/LICENSE',
-].map((file) => fs.readFileSync(file, 'utf8'));
-fs.writeFileSync(
-  'dist/profiler-graph-licenses.txt',
-  'Bundled graph dependencies: d3-force, d3-dispatch, d3-quadtree, d3-timer.\n\n' +
-    [...new Set(graphLicenses)].join('\n\n'),
-);

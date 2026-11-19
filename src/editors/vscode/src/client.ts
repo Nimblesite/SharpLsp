@@ -1,6 +1,6 @@
 import { joinPath } from './paths';
 import * as fs from 'node:fs';
-import { type ExtensionContext, type Disposable, window, workspace } from 'vscode';
+import { type ExtensionContext, window, workspace } from 'vscode';
 import {
   CloseAction,
   ErrorAction,
@@ -194,7 +194,7 @@ function wireClientState(
   openSync: OpenSync,
   context: ExtensionContext,
 ): void {
-  const listener: Disposable = client.onDidChangeState((event) => {
+  const listener = client.onDidChangeState((event) => {
     openSync.observe(event.newState);
     state.serverRunning.value = event.newState === State.Running;
     switch (event.newState) {

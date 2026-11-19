@@ -81,13 +81,11 @@ function testConfig(label, workspaceFolder, userDataDir) {
     // Read by src/test/suite/index.ts, which runs only the suites of this shape.
     env: { SHARPLSP_WORKSPACE_SHAPE: label },
     // The extension declares ms-dotnettools.vscode-dotnet-runtime as an
-    // extensionDependency ([DIST-RUNTIME-ACQUIRE]).
-    // VS Code refuses to activate SharpLsp unless that dependency is installed
-    // AND enabled in the test host. Installing it into the isolated test
-    // extensions dir replaces the previous '--disable-extensions' flag, which
-    // disabled the dependency and made activation fail with
-    // "depends on unknown extension 'ms-dotnettools.vscode-dotnet-runtime'".
-    installExtensions: ['ms-dotnettools.vscode-dotnet-runtime'],
+    // extensionDependency ([DIST-RUNTIME-ACQUIRE]); VS Code refuses to activate
+    // SharpLsp unless it is installed AND enabled in the test host.
+    // tools/vsix/install-test-dependency.mjs installs it before the run, reusing
+    // a cached copy, so a Marketplace outage cannot fail a shard.
+    skipExtensionDependencies: true,
     launchArgs: [
       `--user-data-dir=${userDataDir}`,
       ...(process.env.SHARPLSP_SCREENSHOTS ? ['--remote-debugging-port=9239'] : []),

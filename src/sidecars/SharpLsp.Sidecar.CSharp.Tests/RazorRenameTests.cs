@@ -59,13 +59,11 @@ public sealed class RazorRenameTests : IClassFixture<RazorFixture>
         Assert.Equal(declared, Single(edit, codeBehind));
         Assert.Equal(RazorFixture.Locate(Badge, "@Text", "Text"), Single(edit, Badge));
         Assert.Equal(RazorFixture.Locate(Board, "<Badge Text=", "Text"), Single(edit, Board));
-        Assert.All(
-            edit.DocumentChanges.SelectMany(d => d.Edits),
-            e => Assert.Equal("Caption", e.NewText)
+        Assert.All(edit.DocumentChanges.SelectMany(d => d.Edits), e =>
+            Assert.Equal("Caption", e.NewText)
         );
-        Assert.DoesNotContain(
-            edit.DocumentChanges,
-            d => NativePaths.HasExtension(d.FilePath, ".g.cs")
+        Assert.DoesNotContain(edit.DocumentChanges, d =>
+            NativePaths.HasExtension(d.FilePath, ".g.cs")
         );
     }
 
@@ -82,9 +80,8 @@ public sealed class RazorRenameTests : IClassFixture<RazorFixture>
         // `@bind-Label` names the parameter after `@bind-`: only `Label` changes.
         var bound = RazorFixture.Locate(Board, "@bind-Label=", "Label");
         Assert.Equal(bound, Single(edit, Board));
-        var tally = Assert.Single(
-            edit.DocumentChanges,
-            d => NativePaths.AreEqual(Tally, d.FilePath)
+        var tally = Assert.Single(edit.DocumentChanges, d =>
+            NativePaths.AreEqual(Tally, d.FilePath)
         );
         Assert.Contains(
             (declared.Line, declared.Character),
@@ -94,18 +91,16 @@ public sealed class RazorRenameTests : IClassFixture<RazorFixture>
             RazorFixture.Locate(Tally, "@Label</span>", "Label"),
             tally.Edits.Select(e => (e.StartLine, e.StartCharacter))
         );
-        Assert.All(
-            edit.DocumentChanges.SelectMany(d => d.Edits),
-            e => Assert.Equal("Title", e.NewText)
+        Assert.All(edit.DocumentChanges.SelectMany(d => d.Edits), e =>
+            Assert.Equal("Title", e.NewText)
         );
     }
 
     /// <summary>The one edit <paramref name="edit"/> makes in <paramref name="file"/>.</summary>
     private static (int Line, int Character) Single(WorkspaceEditResult edit, string file)
     {
-        var document = Assert.Single(
-            edit.DocumentChanges,
-            d => NativePaths.AreEqual(file, d.FilePath)
+        var document = Assert.Single(edit.DocumentChanges, d =>
+            NativePaths.AreEqual(file, d.FilePath)
         );
         var change = Assert.Single(document.Edits);
         return (change.StartLine, change.StartCharacter);

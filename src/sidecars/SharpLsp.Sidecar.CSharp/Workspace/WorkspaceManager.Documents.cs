@@ -92,7 +92,9 @@ internal sealed partial class WorkspaceManager
                         )
                         .Select(document => document.FilePath)
                 )
-                .OfType<string>();
+                .OfType<string>()
+                // The implicit usings of a file-based app are no file of the user's.
+                .Where(path => !NativePaths.SameName(path, GlobalUsingsFileName));
     }
 
     /// <summary>One source-visibility predicate for metadata and generated-error ownership.</summary>

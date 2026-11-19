@@ -168,6 +168,9 @@ pub(crate) fn reconfigure(
     if changed(&services.applied.analyzers, &config.analyzers) {
         configure_analyzers(&config, compilers, runtime);
     }
+    // Both travel to the compilers with the diagnostic configuration below.
+    crate::semantic::requests::configure(config.server.debounce_ms);
+    workspace_open::configure_scripts(&config.fsharp.script_arguments);
     if let Err(error) = pull_diagnostics::state::configure(&config.diagnostics) {
         warn!(%error, "Diagnostic configuration could not be applied");
     }
@@ -180,7 +183,6 @@ pub(crate) fn reconfigure(
         info!("Vulnerability severity mapping applied live");
     }
     notify_restart_only(&services.applied, &config, client);
-    crate::semantic::requests::configure(config.server.debounce_ms);
     services.applied = config;
 }
 

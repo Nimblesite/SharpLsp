@@ -43,7 +43,7 @@ runs:
       with:
         dotnet-version: |
           9.0.x
-          10.0.403
+          10.0.404
     # The ubuntu-26.04 image added .NET 11 (SDK 11.0.100 and its runtimes) on
     # 2026-11-11. Suites that build fixtures under /tmp sit outside global.json,
     # and suites that target the newest installed runtime then pick net11.0, so

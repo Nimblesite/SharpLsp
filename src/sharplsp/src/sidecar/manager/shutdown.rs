@@ -30,6 +30,9 @@ impl SidecarManager {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::Release);
         info!(sidecar = %self.name, "Shutting down sidecar");
+        // A warm-up or code lens in flight holds the compiler's one request
+        // slot; waiting it out would spend the acknowledgement budget.
+        self.preemption.preempt_all();
         let started = Instant::now();
         let acknowledged = self.request_shutdown_ack().await;
         if let Some(mut child) = self.child.lock().await.take() {

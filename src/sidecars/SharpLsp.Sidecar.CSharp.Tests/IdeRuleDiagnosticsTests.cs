@@ -72,9 +72,8 @@ public sealed class IdeRuleDiagnosticsTests : IDisposable
     {
         using var manager = await OpenAsync("Promoted", PromotedEditorConfig);
 
-        var violation = Assert.Single(
-            await DiagnosticsAsync(manager, "Promoted"),
-            diagnostic => diagnostic.Code == "IDE0040"
+        var violation = Assert.Single(await DiagnosticsAsync(manager, "Promoted"), diagnostic =>
+            diagnostic.Code == "IDE0040"
         );
         Assert.Equal("Warning", violation.Severity);
         Assert.Equal(4, violation.StartLine);
@@ -102,9 +101,8 @@ public sealed class IdeRuleDiagnosticsTests : IDisposable
     {
         using var manager = await OpenAsync("Silenced", NoneEditorConfig);
 
-        Assert.DoesNotContain(
-            await DiagnosticsAsync(manager, "Silenced"),
-            diagnostic => diagnostic.Code == "IDE0040"
+        Assert.DoesNotContain(await DiagnosticsAsync(manager, "Silenced"), diagnostic =>
+            diagnostic.Code == "IDE0040"
         );
     }
 

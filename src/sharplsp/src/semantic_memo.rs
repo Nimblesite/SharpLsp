@@ -254,6 +254,12 @@ impl Memo {
         state.answer(key, version, generation, ask)
     }
 
+    /// How many questions the memo holds answers or inputs for.
+    #[cfg(test)]
+    pub fn held(&self) -> usize {
+        self.state().questions.len()
+    }
+
     /// The database; a poisoned lock still holds a consistent database, since
     /// a query that panicked recorded no answer.
     fn state(&self) -> std::sync::MutexGuard<'_, State> {

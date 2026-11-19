@@ -67,9 +67,8 @@ public sealed class RazorMarkupSymbolsTests : IClassFixture<RazorFixture>
 
         Assert.Null(RazorMarkupSymbols.PropertyOf(compilation, Attribute(markup, "@onclick")));
         Assert.Null(RazorMarkupSymbols.PropertyOf(compilation, Attribute(markup, "disabled")));
-        Assert.All(
-            markup.Attributes.Where(a => a.Owner.Name == "input"),
-            attribute => Assert.Null(RazorMarkupSymbols.PropertyOf(compilation, attribute))
+        Assert.All(markup.Attributes.Where(a => a.Owner.Name == "input"), attribute =>
+            Assert.Null(RazorMarkupSymbols.PropertyOf(compilation, attribute))
         );
     }
 

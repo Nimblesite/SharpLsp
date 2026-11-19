@@ -158,30 +158,24 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     [Fact]
     public async Task InlayHints_skip_named_argument_and_error_typed_var_and_lambda()
     {
-        await WithMetaProbeSourceAsync(
-            HintProbeSource,
-            async () =>
-            {
-                var hints = await fixture.SendAndDeserializeAsync<
-                    InlayHintRequest,
-                    InlayHintResult[]
-                >(
-                    "textDocument/inlayHint",
-                    new InlayHintRequest(FilePath: fixture.MetaProbeFile, StartLine: 0, EndLine: 17)
-                );
+        await WithMetaProbeSourceAsync(HintProbeSource, async () =>
+        {
+            var hints = await fixture.SendAndDeserializeAsync<InlayHintRequest, InlayHintResult[]>(
+                "textDocument/inlayHint",
+                new InlayHintRequest(FilePath: fixture.MetaProbeFile, StartLine: 0, EndLine: 17)
+            );
 
-                Assert.NotEmpty(hints);
-                // The positional call still produces a parameter-name hint.
-                Assert.Contains(hints, h => h.Kind == 2 && h.Label == "x:");
-                // The named argument is skipped — no "value:" hint is emitted.
-                Assert.DoesNotContain(hints, h => h.Label == "value:");
-                // Only the valid `var good` yields a type hint; the error-typed
-                // `var bad`, `var fn` and the untyped lambda parameter are skipped.
-                var typeHints = hints.Where(h => h.Kind == 1).ToList();
-                Assert.Single(typeHints);
-                Assert.Contains("int", typeHints[0].Label);
-            }
-        );
+            Assert.NotEmpty(hints);
+            // The positional call still produces a parameter-name hint.
+            Assert.Contains(hints, h => h.Kind == 2 && h.Label == "x:");
+            // The named argument is skipped — no "value:" hint is emitted.
+            Assert.DoesNotContain(hints, h => h.Label == "value:");
+            // Only the valid `var good` yields a type hint; the error-typed
+            // `var bad`, `var fn` and the untyped lambda parameter are skipped.
+            var typeHints = hints.Where(h => h.Kind == 1).ToList();
+            Assert.Single(typeHints);
+            Assert.Contains("int", typeHints[0].Label);
+        });
     }
 
     /// <summary>
@@ -209,28 +203,25 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     [Fact]
     public async Task CodeAction_generate_method_for_undefined_call_offers_fix()
     {
-        await WithMetaProbeSourceAsync(
-            GenProbeSource,
-            async () =>
-            {
-                var actions = await fixture.SendAndDeserializeAsync<
-                    CodeActionRequest,
-                    CodeActionItem[]
-                >(
-                    "textDocument/codeAction",
-                    new CodeActionRequest(
-                        FilePath: fixture.MetaProbeFile,
-                        StartLine: 6,
-                        StartCharacter: 8,
-                        EndLine: 6,
-                        EndCharacter: 15
-                    )
-                );
+        await WithMetaProbeSourceAsync(GenProbeSource, async () =>
+        {
+            var actions = await fixture.SendAndDeserializeAsync<
+                CodeActionRequest,
+                CodeActionItem[]
+            >(
+                "textDocument/codeAction",
+                new CodeActionRequest(
+                    FilePath: fixture.MetaProbeFile,
+                    StartLine: 6,
+                    StartCharacter: 8,
+                    EndLine: 6,
+                    EndCharacter: 15
+                )
+            );
 
-                Assert.NotEmpty(actions);
-                Assert.Contains(actions, a => a.Title.Contains("Generate"));
-            }
-        );
+            Assert.NotEmpty(actions);
+            Assert.Contains(actions, a => a.Title.Contains("Generate"));
+        });
     }
 
     /// <summary>
@@ -240,27 +231,24 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     [Fact]
     public async Task CodeAction_on_blank_line_in_method_returns_no_actions()
     {
-        await WithMetaProbeSourceAsync(
-            EmptyProbeSource,
-            async () =>
-            {
-                var actions = await fixture.SendAndDeserializeAsync<
-                    CodeActionRequest,
-                    CodeActionItem[]
-                >(
-                    "textDocument/codeAction",
-                    new CodeActionRequest(
-                        FilePath: fixture.MetaProbeFile,
-                        StartLine: 7,
-                        StartCharacter: 0,
-                        EndLine: 7,
-                        EndCharacter: 0
-                    )
-                );
+        await WithMetaProbeSourceAsync(EmptyProbeSource, async () =>
+        {
+            var actions = await fixture.SendAndDeserializeAsync<
+                CodeActionRequest,
+                CodeActionItem[]
+            >(
+                "textDocument/codeAction",
+                new CodeActionRequest(
+                    FilePath: fixture.MetaProbeFile,
+                    StartLine: 7,
+                    StartCharacter: 0,
+                    EndLine: 7,
+                    EndCharacter: 0
+                )
+            );
 
-                Assert.Empty(actions);
-            }
-        );
+            Assert.Empty(actions);
+        });
     }
 
     /// <summary>
@@ -272,28 +260,25 @@ public sealed class CodeActionInlayCoverageEndToEndTests(CSharpSidecarFixture fi
     [Fact]
     public async Task CodeAction_over_broken_syntax_is_handled_gracefully()
     {
-        await WithMetaProbeSourceAsync(
-            BrokenProbeSource,
-            async () =>
-            {
-                var response = await fixture.SendAsync(
-                    "textDocument/codeAction",
-                    MessagePackSerializer.Serialize(
-                        new CodeActionRequest(
-                            FilePath: fixture.MetaProbeFile,
-                            StartLine: 6,
-                            StartCharacter: 8,
-                            EndLine: 7,
-                            EndCharacter: 16
-                        )
+        await WithMetaProbeSourceAsync(BrokenProbeSource, async () =>
+        {
+            var response = await fixture.SendAsync(
+                "textDocument/codeAction",
+                MessagePackSerializer.Serialize(
+                    new CodeActionRequest(
+                        FilePath: fixture.MetaProbeFile,
+                        StartLine: 6,
+                        StartCharacter: 8,
+                        EndLine: 7,
+                        EndCharacter: 16
                     )
-                );
-                Assert.NotNull(response);
+                )
+            );
+            Assert.NotNull(response);
 
-                var ping = await fixture.SendAsync("ping", []);
-                Assert.Null(ping.Error);
-                Assert.Equal("pong", MessagePackSerializer.Deserialize<string>(ping.Payload));
-            }
-        );
+            var ping = await fixture.SendAsync("ping", []);
+            Assert.Null(ping.Error);
+            Assert.Equal("pong", MessagePackSerializer.Deserialize<string>(ping.Payload));
+        });
     }
 }

@@ -47,9 +47,8 @@ internal sealed partial class WorkspaceManager
 
         _pendingTextEdits[filePath] = newText;
         // Loaded as the user's restore spelled it, so its obj stays as their build wrote it.
-        _ = _owningLoads.GetOrAdd(
-            owner,
-            _ => Task.Run(() => AdoptNowAsync(PackageAssets.RestoredSpelling(owner), filePath))
+        _ = _owningLoads.GetOrAdd(owner, _ =>
+            Task.Run(() => AdoptNowAsync(PackageAssets.RestoredSpelling(owner), filePath))
         );
         return new VoidResult.Ok<Unit, string>(Unit.Value);
     }

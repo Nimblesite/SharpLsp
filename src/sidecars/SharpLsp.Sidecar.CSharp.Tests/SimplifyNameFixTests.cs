@@ -120,9 +120,8 @@ public sealed class SimplifyNameFixTests : IAsyncLifetime, IDisposable
 
         // Interaction 2 — the same name as a parameter type: each occurrence has its own fix.
         var parameter = await TitlesAtAsync("(System.Text.StringBuilder builder", "System.Text");
-        Assert.Contains(
-            parameter,
-            title => title.Contains("Simplify name", StringComparison.Ordinal)
+        Assert.Contains(parameter, title =>
+            title.Contains("Simplify name", StringComparison.Ordinal)
         );
 
         // Interaction 3 — a qualified member access (IDE0002).

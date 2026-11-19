@@ -25,9 +25,8 @@ public sealed class MessageRouterTests
     private static MessageRouter EchoRouter()
     {
         var router = new MessageRouter();
-        router.Register(
-            "echo",
-            (payload, _) => Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
+        router.Register("echo", (payload, _) =>
+            Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
         );
         return router;
     }
@@ -60,11 +59,9 @@ public sealed class MessageRouterTests
             Log.Logger = original;
         }
 
-        Assert.Contains(
-            sink.Messages,
-            message =>
-                message.Contains("[Router]", StringComparison.Ordinal)
-                && message.Contains("echo", StringComparison.Ordinal)
+        Assert.Contains(sink.Messages, message =>
+            message.Contains("[Router]", StringComparison.Ordinal)
+            && message.Contains("echo", StringComparison.Ordinal)
         );
     }
 
@@ -93,10 +90,8 @@ public sealed class MessageRouterTests
         var router = EchoRouter();
 
         _ = Assert.Throws<InvalidOperationException>(() =>
-            router.Register(
-                "echo",
-                (payload, _) =>
-                    Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
+            router.Register("echo", (payload, _) =>
+                Task.FromResult<ByteResult>(new ByteResult.Ok<byte[], string>(payload))
             )
         );
     }

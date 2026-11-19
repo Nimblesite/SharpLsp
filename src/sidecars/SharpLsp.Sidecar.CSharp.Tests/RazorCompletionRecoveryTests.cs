@@ -96,9 +96,8 @@ public sealed class RazorCompletionRecoveryTests(RazorFixture fixture) : IClassF
         _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, block));
         var caret = block.Split('\n')[1].Length;
         var inBlock = RazorFixture.Ok(await manager.GetCompletionsAsync(Board, 1, caret));
-        var blockCount = Assert.Single(
-            inBlock,
-            item => item.Label == "Count" && item.Kind == "Property"
+        var blockCount = Assert.Single(inBlock, item =>
+            item.Label == "Count" && item.Kind == "Property"
         );
         Assert.Contains(inBlock, item => item.Label == "Add");
         Assert.NotNull(blockCount.TextEdit);

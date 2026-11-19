@@ -199,8 +199,7 @@ internal sealed partial class WorkspaceManager
         var symbols = new List<ISymbol>();
         foreach (var project in solution.Projects.Where(IsCSharpProject))
         {
-            var compilation =
-                await project.GetCompilationAsync(ct).ConfigureAwait(false)
+            var compilation = await project.GetCompilationAsync(ct).ConfigureAwait(false)
                 ?? throw new InvalidOperationException(
                     $"Compilation unavailable for {project.Name}"
                 );
@@ -326,8 +325,7 @@ internal sealed partial class WorkspaceManager
     {
         var ordered = references.OrderBy(item => item.Span.Start).ToList();
         var first = ordered.First();
-        var document =
-            solution.GetDocument(first.DocumentId)
+        var document = solution.GetDocument(first.DocumentId)
             ?? throw new InvalidOperationException(
                 $"Rename document unavailable: {first.FilePath}"
             );

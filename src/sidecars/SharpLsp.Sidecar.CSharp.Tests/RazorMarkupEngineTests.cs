@@ -63,19 +63,16 @@ public sealed class RazorMarkupEngineTests : IClassFixture<RazorFixture>
         Assert.Equal("Title", title.Bound?.PropertyName);
         Assert.Equal("Title", Slice(markup, title.NameSpan!.Value));
 
-        var bind = Assert.Single(
-            markup.Attributes,
-            a =>
-                a.Name == "@bind-Label"
-                && a.TagHelper?.Kind == TagHelperKind.Bind
-                && a.Owner.Name == "Tally"
-                && a.TagHelper.Name != "Bind"
+        var bind = Assert.Single(markup.Attributes, a =>
+            a.Name == "@bind-Label"
+            && a.TagHelper?.Kind == TagHelperKind.Bind
+            && a.Owner.Name == "Tally"
+            && a.TagHelper.Name != "Bind"
         );
         Assert.Equal("@bind-Label", Slice(markup, bind.NameSpan!.Value));
 
-        var parameter = Assert.Single(
-            markup.Attributes,
-            a => a.Kind == MarkupAttributeKind.DirectiveParameter
+        var parameter = Assert.Single(markup.Attributes, a =>
+            a.Kind == MarkupAttributeKind.DirectiveParameter
         );
         Assert.Equal("@bind:event", parameter.Name);
         Assert.Equal("event", parameter.Parameter?.Name);
@@ -84,9 +81,8 @@ public sealed class RazorMarkupEngineTests : IClassFixture<RazorFixture>
         var click = Assert.Single(markup.Attributes, a => a.Name == "@onclick");
         Assert.Equal(TagHelperKind.EventHandler, click.TagHelper?.Kind);
         Assert.Equal("@onclick", Slice(markup, click.NameSpan!.Value));
-        Assert.Contains(
-            markup.Attributes,
-            a => a.Name == "disabled" && a.Kind == MarkupAttributeKind.Html
+        Assert.Contains(markup.Attributes, a =>
+            a.Name == "disabled" && a.Kind == MarkupAttributeKind.Html
         );
     }
 

@@ -227,9 +227,8 @@ internal static class RoslynProjectLoading
     /// <summary><paramref name="solution"/> holding one empty placeholder per F# project.</summary>
     private static Solution WithPlaceholders(Solution solution, HashSet<string> fsharp)
     {
-        return fsharp.Aggregate(
-            solution,
-            (current, fsproj) => current.AddProject(Placeholder(fsproj))
+        return fsharp.Aggregate(solution, (current, fsproj) =>
+            current.AddProject(Placeholder(fsproj))
         );
     }
 
@@ -259,9 +258,8 @@ internal static class RoslynProjectLoading
     {
         return infos
             .Where(info => solution.GetProject(info.Id) is null)
-            .Aggregate(
-                solution,
-                (current, info) => current.AddProject(RazorGenerator.Compatible(info))
+            .Aggregate(solution, (current, info) =>
+                current.AddProject(RazorGenerator.Compatible(info))
             );
     }
 

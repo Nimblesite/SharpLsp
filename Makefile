@@ -93,8 +93,8 @@ PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 # crates.io crates and the @nimblesite/lsp-profiler-ui npm package. Its .NET
 # engine and fixtures ship only in the release source, which `_fetch-lspkit`
 # unpacks to LSPKIT_DIR; `_build-dotnet` publishes the engine to PROFILER_ENGINE_OUT.
-LSPKIT_VERSION      := 0.5.0
-LSPKIT_SHA256       := 501ebd470634dd72c2796e6c19e815c4c9df04b6319f9e9cc7d4eba4ff8a3cca
+LSPKIT_VERSION      := 0.10.1
+LSPKIT_SHA256       := 1ed4e9fbb02641891e1373849b392c3799e9fa7802422ff52ced972cd68948a4
 # Outside target/: CI caches restore target/ partially, which would skip the fetch.
 export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine
@@ -627,6 +627,7 @@ define RUN_VSIX_SUITE
 	fi; \
 	cd $(VSCODE_DIR); \
 	$(VSIX_PRETEST) && \
+		node ../../../tools/vsix/install-test-dependency.mjs && \
 		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage && \
 		node ../../../tools/coverage/report-vsix-coverage.mjs \
 		|| status=$$?; \

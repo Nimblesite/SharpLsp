@@ -118,6 +118,11 @@ pub fn configure(debounce_ms: u64) {
     DEBOUNCE_MS.store(debounce_ms, Ordering::Release);
 }
 
+/// The debounce window in milliseconds, as configured.
+pub fn debounce_ms() -> u64 {
+    DEBOUNCE_MS.load(Ordering::Acquire)
+}
+
 /// A document changed: requests arriving inside the debounce window wait it
 /// out before they reach a compiler.
 pub fn edited() {
@@ -169,6 +174,11 @@ pub fn answer(
     };
     if !still_wanted(&route) {
         return Ok(Value::Null);
+    }
+    // Background work yields to this request now: its first exchange may be
+    // the buffer hand-over below, which preempts nothing by itself.
+    for engine in engines.into_iter().flatten() {
+        engine.yield_to(&request.method);
     }
     let uri = crate::dispatch::request_document_uri(&request.params);
     let fsharp_document = uri.as_ref().and_then(LangId::from_uri) == Some(LangId::FSharp);

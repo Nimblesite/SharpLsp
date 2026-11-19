@@ -74,7 +74,6 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="5.9.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.9.0" />
-        <PackageReference Include="ICSharpCode.Decompiler" Version="11.2.0.10050" />
         <PackageReference Include="MessagePack" Version="3.1.12" />
     </ItemGroup>
 

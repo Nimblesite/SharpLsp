@@ -52,8 +52,8 @@ internal static class DotnetBuild
         {
             startInfo.ArgumentList.Add(argument);
         }
-        using var build =
-            Process.Start(startInfo) ?? throw new InvalidOperationException("dotnet did not start");
+        using var build = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("dotnet did not start");
         // Drain both pipes at once: reading them in turn deadlocks once the unread one fills.
         var stderr = build.StandardError.ReadToEndAsync();
         var stdout = build.StandardOutput.ReadToEnd();

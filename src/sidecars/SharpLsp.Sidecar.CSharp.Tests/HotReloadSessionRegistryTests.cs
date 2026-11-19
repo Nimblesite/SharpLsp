@@ -154,9 +154,8 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
 
         Assert.Equal("notCompilable", waiting.Status);
         Assert.Empty(waiting.Updates);
-        Assert.Contains(
-            waiting.Diagnostics,
-            diagnostic => diagnostic.StartsWith("CS", StringComparison.Ordinal)
+        Assert.Contains(waiting.Diagnostics, diagnostic =>
+            diagnostic.StartsWith("CS", StringComparison.Ordinal)
         );
 
         var rejected = await registry
@@ -174,9 +173,8 @@ public sealed class HotReloadSessionRegistryTests : IDisposable
 
         Assert.Equal("restartRequired", rejected.Status);
         Assert.Empty(rejected.Updates);
-        Assert.Contains(
-            rejected.Diagnostics,
-            diagnostic => diagnostic.StartsWith("ENC0110:", StringComparison.Ordinal)
+        Assert.Contains(rejected.Diagnostics, diagnostic =>
+            diagnostic.StartsWith("ENC0110:", StringComparison.Ordinal)
         );
 
         // Refusals must not poison the session: a compilable body edit after a

@@ -117,9 +117,8 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             expected,
             highlights.Highlights.Select(h => (h.StartLine, h.StartCharacter)).Order()
         );
-        Assert.All(
-            highlights.Highlights,
-            h => Assert.Equal("caption".Length, h.EndCharacter - h.StartCharacter)
+        Assert.All(highlights.Highlights, h =>
+            Assert.Equal("caption".Length, h.EndCharacter - h.StartCharacter)
         );
     }
 
@@ -191,9 +190,8 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         var signature = help.Signatures[help.ActiveSignature];
         Assert.Equal("int Math.Max(int val1, int val2)", signature.Label);
         Assert.Equal(["int val1", "int val2"], signature.Parameters);
-        Assert.All(
-            help.Signatures,
-            item => Assert.Contains("Math.Max(", item.Label, StringComparison.Ordinal)
+        Assert.All(help.Signatures, item =>
+            Assert.Contains("Math.Max(", item.Label, StringComparison.Ordinal)
         );
     }
 
@@ -240,9 +238,8 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
             Unnecessary
         );
         var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
-        Assert.DoesNotContain(
-            all,
-            entry => IsImportFile(entry.Key) && entry.Value.Any(Unnecessary)
+        Assert.DoesNotContain(all, entry =>
+            IsImportFile(entry.Key) && entry.Value.Any(Unnecessary)
         );
     }
 
@@ -264,9 +261,8 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         Assert.DoesNotContain(diagnostics, Unnecessary);
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Severity == "Error");
         var all = RazorFixture.Ok(await manager.PullDiagnosticsAsync());
-        Assert.DoesNotContain(
-            all,
-            entry => NativePaths.AreEqual(entry.Key, Board) && entry.Value.Any(Unnecessary)
+        Assert.DoesNotContain(all, entry =>
+            NativePaths.AreEqual(entry.Key, Board) && entry.Value.Any(Unnecessary)
         );
         // The tag binds through that using, so removing it would unbind the component.
         var facts = await manager.FindRazorMarkupAsync(Board, default);
@@ -314,9 +310,8 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         var broken = original.Replace("score + Id)", "score + Idd)", StringComparison.Ordinal);
         _ = RazorFixture.Ok(await manager.UpdateDocumentTextAsync(Board, broken));
 
-        var error = Assert.Single(
-            RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)),
-            d => d.Code == "CS0103"
+        var error = Assert.Single(RazorFixture.Ok(await manager.GetDiagnosticsAsync(Board)), d =>
+            d.Code == "CS0103"
         );
         Assert.True(NativePaths.AreEqual(Board, error.FilePath), error.FilePath);
         Assert.Equal(
@@ -394,17 +389,14 @@ public sealed class RazorCSharpFeatureTests : IClassFixture<RazorFixture>
         using var manager = await _fixture.OpenManagerAsync();
         var tokens = Decode(RazorFixture.Ok(await manager.GetSemanticTokensFullAsync(Board)).Data);
 
-        Assert.Contains(
-            tokens,
-            t => t == (RazorFixture.Locate(Board, "private readonly List", "private"), 7, 15)
+        Assert.Contains(tokens, t =>
+            t == (RazorFixture.Locate(Board, "private readonly List", "private"), 7, 15)
         );
-        Assert.Contains(
-            tokens,
-            t => t == (RazorFixture.Locate(Board, "private readonly List", "List"), 4, 2)
+        Assert.Contains(tokens, t =>
+            t == (RazorFixture.Locate(Board, "private readonly List", "List"), 4, 2)
         );
-        Assert.Contains(
-            tokens,
-            t => t == (RazorFixture.Locate(Board, "private void Add", "Add"), 3, 13)
+        Assert.Contains(tokens, t =>
+            t == (RazorFixture.Locate(Board, "private void Add", "Add"), 3, 13)
         );
         Assert.Contains(tokens, t => t == (RazorFixture.Locate(Board, "<PageTitle>", "Id"), 2, 9));
         // A markup line carries its markup token alone: no C# scaffolding leaks onto it.

@@ -68,13 +68,11 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
             ],
             edits.Select(edit => edit.NewText)
         );
-        Assert.All(
-            edits,
-            edit =>
-                Assert.Equal(
-                    (3, 0, 3, 0),
-                    (edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter)
-                )
+        Assert.All(edits, edit =>
+            Assert.Equal(
+                (3, 0, 3, 0),
+                (edit.StartLine, edit.StartCharacter, edit.EndLine, edit.EndCharacter)
+            )
         );
         Assert.Equal(3, edits.Length);
     }
@@ -91,16 +89,14 @@ public sealed class RazorCompletionEditsTests(RazorFixture fixture) : IClassFixt
             .ConfigureAwait(true);
         Assert.NotNull(projection);
         var invalid = new[] { "class Extra {}", "[assembly: System.Obsolete]", "using ;", "" };
-        Assert.All(
-            invalid,
-            text =>
-                Assert.Empty(
-                    RazorCompletionEdits.Map(
-                        projection,
-                        [new TextChange(new TextSpan(0, 0), text)],
-                        null
-                    )
+        Assert.All(invalid, text =>
+            Assert.Empty(
+                RazorCompletionEdits.Map(
+                    projection,
+                    [new TextChange(new TextSpan(0, 0), text)],
+                    null
                 )
+            )
         );
         var edit = Assert.Single(
             RazorCompletionEdits.Map(

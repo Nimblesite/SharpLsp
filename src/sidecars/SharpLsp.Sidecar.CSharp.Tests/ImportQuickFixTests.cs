@@ -165,9 +165,8 @@ public sealed class ImportQuickFixTests(ImportSolutionFixture fixture)
         var fixes = await QuickFixesAtAsync(ListProbe, "List<int>()");
         Assert.Single(fixes, fix => fix.Title == import);
         Assert.Single(fixes, fix => fix.Title == qualify);
-        Assert.DoesNotContain(
-            fixes,
-            fix => fix.Title.StartsWith("Add 'using List", StringComparison.Ordinal)
+        Assert.DoesNotContain(fixes, fix =>
+            fix.Title.StartsWith("Add 'using List", StringComparison.Ordinal)
         );
 
         var imported = await ApplyAsync(ListProbe, "List<int>()", import);
@@ -189,9 +188,8 @@ public sealed class ImportQuickFixTests(ImportSolutionFixture fixture)
         var fixes = await QuickFixesAtAsync(SelectProbe, "Select(");
         Assert.Single(fixes, fix => fix.Title == import);
         Assert.DoesNotContain(fixes, fix => fix.Title == "using System.Linq;");
-        Assert.DoesNotContain(
-            fixes,
-            fix => fix.Title.StartsWith("Add 'using Select", StringComparison.Ordinal)
+        Assert.DoesNotContain(fixes, fix =>
+            fix.Title.StartsWith("Add 'using Select", StringComparison.Ordinal)
         );
 
         var imported = await ApplyAsync(SelectProbe, "Select(", import);
@@ -296,9 +294,8 @@ public sealed class ImportQuickFixTests(ImportSolutionFixture fixture)
             ImportSolutionFixture.NewtonsoftVersion
         );
         // The solution already uses the package, so nuget.org is never offered for it.
-        Assert.DoesNotContain(
-            fixes,
-            fix => fix.Title.StartsWith("Install package", StringComparison.Ordinal)
+        Assert.DoesNotContain(fixes, fix =>
+            fix.Title.StartsWith("Install package", StringComparison.Ordinal)
         );
 
         var imported = await ApplyAsync(JsonProbe, "JObject()", title);
@@ -325,13 +322,11 @@ public sealed class ImportQuickFixTests(ImportSolutionFixture fixture)
     {
         var fixes = await QuickFixesAtAsync(PluginProbe, "PluginHost()");
         Assert.DoesNotContain(fixes, fix => fix.Reference is not null);
-        Assert.DoesNotContain(
-            fixes,
-            fix => fix.Title.StartsWith("Reference project", StringComparison.Ordinal)
+        Assert.DoesNotContain(fixes, fix =>
+            fix.Title.StartsWith("Reference project", StringComparison.Ordinal)
         );
-        Assert.DoesNotContain(
-            fixes,
-            fix => fix.Title.Contains("using Plugins;", StringComparison.Ordinal)
+        Assert.DoesNotContain(fixes, fix =>
+            fix.Title.Contains("using Plugins;", StringComparison.Ordinal)
         );
         Assert.NotEmpty(await ErrorsAsync(PluginProbe, "CS0246"));
     }

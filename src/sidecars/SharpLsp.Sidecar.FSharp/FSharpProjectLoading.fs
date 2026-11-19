@@ -197,23 +197,46 @@ let buildProjectOptions (checker: FSharpChecker) (fsprojPath: string) (sources: 
 
     { options with SourceFiles = sources }
 
-let scriptOptions (checker: FSharpChecker) (scriptPath: string) (source: string) (ct: CancellationToken) =
+/// Resolve a script's options under `arguments`, the user's own compiler arguments for
+/// scripts, after the ones every script is checked with. [SCRIPT-FSX-ARGUMENTS]
+let private resolveScript (checker: FSharpChecker) (arguments: string array) (scriptPath: string) (source: string) (ct: CancellationToken) =
     task {
         use sourceScope = FSharpScriptSource.enter scriptPath source
-        let flags = [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |]
+        let flags = Array.append [| "--define:INTERACTIVE"; "--define:EDITING"; "--simpleresolution" |] arguments
         let computation = checker.GetProjectOptionsFromScript(
             scriptPath, SourceText.ofString source, otherFlags = flags,
             useFsiAuxLib = true, useSdkRefs = true, assumeDotNetFramework = false)
         return! Async.StartAsTask(computation, cancellationToken = ct)
     }
 
+/// The options of a script, its resolution diagnostics, and whether its packages are
+/// still being restored: until they are, the options are those of the text without its
+/// package directives, so no request waits for a restore. [SCRIPT-FSX-NUGET]
+let scriptResolution (checker: FSharpChecker) (arguments: string array) (scriptPath: string) (source: string) (ct: CancellationToken) =
+    task {
+        let whole token = resolveScript checker arguments scriptPath source token :> Tasks.Task
+        match! FSharpScriptPackages.plan checker scriptPath source whole with
+        | FSharpScriptPackages.Whole ->
+            let! options, diagnostics = resolveScript checker arguments scriptPath source ct
+            return options, diagnostics, false
+        | FSharpScriptPackages.WithoutPackages stripped ->
+            let! options, diagnostics = resolveScript checker arguments scriptPath stripped ct
+            return options, diagnostics, true
+    }
+
+let scriptOptions (checker: FSharpChecker) (arguments: string array) (scriptPath: string) (source: string) (ct: CancellationToken) =
+    task {
+        let! options, diagnostics, _ = scriptResolution checker arguments scriptPath source ct
+        return options, diagnostics
+    }
+
 /// The options of a script from the text the editor holds, else the text on disk,
-/// with the resolution diagnostics and the length of the text resolved.
-/// [SCRIPT-FSX-OPTIONS] [HOVER-FSHARP-OVERLAY]
-let scriptOptionsFromEditor (checker: FSharpChecker) overlays (scriptPath: string) (ct: CancellationToken) =
+/// with the resolution diagnostics, the length of the text resolved, and whether its
+/// packages are still being restored. [SCRIPT-FSX-OPTIONS] [HOVER-FSHARP-OVERLAY]
+let scriptOptionsFromEditor (checker: FSharpChecker) (arguments: string array) overlays (scriptPath: string) (ct: CancellationToken) =
     task {
         let! input = FSharpWorkspaceRuntime.tryReadSourceAsync overlays scriptPath ct
         let source = input |> Option.defaultValue String.Empty
-        let! options, diagnostics = scriptOptions checker scriptPath source ct
-        return options, diagnostics, source.Length
+        let! options, diagnostics, pending = scriptResolution checker arguments scriptPath source ct
+        return options, diagnostics, source.Length, pending
     }
