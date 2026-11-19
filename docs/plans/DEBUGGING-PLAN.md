@@ -138,8 +138,7 @@ are green.
       *an unbuilt project resolves to nothing or to a real file, and to MSBuild once built*
 - [x] Run C# file-based apps with `dotnet run --file <abs path>` (never the positional form)
       and debug them via `dotnet build <file> --artifacts-path <dir>`. `launch-run.ts:47`
-      `runArgs`, `launch-run.ts:131` `buildFileBasedApp`, `launch-run.ts:152`
-      `fileBasedAssembly`; tests `run-debug-scripts.test.ts` *a file-based .cs runs via dotnet
+      `runArgs`, `launch-run.ts` `buildFileBasedApp` (launches MSBuild's `TargetPath`); tests `run-debug-scripts.test.ts` *a file-based .cs runs via dotnet
       run --file, never the positional form* and *debugging a file-based .cs launches the
       artifacts-path assembly*
 - [x] Run `.fsx` with `dotnet fsi --exec`; refuse `.fsx` debugging with a named message.
