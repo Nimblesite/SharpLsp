@@ -297,8 +297,9 @@ Features users expect within the first day of use.
   - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`), and `Run on <tfm>` preflight failures carry their text as the run's own output too.
   - [x] MTP projects with no `global.json` opt-in and no runner switch are discovered and run through their own module, never the VSTest target — #581; the restored package graph names the projects MSBuild must evaluate, `xunit.v3`'s own console (`-list full/json`, `-id`, `-result-trx`) is learned per module, and F#-first fixtures — the C# one reproducing the issue's exact package set — pass through the real profiles (`test-explorer-mtp-native.test.ts`, `test-mtp-native-parsers.test.ts`).
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
-  - [x] Expecto discovery, runs and debugging — `test-explorer-expecto.test.ts` (list paths with spaces and nesting; pass, fail with the expectation's message, `ptestCase` skipped) and `debug-test-expecto-e2e.test.ts`
-  - [ ] FsCheck property tests run-verified, and the `fsharp` tag derived from the project's language instead of the test name (today a real Expecto id is untagged and a C# `PropertyTests` is tagged F#) — [#604](https://github.com/Nimblesite/SharpLsp/issues/604)
+  - [x] Expecto discovery, runs and debugging — `test-explorer-fsharp-frameworks.test.ts` (list paths with spaces and nesting; pass, fail with the expectation's message, `ptestCase` skipped) and `debug-test-expecto-e2e.test.ts`
+  - [x] FsCheck property tests run-verified — `test-explorer-fsharp-frameworks.test.ts` *FsCheck: a property that holds passes, a falsified one fails with its counterexample, a skipped one is skipped* (FsCheck.Xunit 3.6.0)
+  - [ ] The `fsharp` tag derived from the project's language instead of the test name (today a real Expecto id is untagged and a C# `PropertyTests` is tagged F#) — [#604](https://github.com/Nimblesite/SharpLsp/issues/604)
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
 
 - [x] **P2.3: Build Integration**
