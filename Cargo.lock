@@ -2131,6 +2131,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap",
  "flate2",
+ "getrandom 0.4.3",
  "globset",
  "lsp-profiler",
  "lsp-profiler-dotnet",

@@ -438,6 +438,9 @@ item and its required evidence are complete.
 ### 11.5 Endpoint leases and READY `[SIDECAR-PLAN-CHECKLIST-STARTUP]`
 
 - [ ] Generate at least 64 unpredictable bits from the OS CSPRNG for every spawn attempt.
+      Progress: every MANAGER's endpoint now carries 64 `getrandom` bits (`launch.rs`
+      `endpoint_nonce`, test `endpoint_tokens_are_unpredictable_and_constant_length`); a fresh
+      nonce per restart lands with the per-generation endpoint item below.
 - [ ] Include language, host PID, generation, and nonce in a length-bounded platform endpoint.
 - [ ] Create/use a validated owner-only Unix runtime directory and keep socket mode `0600`.
 - [ ] Keep `PipeOptions.CurrentUserOnly` and a single named-pipe server instance on Windows.
