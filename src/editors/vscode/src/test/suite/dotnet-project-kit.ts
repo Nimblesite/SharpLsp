@@ -437,7 +437,7 @@ function netCoreAppMajor(line: string): number | undefined {
 }
 
 /** The major version of the SDK that builds in `cwd`: the newest it can target. */
-async function sdkMajor(cwd: string): Promise<number> {
+export async function sdkMajor(cwd: string): Promise<number> {
   const version = (await dotnet(['--version'], cwd)).trim();
   return Number.parseInt(version.split('.')[0] ?? '', 10);
 }

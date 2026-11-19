@@ -140,19 +140,14 @@ export async function buildProject(project: ConsoleProject): Promise<string> {
  * project anywhere up the tree ([SCRIPT-DETECT] `CSharpFileBasedApp`).
  *
  * `dotnet run --file <path>` runs it; `dotnet build <path> --artifacts-path
- * <dir>` produces `<dir>/bin/debug/<name>.dll` — note there is no TFM segment,
- * unlike a project's `bin/Debug/<tfm>/`.
+ * <dir>` builds it under `<dir>/bin/` with no TFM segment, unlike a project's
+ * `bin/Debug/<tfm>/` ([DEBUG-FEATURES-LAUNCH-BUILD] rule 4).
  */
 export function writeFileBasedApp(dir: string, name: string, marker?: string): string {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${name}.cs`);
   fs.writeFileSync(file, csharpProgram(marker ?? `hello from file-based ${name}`), 'utf-8');
   return file;
-}
-
-/** The assembly `dotnet build <file>.cs --artifacts-path <dir>` produces. */
-export function fileBasedOutput(artifactsDir: string, name: string): string {
-  return path.join(artifactsDir, 'bin', 'debug', `${name}.dll`);
 }
 
 /** An F# script ([SCRIPT-DETECT] `FSharpScript`). Runs under `dotnet fsi`. */

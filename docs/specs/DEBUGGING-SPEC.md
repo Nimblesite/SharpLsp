@@ -313,7 +313,7 @@ When [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search finds no owning project, the d
 
 | Document kind | Run | Debug |
 |---|---|---|
-| `CSharpFileBasedApp` (`.cs`, no owning project) | `dotnet run --file <abs path>` | Supported: build with `dotnet build <abs path> --artifacts-path <dir>`, launch `<dir>/bin/<config>/<name>.dll` |
+| `CSharpFileBasedApp` (`.cs`, no owning project) | `dotnet run --file <abs path>` | Supported: build with `dotnet build <abs path> --artifacts-path <dir>`, launch the `TargetPath` MSBuild reports for that build |
 | `FSharpScript` (`.fsx`, `.fsscript`) | `dotnet fsi --exec <abs path>` | **Not supported** — named message |
 | `CSharpScript` (`.csx`) | `dotnet-script <abs path>` when that tool resolves | **Not supported** — named message |
 | `.csx` with no `dotnet-script` | Named message naming the missing tool | Same |
@@ -325,7 +325,7 @@ When [DEBUG-FEATURES-LAUNCH-TARGET]'s cone search finds no owning project, the d
 1. Script and file-based runs MUST be dispatched as a `vscode.Task` with a `ShellExecution`/`ProcessExecution`, not by typing into a terminal. The command and arguments are then observable, the exit code is reported, and the run is cancellable.
 2. The file-based-app command MUST be `dotnet run --file <abs path>`. The positional form `dotnet run <path>` is non-conforming: inside a directory that contains a project, `dotnet` runs **the project** and passes the path as an application argument, silently launching the wrong program.
 3. `dotnet build <file>.cs` MUST be given an explicit `--artifacts-path`. The default output lands in a per-platform, SHA-256-keyed runfile cache whose location differs on Windows, macOS and Linux; an explicit path removes the platform split and gives the DAP `launch` request a stable `program`.
-4. File-based output uses `bin/<configuration-lowercased>/<name>.dll` with **no TFM segment** — unlike a project's `bin/Debug/<tfm>/`. The two layouts MUST NOT share a path builder.
+4. File-based output carries **no TFM segment** — unlike a project's `bin/Debug/<tfm>/` — and its layout is the SDK's: `bin/<configuration-lowercased>/<name>.dll` through SDK 10, `bin/<name>.cs/<configuration-lowercased>/<name>.dll` from SDK 11. The program launched MUST be the `TargetPath` the build reports (`-t:Build -getProperty:TargetPath`), never a path rebuilt from a layout.
 5. `.fsx` debugging is refused, not attempted. `dotnet fsi` writes no assembly and no PDB to disk (the script image is loaded from a byte array, or emitted dynamically under `--multiemit-`), so there is no `program` a `launch` request could name.
 6. Every unsupported combination produces exactly one user-visible message. A silent no-op is non-conforming.
 7. `<app>.run.json` is a first-party launch-profile file for file-based apps and MUST be read alongside `Properties/launchSettings.json` — see [DEBUG-FEATURES-LAUNCH-PROFILES].

@@ -7,7 +7,7 @@
 // cancellation, so a terminal run can neither be observed nor reported. A Task
 // exposes its command, its arguments and its process exit code.
 import * as fs from 'node:fs';
-import { directoryOf, extensionOf, fileNameOf, joinPath } from './paths';
+import { directoryOf, fileNameOf, joinPath } from './paths';
 import * as vscode from 'vscode';
 import { currentDotnetExecutable, runDotnet } from './dotnet-process';
 import { err, ok, type Result } from './result';
@@ -126,30 +126,28 @@ export async function hasDotnetScript(): Promise<boolean> {
  * SHA-256-keyed runfile cache (`%TEMP%/dotnet/runfile` on Windows,
  * `~/Library/Application Support/dotnet/runfile` on macOS,
  * `$XDG_DATA_HOME/dotnet/runfile` on Linux), so without it the produced assembly
- * has no path a `launch` request could name.
+ * has no path a `launch` request could name. MSBuild names the assembly it
+ * built (`TargetPath`): the layout under the artifacts path is the SDK's, and it
+ * moved between releases (`bin/debug/` on 10.0, `bin/<file>.cs/debug/` on 11.0).
  */
 export async function buildFileBasedApp(file: string): Promise<Result<string>> {
   const artifacts = joinPath(directoryOf(file), ARTIFACTS_DIRNAME);
-  const run = await runDotnet(['build', file, '--artifacts-path', artifacts], directoryOf(file));
+  const build = [
+    'build',
+    file,
+    '--artifacts-path',
+    artifacts,
+    '-t:Build',
+    '-getProperty:TargetPath',
+  ];
+  const run = await runDotnet(build, directoryOf(file));
   if (run.failed) {
     const reason = run.errorMessage ?? '';
     return err(reason.length > 0 ? reason : run.stderr || run.stdout);
   }
-  const produced = fileBasedAssembly(artifacts, file);
-  if (!fs.existsSync(produced)) {
+  const produced = run.stdout.trim();
+  if (produced.length === 0 || !fs.existsSync(produced)) {
     return err(`Build produced no output for ${fileNameOf(file)}.`);
   }
   return ok(produced);
-}
-
-/**
- * Where `dotnet build <file>.cs --artifacts-path <dir>` puts the assembly.
- *
- * `bin/<configuration-lowercased>/<name>.dll` with NO target-framework segment,
- * unlike a project's `bin/Debug/<tfm>/`. The two layouts must not share a path
- * builder.
- */
-export function fileBasedAssembly(artifactsDir: string, entryFile: string): string {
-  const stem = fileNameOf(entryFile, extensionOf(entryFile));
-  return joinPath(artifactsDir, 'bin', 'debug', `${stem}.dll`);
 }
