@@ -299,7 +299,7 @@ Features users expect within the first day of use.
   - [x] Editor decorations (green play button, red/green/skip indicators), spec `[TEST-STATUS-LENS]`
   - [x] Expecto discovery, runs and debugging — `test-explorer-fsharp-frameworks.test.ts` (list paths with spaces and nesting; pass, fail with the expectation's message, `ptestCase` skipped) and `debug-test-expecto-e2e.test.ts`
   - [x] FsCheck property tests run-verified — `test-explorer-fsharp-frameworks.test.ts` *FsCheck: a property that holds passes, a falsified one fails with its counterexample, a skipped one is skipped* (FsCheck.Xunit 3.6.0)
-  - [ ] The `fsharp` tag derived from the project's language instead of the test name (today a real Expecto id is untagged and a C# `PropertyTests` is tagged F#) — [#604](https://github.com/Nimblesite/SharpLsp/issues/604)
+  - [x] The `fsharp` tag derived from the project's language instead of the test name — [#604](https://github.com/Nimblesite/SharpLsp/issues/604); `test-language.ts` `projectLanguageOf` (the listing's project, else the nearest project file above the assembly), proven by `test-explorer-fsharp-frameworks.test.ts` (every Expecto and FsCheck row tagged), `test-explorer-frameworks.test.ts` (F# xUnit/NUnit/MSTest tagged, C# untagged) and `test-language.test.ts` (a C# `PropertyTests` stays C#). Close #604 only after the released binaries prove it.
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
 
 - [x] **P2.3: Build Integration**

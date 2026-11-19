@@ -122,7 +122,8 @@
         "debug-fsharp-stepping-e2e.test.js",
         "debug-fsharp-inspection-e2e.test.js",
         "debug-hot-reload-e2e.test.js",
-        "debug-attach-e2e.test.js"
+        "debug-attach-e2e.test.js",
+        "debug-attach-reliability-e2e.test.js"
       ]
     },
     "debug-tests": {
@@ -165,6 +166,7 @@
         "test-explorer-glued-banners.test.js",
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
+        "test-language.test.js",
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
         "test-coverage-parser.test.js",

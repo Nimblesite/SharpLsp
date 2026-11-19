@@ -28,8 +28,6 @@ import {
 import { escapeFilterValue, filterClause, filterExpression } from '../../test-filter.js';
 import {
   buildFilterArgs,
-  isExpectoTest,
-  isFsCheckTest,
   type CachedTestResult,
   type SharpLspTestController,
 } from '../../testing.js';
@@ -38,6 +36,7 @@ import { FRAMEWORK_FIXTURES, type FrameworkFixture } from './test-explorer-fixtu
 import {
   assertLeafItem,
   collectLeafIds,
+  languageTags,
   discoverSolution,
   findItem,
   nextResultsChange,
@@ -108,6 +107,11 @@ function assertLanguagePartition(
 
 /** Every name the six-project solution must expose, F# fixtures first. */
 const ALL_EXPECTED: readonly string[] = FRAMEWORK_FIXTURES.flatMap(fqnsOf);
+
+/** The ids an .fsproj built: exactly these carry the `fsharp` tag (#604). */
+const FS_IDS: ReadonlySet<string> = new Set(
+  FRAMEWORK_FIXTURES.filter((fixture) => fixture.language === 'fsharp').flatMap(fqnsOf),
+);
 
 /** The theories whose rows DISAGREE — one pass, one fail, under one FQN. */
 const MIXED_THEORIES: readonly string[] = FRAMEWORK_FIXTURES.flatMap(
@@ -261,15 +265,9 @@ function assertXunitVisible(fixture: FrameworkFixture, displayNames: readonly st
 
 /** Every property a discovered item hands the Testing view. */
 function assertItemShape(snapshot: TestItemSnapshot, anchor: string): void {
-  assertPlainLeaf(snapshot, anchor);
-  assert.ok(
-    !isExpectoTest(snapshot.id),
-    `${snapshot.id} is not an Expecto name, which is WHY it is untagged`,
-  );
-  assert.ok(
-    !isFsCheckTest(snapshot.id),
-    `${snapshot.id} is not an FsCheck name, which is WHY it is untagged`,
-  );
+  // #604: the language of the project that built it decides the tag — every
+  // F# row of xUnit, NUnit and MSTest carries `fsharp`, no C# row does.
+  assertPlainLeaf(snapshot, anchor, FS_IDS.has(snapshot.id));
 }
 
 /** The fixture file of `key` really is on disk at `dir`. */
@@ -316,7 +314,7 @@ function assertShapeSurvives(
     `${why}: ${fqn} must appear exactly once in the tree`,
   );
   assert.strictEqual(
-    assertLeafItem(items, fqn).label,
+    assertLeafItem(items, fqn, languageTags(FS_IDS.has(fqn))).label,
     label,
     `${why}: ${fqn} must render as '${label}'`,
   );
@@ -692,6 +690,7 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     assertSnapshotUriShape(groupSnapshots, testSnapshots, {
       fileCount: 6,
       why: 'the rendered rows of the six-fixture framework tree',
+      fsharp: FS_IDS,
     });
     assert.strictEqual(
       testSnapshots.reduce((sum, snapshot) => sum + snapshot.childCount, 0),
@@ -715,7 +714,11 @@ suite('Test Explorer e2e — xUnit, NUnit and MSTest across C# and F#', () => {
     );
     for (const fixture of FRAMEWORK_FIXTURES) assertProjectOnDisk(fixture, dirFor(fixture), root);
     for (const fixture of FRAMEWORK_FIXTURES)
-      assertLeafItem(api.testController.items, fixture.parameterized);
+      assertLeafItem(
+        api.testController.items,
+        fixture.parameterized,
+        languageTags(fixture.language === 'fsharp'),
+      );
   });
 
   test('the three awkward FQN shapes survive discovery verbatim', async function () {

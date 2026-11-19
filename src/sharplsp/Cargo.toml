@@ -19,6 +19,9 @@ shipwright = "0.11"
 shipwright-manifest = "0.11"
 # Implements the executable packaging contract [BINARY-RUST].
 
+# OS CSPRNG for unpredictable sidecar endpoints [SIDECAR-STARTUP-ENDPOINT]
+getrandom = "0.4"
+
 # LSP
 lsp-server = "0.10"
 lsp-types = "0.97"

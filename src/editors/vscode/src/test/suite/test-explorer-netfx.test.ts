@@ -240,7 +240,7 @@ suite('Test Explorer — one project built for .NET Framework AND .NET', () => {
     );
     const [item] = itemsFor(api, [SINGLE_ID]);
     assert.ok(item, `${SINGLE_ID} is a row`);
-    assertTaggedFor(item, []);
+    assertTaggedFor(item, [], true);
     assert.strictEqual(item.description, SINGLE_ID, 'its description is its plain FQN, as before');
   });
 
@@ -258,13 +258,18 @@ suite('Test Explorer — one project built for .NET Framework AND .NET', () => {
 
   test('tags: every framework whose assembly lists a test, and no other', function () {
     const everywhere: (keyof NetfxIds)[] = ['passes', 'failsOnNetfx', 'failsOnNet472', 'skipped'];
-    for (const shape of everywhere) {
-      for (const item of itemsFor(api, idsOf(FIXTURES, shape))) assertTaggedFor(item, declared);
+    // #604: every F# row also carries `fsharp`, from the .fsproj that built it.
+    for (const fixture of FIXTURES) {
+      const fsharp = fixture.language === 'fsharp';
+      for (const shape of everywhere) {
+        for (const item of itemsFor(api, idsOf([fixture], shape)))
+          assertTaggedFor(item, declared, fsharp);
+      }
+      for (const item of itemsFor(api, idsOf([fixture], 'net48Only')))
+        assertTaggedFor(item, ['net48'], fsharp);
+      for (const item of itemsFor(api, idsOf([fixture], 'modernOnly')))
+        assertTaggedFor(item, modern, fsharp);
     }
-    for (const item of itemsFor(api, idsOf(FIXTURES, 'net48Only'))) {
-      assertTaggedFor(item, ['net48']);
-    }
-    for (const item of itemsFor(api, idsOf(FIXTURES, 'modernOnly'))) assertTaggedFor(item, modern);
   });
 
   test('a run merges each test across frameworks, prefixing every failure with the frameworks that failed', async function () {

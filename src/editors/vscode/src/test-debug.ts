@@ -119,6 +119,10 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
       this.writeEmitter.fire(this.buffered);
       this.buffered = '';
     }
+    // A run that ended before VS Code opened the terminal fired its close into
+    // the void: VS Code only listens once it has opened the pty. Close now, or
+    // the terminal outlives its run as a ghost beside the next one.
+    if (this.ended) this.closeEmitter.fire();
   }
 
   /** VS Code's notice that the USER disposed the terminal. */
@@ -146,7 +150,7 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
   public end(): void {
     if (this.ended) return;
     this.ended = true;
-    this.closeEmitter.fire();
+    if (this.opened) this.closeEmitter.fire();
   }
 }
 

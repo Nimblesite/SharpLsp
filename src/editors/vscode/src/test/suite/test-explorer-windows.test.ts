@@ -236,7 +236,8 @@ suite('Test Explorer e2e — Windows-hostile paths, encodings and filter grammar
       );
     }
     for (const snapshot of testSnapshots) {
-      assertPlainLeaf(snapshot, hostileDir);
+      // #604: the pair's F# half (`Fs.` ids) was built by an .fsproj.
+      assertPlainLeaf(snapshot, hostileDir, snapshot.id.startsWith('Fs.'));
     }
     const spaced = findItem(api.testController.items, FS_FACT_SPACED);
     assert.ok(spaced, `${FS_FACT_SPACED} must resolve by id`);

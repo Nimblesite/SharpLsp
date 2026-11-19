@@ -125,6 +125,8 @@ export interface Corpus {
  */
 export interface CorpusClassRun extends Omit<ClassRun, 'installed'> {
   readonly tagged?: readonly string[];
+  /** The class is in an .fsproj, so its rows carry `fsharp` too (#604). */
+  readonly fsharp?: boolean;
 }
 
 /** The Test Explorer and this agent's runtimes, read once; the tree is cleared after. */
@@ -171,7 +173,7 @@ export function useCorpus(
     await assertClassRunPasses(api(), { ...run, installed: installed() });
     const tagged = run.tagged ?? runnableOf(run.declared, installed());
     for (const test of rootsOf(classRowOf(api(), run.anyTest).children)) {
-      assertTaggedFor(test, tagged);
+      assertTaggedFor(test, tagged, run.fsharp === true);
     }
   };
   return { repoDir, api, installed, discovered, runClass };

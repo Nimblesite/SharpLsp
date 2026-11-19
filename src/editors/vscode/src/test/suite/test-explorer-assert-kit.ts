@@ -5,6 +5,7 @@
 // `--filter` argument shapes, green-outcome loops and discovery preconditions —
 // so a suite asserts more by calling one function than by duplicating its body
 // ([TEST-REACTIVITY], [TEST-RUN-TRX], [TEST-FILTER-ESCAPE]).
+import { languageTags } from './test-explorer-kit';
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { SharpLspExtensionApi } from '../../extension.js';
@@ -308,19 +309,30 @@ export function assertLensReported(api: SharpLspExtensionApi, id: string, why: s
 
 /**
  * A settled tree's row census: groups share ONE discovery-target uri, tests
- * point at `fileCount` declaring files with unique descriptions, and no row
- * carries a framework tag.
+ * point at `fileCount` declaring files with unique descriptions, and only
+ * the tests an .fsproj built carry a tag: `fsharp`.
  */
 export function assertSnapshotUriShape(
   groups: readonly TestItemSnapshot[],
   tests: readonly TestItemSnapshot[],
-  options: { readonly fileCount: number; readonly why: string },
+  options: {
+    readonly fileCount: number;
+    readonly why: string;
+    /** Ids an .fsproj built: exactly these carry the `fsharp` tag (#604). */
+    readonly fsharp?: ReadonlySet<string>;
+  },
 ): void {
   assert.deepStrictEqual(
-    [...groups, ...tests].flatMap((row) => row.tags),
+    groups.flatMap((row) => row.tags),
     [],
-    `${options.why}: no row carries a framework tag — that tag is reserved for Expecto/FsCheck naming`,
+    `${options.why}: no group row carries a tag`,
   );
+  for (const row of tests)
+    assert.deepStrictEqual(
+      row.tags,
+      languageTags(options.fsharp?.has(row.id) === true),
+      `${options.why}: ${row.id} carries its project's language tag and no framework tag`,
+    );
   assert.strictEqual(
     new Set(groups.map((row) => row.uriPath)).size,
     1,
