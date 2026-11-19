@@ -20,14 +20,16 @@ Implements [ANALYZERS-MONOREPO-GATE] and [ANALYZERS-SOLUTION-SCOPE].
       TOML strictness.
 - [ ] Update `src/examples/config/sharplsp.example.toml` through a TOML parser/serializer, not line
       splicing.
-- [ ] Hot-reload workspace/static-analyzer config through
-      `workspace/didChangeConfiguration`.
+- [x] Hot-reload workspace/static-analyzer config through
+      `workspace/didChangeConfiguration` (shipped as `[analyzers] dead_code`/`monorepo`) — `configuration_live.rs` `reconfigure`;
+      e2e `analyzer_settings_from_the_editor_or_the_file_apply_to_the_next_pull` (editor and on-disk edits).
 - [ ] Bump `global_state_version` and send `workspace/diagnostic/refresh` when
       monorepo/static-analyzer settings change.
 - [ ] Full-stack test: default config produces no unused-public-code
       diagnostics.
-- [ ] Full-stack test: `repository_kind = "standard"` suppresses the analyzer
-      even when `unused_public_symbols = true`.
+- [x] Full-stack test: `repository_kind = "standard"` suppresses the analyzer
+      even when `unused_public_symbols = true` (shipped as `[analyzers] dead_code`/`monorepo`) — same e2e, step 2: `dead_code` on,
+      no monorepo, the public F# function is not reported.
 - [ ] Full-stack test: `repository_kind = "monorepo"` enables the analyzer only
       when `solution_wide_analysis` and `analyzers_enabled` are also true.
 
@@ -63,10 +65,12 @@ Implements [ANALYZERS-DIAGNOSTICS], [ANALYZERS-PERFORMANCE], and
 Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
 [ANALYZERS-SUPPRESSION] for C#.
 
-- [ ] Build a Roslyn candidate collector from `ISymbol` data for public API
-      surface.
-- [ ] Use `SymbolFinder.FindReferencesAsync` to count non-declaration references
-      across the loaded solution graph.
+- [x] Build a Roslyn candidate collector from `ISymbol` data for public API
+      surface — `DeadCodeAnalyzer.cs` `IsCandidate`/`Visibility`; `DeadCodeAnalyzerTests`
+      `Monorepo_reports_unused_public_symbols_as_errors`.
+- [x] Use `SymbolFinder.FindReferencesAsync` to count non-declaration references
+      across the loaded solution graph — `SearchScope.cs`; `DeadCodeAnalyzerTests`
+      `Types_referenced_only_through_members_are_not_flagged`.
 - [ ] Count inheritance, interface implementation, overrides, attributes,
       construction, invocation, and member access as uses.
 - [x] Roll member uses from outside a type up to the type (extension calls, static
@@ -98,8 +102,9 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       functions, members, union cases, record fields, active patterns, delegates,
       and interfaces.
 - [ ] Treat `.fsi` signature files as the public-surface authority when present.
-- [ ] Use FCS symbol-use APIs to count non-declaration references across all F#
-      projects in the loaded solution graph.
+- [x] Use FCS symbol-use APIs to count non-declaration references across all F#
+      projects in the loaded solution graph — `FSharpAnalyzers.fs` `deadCodeDiagnostics`;
+      `SidecarEndToEndTests.fs` (referenced bindings never flagged).
 - [ ] Count pattern matching, union-case construction, record construction/update,
       active-pattern use, member access, and interface/override binding as uses.
 - [ ] Suppress nested-member cascades when the containing public module/type is
@@ -110,14 +115,14 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       implicit-use attributes.
 - [ ] Emit `SLSPF0101` diagnostics with source `sharplsp-static-fsharp`,
       severity Information, and tag `Unnecessary`.
-- [ ] Full-stack test: unused public F# function in a monorepo solution is
-      reported.
+- [x] Full-stack test: unused public F# function in a monorepo solution is
+      reported — `configuration_live.rs` step 3: `unusedPublic` reported as an error.
 - [ ] Full-stack test: public F# value referenced by another project is not
       reported.
 - [ ] Full-stack test: `.fsi` public-surface declarations receive diagnostics at
       the signature declaration where possible.
-- [ ] Full-stack test: non-monorepo config reports no F# unused-public-code
-      diagnostics.
+- [x] Full-stack test: non-monorepo config reports no F# unused-public-code
+      diagnostics — `configuration_live.rs` step 2: only the private helper is reported.
 
 ## Phase 5: Cross-Language References (P1)
 
