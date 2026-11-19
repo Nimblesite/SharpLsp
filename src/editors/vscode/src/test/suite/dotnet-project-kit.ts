@@ -436,15 +436,23 @@ function netCoreAppMajor(line: string): number | undefined {
   return Number.isNaN(major) ? undefined : major;
 }
 
+/** The major version of the SDK that builds in `cwd`: the newest it can target. */
+async function sdkMajor(cwd: string): Promise<number> {
+  const version = (await dotnet(['--version'], cwd)).trim();
+  return Number.parseInt(version.split('.')[0] ?? '', 10);
+}
+
 /**
  * Every `netN.0` moniker this agent can RUN (an installed `Microsoft.NETCore.App`
- * runtime), oldest first. Read off the machine, never pinned: a target with no
- * runtime gets no test host and silently drops out of a multi-targeted fixture.
+ * runtime) and `cwd`'s SDK can build (newer fails NETSDK1045), oldest first.
+ * Read off the machine: a target with no runtime gets no test host.
  */
 export async function installedNetCoreTargets(cwd: string): Promise<string[]> {
   const output = await dotnet(['--list-runtimes'], cwd);
+  const newest = await sdkMajor(cwd);
   const majors = new Set(output.split('\n').flatMap((raw) => netCoreAppMajor(raw.trim()) ?? []));
-  return [...majors].sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
+  const buildable = [...majors].filter((major) => major <= newest);
+  return buildable.sort((left, right) => left - right).map((major) => `net${String(major)}.0`);
 }
 
 /**
