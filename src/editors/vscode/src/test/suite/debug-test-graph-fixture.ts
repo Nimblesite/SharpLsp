@@ -38,6 +38,25 @@ function writeSibling(root: string, runner: FixtureRunner): string {
   );
 }
 
+/** Windows' refusal while another reader holds the file: the live workspace reloading it. */
+const SHARING_VIOLATION = 'being used by another process';
+
+/**
+ * A CLI edit of a project the open workspace is watching. On Windows the server's
+ * own MSBuild reload holds the new project file for a moment, and the CLI's save
+ * fails with a sharing violation instead of waiting; only that failure retries.
+ */
+async function editWatched(args: readonly string[], cwd: string, attempt = 1): Promise<void> {
+  try {
+    await dotnet(args, cwd);
+  } catch (error) {
+    const contended = error instanceof Error && error.message.includes(SHARING_VIOLATION);
+    if (!contended || attempt >= 5) throw error;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+    await editWatched(args, cwd, attempt + 1);
+  }
+}
+
 /** MSBuild owns project references and solution membership, without editing project XML. */
 async function referenceGraph(
   fixture: TestDebugFixture,
@@ -50,11 +69,9 @@ async function referenceGraph(
     root,
     fileNameOf(root) + (language === 'fsharp' ? '.fsproj' : '.csproj'),
   );
-  await dotnet(
-    ['add', selected, 'reference', joinPath(library, 'GraphLibrary.csproj')],
-    fixture.scratchDir,
-  );
-  await dotnet(['sln', fixture.solutionPath, 'add', library, sibling], fixture.scratchDir);
+  const reference = joinPath(library, 'GraphLibrary.csproj');
+  await editWatched(['add', selected, 'reference', reference], fixture.scratchDir);
+  await editWatched(['sln', fixture.solutionPath, 'add', library, sibling], fixture.scratchDir);
 }
 
 /** Extend the canonical debugger fixture before discovery, sharing the ordinary project kit. */
