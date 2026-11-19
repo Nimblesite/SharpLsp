@@ -143,8 +143,10 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
       unopened files after `workspace/diagnostic`.
 - [ ] VS Code e2e test: changing `repository_kind` triggers
       `workspace/diagnostic/refresh` and removes/adds diagnostics.
-- [ ] Add code descriptions for `SLSPC0101` and `SLSPF0101` that link to the
-      static analyzer docs.
+- [x] Add code descriptions for `SLSPC0101` and `SLSPF0101` that link to the
+      static analyzer docs — `RuleDocumentation.cs` (Common) points both at the website's
+      Diagnostics › Dead code section; `DeadCodeAnalyzerTests` and `FSharpAnalyzersTests`
+      assert the link, and that `SLSPF0102` carries none.
 - [ ] Add future code action stubs using `Diagnostic.data`: suppress diagnostic,
       reduce visibility, and safe delete.
 - [ ] Add performance regression fixture for a mixed 50-project solution.

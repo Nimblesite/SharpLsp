@@ -185,7 +185,7 @@ internal static class DeadCodeAnalyzer
             Message: message,
             Severity: severity,
             Code: DiagnosticCode,
-            HelpLink: "",
+            HelpLink: SharpLsp.Sidecar.Common.RuleDocumentation.DeadCode,
             Tags: [DiagnosticTags.Unnecessary]
         );
     }
