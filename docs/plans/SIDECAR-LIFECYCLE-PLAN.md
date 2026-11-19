@@ -484,7 +484,9 @@ item and its required evidence are complete.
 - [ ] Poison and restart when a written request cannot be drained within its 120s/600s budget.
 - [ ] Distinguish clean EOF between frames from truncated length/payload EOF and classify the latter as
       a protocol failure.
-- [ ] Keep the 64MiB frame check before allocation in Rust and .NET.
+- [x] Keep the 64MiB frame check before allocation in Rust and .NET — `transport.rs` `MAX_FRAME_LEN`
+      (test `rejects_oversized_frame_length`), `FramedTransport.cs` `MaxFrameLength` (tests
+      `ReadFrameAsync_rejects_oversized_length_prefix`, `WriteFrameAsync_rejects_oversized_payload`).
 - [ ] Add a real wrong-ID scenario proving the stale response reaches neither current nor next caller.
 - [ ] Add a real notification-before-response scenario proving both are delivered correctly.
 
