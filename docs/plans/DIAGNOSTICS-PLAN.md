@@ -78,7 +78,7 @@ Full branch CI is not green. The normal release host, sidecars, packaged extensi
 - [x] Prove unopened default Razor SDK components participate in workspace pulls, map CS0029 to the component source and clear after a compiler-verified disk repair.
 - [x] Respect NoWarn, source suppressions, analyzer opt-out and effective severity without suppressing compiler errors.
 - [x] Prove actual generated-source and global/project diagnostic errors remain visible at their owning project with a zero-length 0:0 range: real FS0084, CS5001 and generated CS0029 editor cases pass in the verified 61-case combined suite, with exact counts and SDK build oracles (8b325497, 57e4a445).
-- [ ] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly.
+- [x] Apply the NuGet restore gate before compiler workspace creation; surface restore failures honestly — the failure names the SDK's own `error` lines (`WorkspaceRestore.cs` `RestoreErrors`); `WorkspaceRestoreGateTests` (C#: no workspace after a failed restore, the missing package named, a repair opens it) and `FSharpWorkspaceRestoreEndToEndTests.fs` (F#).
 - [ ] Preserve F# FSharpLint/FSharp.Analyzers.SDK and SharpLsp static analyzer behavior.
 - [x] Supply codeDescription URLs ([#343](https://github.com/Nimblesite/SharpLsp/issues/343)): each C# finding's descriptor `HelpLinkUri` and FSharpLint's per-rule page; F# compiler codes carry none.
 - [x] Supply unnecessary tags where specified. — [DIAG-CATEGORIES-TAGS] (#390): `Unnecessary` and `Deprecated` from both sidecars, passed through by the host — `diagnostic_tags.rs`

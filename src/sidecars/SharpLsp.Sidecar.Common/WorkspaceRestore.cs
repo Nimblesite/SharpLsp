@@ -135,14 +135,31 @@ public static class WorkspaceRestore
         {
             return RememberedRestore(project, result);
         }
-        Log.Warning(
-            "Package restore failed for {Project}: {Detail}",
-            project,
-            result.Match(_ => string.Empty, detail => detail)
-        );
+        var detail = result.Match(_ => string.Empty, failure => failure);
+        Log.Warning("Package restore failed for {Project}: {Detail}", project, detail);
         return RestoreResult.Failure(
-            $"Package restore failed for {project}; run dotnet restore manually."
+            $"Package restore failed for {project}: {RestoreErrors(detail)}; run dotnet restore manually."
         );
+    }
+
+    /// <summary>Longest restore output the failure message quotes when it names no error line.</summary>
+    private const int TailLength = 500;
+
+    /// <summary>
+    /// Why a restore failed, in the SDK's own words: its distinct <c>error</c> lines
+    /// (<c>NU1101: Unable to find package …</c>), else the tail of its output. [DIAG-RESTORE]
+    /// </summary>
+    private static string RestoreErrors(string detail)
+    {
+        var errors = detail
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Contains(" error ", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return errors.Length > 0 ? string.Join("; ", errors)
+            : detail.Length > TailLength ? detail[^TailLength..].Trim()
+            : detail.Trim();
     }
 
     private static RestoreResult RememberedRestore(string project, RestoreResult result)
