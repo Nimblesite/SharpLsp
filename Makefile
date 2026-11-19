@@ -627,6 +627,7 @@ define RUN_VSIX_SUITE
 	fi; \
 	cd $(VSCODE_DIR); \
 	$(VSIX_PRETEST) && \
+		node ../../../tools/vsix/install-test-dependency.mjs && \
 		$(VSIX_TEST_ENV) MOCHA_FILES="$$files" npx vscode-test --coverage && \
 		node ../../../tools/coverage/report-vsix-coverage.mjs \
 		|| status=$$?; \
