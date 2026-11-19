@@ -341,7 +341,9 @@ open and are called out as such, because nothing implements them.
       breaks on user throws* pass (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [ ] Add `requireExactSource` support — declared in `configurationAttributes`
       (`package.json:338`) and forwarded, but nothing asserts the behaviour; no test.
-- [ ] E2E test: launch console app on macOS ARM64 (no macOS leg in CI; Windows and Ubuntu only)
+- [x] E2E test: launch console app on macOS ARM64 — the `debug-breakpoints`, `debug-stepping`
+      and `debug-variables` suites launch the `StepTarget` console app and pass locally on macOS
+      arm64 (2026-11-19); CI has no macOS VS Code leg
 - [ ] E2E test: launch ASP.NET app, hit breakpoint on request handler
 
 ### 4.4 Breakpoints
@@ -408,10 +410,10 @@ open and are called out as such, because nothing implements them.
       refuses to step into framework code* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [x] E2E test: step into and out of a method call chain — `debug-stepping-e2e.test.ts` *F11
       descends into the callee and Shift+F11 climbs back out* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
-- [ ] E2E test: stepping off the end of a method and of the program —
+- [x] E2E test: stepping off the end of a method and of the program —
       `debug-stepping-boundaries-e2e.test.ts` *stepping over the last statement of a method
       returns to the caller* and *stepping over the last statement of the program terminates
-      the session* are both red
+      the session* pass (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [x] E2E test: a breakpoint encountered mid-step still stops the debuggee —
       `debug-stepping-boundaries-e2e.test.ts` *a breakpoint inside a stepped-over call still
       stops the debuggee*
@@ -430,17 +432,18 @@ open and are called out as such, because nothing implements them.
       spec's own fallback rule is honoured — anything unrecognised passes through untouched.
       Covered indirectly by `debug-callstack-e2e.test.ts` *every physical frame is listed,
       named, located and navigable*
-- [ ] Inject the AWAITING frames — the caller chain parked in a continuation — into
-      `stackTrace`. **Not built.** `dap-frames.ts:11` states the limit plainly: frames parked in
-      a continuation are not on the physical stack at all, and recovering them needs an
-      ICorDebug walk of `AsyncTaskMethodBuilder._builder._continuation` through the C# sidecar,
-      which does not exist. `debug-callstack-e2e.test.ts` *an awaited chain reports the LOGICAL
-      async stack, not raw MoveNext frames* is red: "Frames reported: LeafAsync".
-  - [ ] Build side-channel request to C# sidecar: type name, `this` object address, frame index
-  - [ ] C# sidecar: implement `ReconstructAsyncStack` handler using Roslyn type model
-  - [ ] C# sidecar: read `<>1__state`, `<>4__this`, and continuation chain fields from heap via `ICorDebugObjectValue`
-  - [ ] C# sidecar: walk `AsyncTaskMethodBuilder._builder._continuation`/`MoveNextRunner` to next logical frame
-  - [ ] E2E test: 3-level async chain — all 3 logical frames visible
+- [x] Inject the AWAITING frames — the caller chain parked in a continuation — into
+      `stackTrace`. Built on the debugger's own data surface instead of an ICorDebug walk:
+      `dap-async-chain.ts` sets `Task.s_asyncDebuggingEnabled` via `setExpression`, walks
+      `Task.s_currentActiveTasks` and each box's `m_continuationObject` with field reads, and
+      `dap-stack.ts` splices the frames in. `debug-callstack-e2e.test.ts` *an awaited chain
+      reports the LOGICAL async stack, not raw MoveNext frames* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+  - [x] Build side-channel request to C# sidecar: type name, `this` object address, frame index — superseded by the DAP-evaluate walk above
+  - [x] C# sidecar: implement `ReconstructAsyncStack` handler using Roslyn type model — superseded by the DAP-evaluate walk above
+  - [x] C# sidecar: read `<>1__state`, `<>4__this`, and continuation chain fields from heap via `ICorDebugObjectValue` — superseded by the DAP-evaluate walk above
+  - [x] C# sidecar: walk `AsyncTaskMethodBuilder._builder._continuation`/`MoveNextRunner` to next logical frame — superseded by the DAP-evaluate walk above
+  - [x] E2E test: 3-level async chain — all 3 logical frames visible: the same test asserts
+        `LeafAsync` → `MiddleAsync` → `RootAsync` in order
 
 ### 4.7 Variable Inspection and Evaluation
 
@@ -453,28 +456,24 @@ open and are called out as such, because nothing implements them.
       `dap-caps.ts:24` `supportsEvaluateForHovers`; test
       `debug-protocol-capabilities-e2e.test.ts` *every Phase Four capability the table marks Yes
       is advertised*
-- [ ] E2E test: the same expression answers identically in hover, watch and the REPL —
-      `debug-evaluate-e2e.test.ts` is red with netcoredbg's `0x80070057`, so the retry does not
-      yet cover this path
-- [ ] Implement `setVariable` proxy — forwarded, but `debug-evaluate-e2e.test.ts` *setVariable
-      changes the value the running program then uses* was not reached (the suite aborts on the
-      earlier failure); no green assertion
-- [ ] Expand `List<T>` elements. **Implemented at `dap-variables.ts:174` `VariableExpander`
-      (C# `List<T>` arrives as `_items` + `_size`; the expander presents the elements from the
-      adapter's own handles rather than evaluating code), but `debug-variables-e2e.test.ts`
-      *collections, dictionaries, arrays and nullables all expand* is red — the panel still
-      shows `_items`, `_size`, `_version`, `Capacity`.**
-- [ ] Static-field scope. **Not built.** `debug-variables-e2e.test.ts` *a static field is
-      reachable from the variables panel* is red: "Scopes offered [Locals] holding [running,
-      seed]" — there is no `Statics` scope and `Program.Total` is unreachable.
-- [ ] Implement `[DebuggerDisplay]` emulation. **Not built.** No code reads the attribute; the
-      C# sidecar has no Roslyn lookup for it and the router has no format-string evaluation
-      step. `debug-evaluate-e2e.test.ts` *[DebuggerDisplay] decides how an object renders in the
-      panel* is red: got `{StepTarget.Box}`, expected `Box(boxed,8)`.
-  - [ ] On `variables` response, identify types with `[DebuggerDisplay]` (via C# sidecar Roslyn lookup)
-  - [ ] Send evaluate request to C# sidecar with format string and frame context
-  - [ ] Replace default `toString()` value in response with evaluated display string
-  - [ ] Fall back to raw class name if evaluation fails
+- [x] E2E test: the same expression answers identically in hover, watch and the REPL —
+      `debug-evaluate-e2e.test.ts` passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] Implement `setVariable` proxy — `debug-evaluate-e2e.test.ts` *setVariable changes the
+      value the running program then uses* and *setVariable accepts what it can write and
+      refuses what it cannot* pass (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] Expand `List<T>` elements — `dap-variables.ts` `VariableExpander`;
+      `debug-variables-e2e.test.ts` *collections, dictionaries, arrays and nullables all expand*
+      passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] Static-field scope — `debug-variables-e2e.test.ts` *a static field is reachable from the
+      variables panel* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] Implement `[DebuggerDisplay]` emulation — `dap-display.ts` reads the attribute through
+      the debuggee's own reflection, evaluates its `{hole}`s and falls back to the class name;
+      `debug-evaluate-e2e.test.ts` *[DebuggerDisplay] decides how an object renders in the
+      panel* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+  - [x] On `variables` response, identify types with `[DebuggerDisplay]` (via C# sidecar Roslyn lookup) — found through the debuggee's reflection, not a Roslyn lookup
+  - [x] Send evaluate request to C# sidecar with format string and frame context — each hole evaluated through DAP `evaluate` in the frame
+  - [x] Replace default `toString()` value in response with evaluated display string — `dap-display.ts`
+  - [x] Fall back to raw class name if evaluation fails — `dap-display.ts`
 
 ### 4.8 Exception Handling
 
@@ -548,25 +547,17 @@ flow.
       binds and stops on*, *F10, F11 and Shift+F11 walk F# functions exactly as they walk C#*
       (which also pins that an F# call stack names `add`/`accumulate`/`main` innermost-first,
       and that F# function parameters are bound)
-- [ ] F# discriminated union display in F# syntax. **Not built.** Nothing queries the FCS
-      sidecar for DU case metadata and no `variables` value is rewritten.
-      `debug-fsharp-inspection-e2e.test.ts` *a discriminated union and an option render as F#,
-      not as Tag/field pairs* is red: got `{FsStepTarget.Program.Shape.Rect}`, expected
-      `Rect(3, 4)`.
-- [ ] F# list expansion. **Partially implemented** — `dap-variables.ts:174` `VariableExpander`
-      handles the recursive `FSharpList<T>` Head/Tail union with a `MAX_FSHARP_ITEMS` bound —
-      but `debug-fsharp-inspection-e2e.test.ts` *records, tuples and F# lists are inspectable in
-      F# form* is red: "an F# list must expand to ALL its elements, not to its cons-cell
-      internals".
-- [ ] F# record inspection: map compiled backing field names to F# record field names — untested
-      in isolation; covered only by the red test above
-- [ ] F# tuple inspection: display as `(value1, value2)` syntax — same
-- [ ] F# `task {}` async stack enrichment. **Not built** — it needs the same continuation walk
-      §4.6 lacks. `debug-fsharp-inspection-e2e.test.ts` *an F# task {} chain reports the logical
-      await stack* is red, reporting `leafTask@42-3` / `resumptionInfo` / `MoveNext` plumbing.
-- [ ] One-press F# step-into. **Not built** — needs FCS PDB heuristics to tell generated
-      machinery from user code. `debug-fsharp-inspection-e2e.test.ts` *stepping into a task {}
-      takes ONE F11, not two* is red: "landed in …/FSharp.Core/fslib-extra-pervasives.fs".
+- [x] F# discriminated union display in F# syntax — `debug-fsharp-inspection-e2e.test.ts` *a
+      discriminated union and an option render as F#, not as Tag/field pairs* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] F# list expansion — `debug-fsharp-inspection-e2e.test.ts` *records, tuples and F# lists
+      are inspectable in F# form* and *an F# record, tuple and list all EXPAND to their own
+      members* pass (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] F# record inspection: compiled backing fields shown as F# record fields — same two tests
+- [x] F# tuple inspection: displayed as `(value1, value2)` — same two tests
+- [x] F# `task {}` async stack enrichment — `debug-fsharp-inspection-e2e.test.ts` *an F# task {}
+      chain reports the logical await stack* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] One-press F# step-into — `debug-fsharp-inspection-e2e.test.ts` *stepping into a task {}
+      takes ONE F11, not two* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [ ] F# `async {}` stack enrichment: best-effort CPS chain reconstruction — not built
 - [x] Test debugging (`VSTEST_HOST_DEBUG=1`, attach to the test host child) — see §4.12
 
@@ -614,7 +605,8 @@ waiting; a debug run never writes the result cache.
       detach; Stop must close the terminal within five seconds, terminate the owned PID,
       preserve the cached verdict, never retry and permit a fresh explicit Debug. Reverting
       only the VSTest retry guard independently makes both VSTest cases fail.
-- [ ] Obtain green Linux/Windows PR checks for the complete Stop fix and its new tests.
+- [x] Obtain green Linux/Windows PR checks for the complete Stop fix and its new tests —
+      `VS Code / debug-tests` and `VS Code (Windows) / debug-tests` green in #592
 - [x] Wire test filter (class/method) into `dotnet test --filter`, escaped for the VSTest
       grammar. `test-filter.ts`, `test-execution.ts` `buildFilterArgs`; test
       `test-explorer-e2e.test.ts` (VSTest filter grammar cases, `testexplorer` chunk, green)
@@ -626,24 +618,22 @@ waiting; a debug run never writes the result cache.
 
 ### 4.13 Phase 4 Quality Gates
 
-- [ ] Verify failure-safe debug test teardown in PR CI. Implemented: restore UI
-      stubs and dispose session/DAP observers even when Stop or breakpoint cleanup
-      fails. Every debug suite arms its recorders through `useArmedRecorders`, whose
-      one teardown calls `cleanupDebugTest`; the original error still fails the test.
-      `tools/vsix/debug-cleanup.test.mjs` executes that authored hook against a
-      failed Stop, a failed breakpoint clear and a clean stop (3 cases pass).
-      `make _test-tooling` runs this guard; the new revision's PR CI is pending.
+- [x] Verify failure-safe debug test teardown in PR CI. Every debug suite arms its recorders
+      through `useArmedRecorders`, whose one teardown calls `cleanupDebugTest`;
+      `tools/vsix/debug-cleanup.test.mjs` covers a failed Stop, a failed breakpoint clear and a
+      clean stop. `Tooling / Build Tooling` and every debug chunk are green on Ubuntu and Windows
+      in #592
 - [x] All P1 breakpoint types work reliably on Windows x64 — **except function breakpoints**
       (`debug-breakpoints` chunk, 9 of 10 green)
-- [ ] All P1 breakpoint types work reliably on Linux x64 (the Ubuntu `VS Code / Full Suite +
-      Coverage` job runs them; not yet green on this branch)
-- [ ] All P1 breakpoint types work reliably on macOS ARM64 — no macOS leg exists in CI
+- [x] All P1 breakpoint types work reliably on Linux x64 — `VS Code / debug-breakpoints` green in #592
+- [x] All P1 breakpoint types work reliably on macOS ARM64 — `debug-breakpoints-e2e.test.ts` and
+      `debug-breakpoint-conditions-e2e.test.ts` pass locally on macOS arm64 (2026-11-19); CI has
+      no macOS VS Code leg
 - [x] Logpoint emulation verified — fires the interpolated message, never pauses
       (`debug-breakpoint-conditions-e2e.test.ts`)
-- [ ] Async stack enrichment: `MoveNext` frames replaced with logical frames — the awaiting
-      frames are never injected (§4.6)
-- [ ] DebuggerDisplay emulation — not built (§4.7)
-- [ ] F# DU inspection: shows F# syntax not IL class names — not built (§4.10)
+- [x] Async stack enrichment: `MoveNext` frames replaced with logical frames (§4.6)
+- [x] DebuggerDisplay emulation (§4.7)
+- [x] F# DU inspection: shows F# syntax not IL class names (§4.10)
 - [x] No crash in the router when netcoredbg crashes: a spawn failure, an asynchronous spawn
       failure and an `EPIPE` on a dead adapter each end exactly one session with a user-visible
       message and never reach the extension host. `dap-router.ts` `DapRouter.start`,
@@ -701,7 +691,7 @@ code plus a regression test, and each test's chunk is green.
       C#/F# cases covering both terminal types, terminate/disconnect and a late owned PID
       after disposal; full clean-build debug-tests shard passes 66/66 on macOS arm64.
       [DEBUG-FEATURES-LAUNCH-OUTPUT]
-- [ ] Integrate #290 and verify the unchanged complete Windows/Linux PR matrix.
+- [x] Integrate #290 and verify the unchanged complete Windows/Linux PR matrix — every VS Code chunk green on both in #592
 - [x] **Every diagnostic was published twice.** The server advertised `diagnosticProvider`
       (pull) AND pushed `publishDiagnostics`; `vscode-languageclient` builds a second
       `DiagnosticCollection` for the pull model and `vscode.languages.getDiagnostics`
