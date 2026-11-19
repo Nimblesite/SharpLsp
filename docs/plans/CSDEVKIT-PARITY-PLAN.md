@@ -300,7 +300,7 @@ Features users expect within the first day of use.
   - [ ] F# test framework support (Expecto, FsCheck) — tagged in the tree, not yet run-verified
   - [x] Code coverage integration, spec `[TEST-COVERAGE]`
 
-- [ ] **P2.3: Build Integration**
+- [x] **P2.3: Build Integration**
   - [x] Build command (`dotnet build`) from Command Palette — `sharplsp.build` (`extension.test.ts`, `context-menus.test.ts`)
   - [x] Build/Rebuild/Clean from Solution Explorer context menu — `sharplsp.build`/`rebuild`/`clean` (`context-menus.test.ts`)
   - [x] Build errors routed to diagnostics — every build task carries the `$msCompile` matcher (`run-debug-contributions.test.ts` *errors reach the Problems panel*)
