@@ -42,7 +42,7 @@ import {
   requireWorkspaceRoot,
   pollUntilResult,
 } from './test-helpers';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS } from './test-timeouts';
 
 /** Wait for the actual terminal object to close, not an unrelated queue. */
 export async function assertTerminalClosed(terminal: vscode.Terminal): Promise<void> {
@@ -53,6 +53,22 @@ export async function assertTerminalClosed(terminal: vscode.Terminal): Promise<v
     50,
   );
   assert.equal(closed, true, 'Stop must settle the owned runner and close its debug terminal');
+}
+
+/**
+ * No `name` terminal survives from an EARLIER test: a debug run's terminal closes
+ * once that run settles, which can trail its suite by the debuggee's own wait.
+ * A test that counts terminals starts from none, and a terminal that never closes
+ * fails here, naming the leak instead of the next test's count.
+ */
+export async function assertNoTerminalLeft(name: string, why: string): Promise<void> {
+  const left = await pollUntilResult(
+    async () => vscode.window.terminals.filter((terminal) => terminal.name === name).length,
+    (count) => count === 0,
+    DEBUG_SESSION_MS,
+    100,
+  );
+  assert.equal(left, 0, why);
 }
 
 /** Require exactly one named terminal and return the actual object owned by the run. */
