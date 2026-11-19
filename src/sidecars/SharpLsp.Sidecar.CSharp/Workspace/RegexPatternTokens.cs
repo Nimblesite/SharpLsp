@@ -85,7 +85,7 @@ internal static class RegexPatternTokens
         return end;
     }
 
-    /// <summary>A whole <c>[...]</c> class: a leading <c>]</c> is a member, an escape hides its character, a subtraction nests.</summary>
+    /// <summary>A whole <c>[...]</c> class: a leading <c>]</c> is a member, an escape hides its character, only a subtraction nests.</summary>
     private static int ClassEnd(string pattern, int at)
     {
         var index = Follows(pattern, at + 1, '^') ? at + 2 : at + 1;
@@ -95,13 +95,22 @@ internal static class RegexPatternTokens
         {
             depth += pattern[index] switch
             {
-                '[' => 1,
+                '[' when OpensSubtraction(pattern, index) => 1,
                 ']' => -1,
                 _ => 0,
             };
             index += pattern[index] == '\\' ? 2 : 1;
         }
         return Math.Min(index, pattern.Length);
+    }
+
+    /// <summary>
+    /// True when the <c>[</c> at <paramref name="at"/> opens a subtraction (<c>-[…]</c>). Any
+    /// other <c>[</c> inside a class is a literal member: <c>[a[b]</c> ends at its first <c>]</c>.
+    /// </summary>
+    private static bool OpensSubtraction(string pattern, int at)
+    {
+        return at > 0 && pattern[at - 1] == '-' && (at < 2 || pattern[at - 2] != '\\');
     }
 
     /// <summary><c>(</c> with its prefix: <c>(?:</c>, <c>(?=</c>, <c>(?&lt;name&gt;</c>, inline options; a comment group whole.</summary>

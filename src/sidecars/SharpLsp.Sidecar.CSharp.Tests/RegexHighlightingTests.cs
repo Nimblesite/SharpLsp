@@ -181,6 +181,8 @@ public sealed class RegexHighlightingTests : IAsyncLifetime, IDisposable
     [InlineData(@"\u0041\x41\cA", @"\u0041 \x41 \cA")]
     [InlineData("[a-z][^0-9]", "[a-z] [^0-9]")]
     [InlineData(@"[]a][\]][a-z-[aeiou]]x", @"[]a] [\]] [a-z-[aeiou]]")]
+    [InlineData("[a[b]x+", "[a[b] +")]
+    [InlineData("[[]x[a[-[a]]y", "[[] [a[-[a]]")]
     [InlineData("(a)(?:b)(?=c)(?!d)(?<=e)(?<!f)(?>g)", "( ) (?: ) (?= ) (?! ) (?<= ) (?<! ) (?> )")]
     [InlineData("(?<n>x)(?'m'y)(?i)(?i-m:z)(?#note)", "(?<n> ) (?'m' ) (?i ) (?i-m: ) (?#note)")]
     [InlineData("a*b+c?d*?e+?f??", "* + ? *? +? ??")]
