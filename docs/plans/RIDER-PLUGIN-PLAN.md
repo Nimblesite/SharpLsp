@@ -214,8 +214,10 @@ how it was installed — and CI built and coverage-gated it in that state.
 
 ### Phase 9: CI
 
-- [ ] Add `build-rider` + `test-rider` to `.github/workflows/ci.yml`
-      under a matrix job that requires JDK 17
+- [x] Add `build-rider` + `test-rider` to CI — the reusable workflows of [DIST-CI-LAYOUT]:
+      `ci-build.yml` `build-rider` and `ci-test-editors.yml` `test-rider` (`RIDER_REQUIRED=1`),
+      both through `.github/actions/rider-environment` on JDK 21, which the current Rider SDK
+      needs; `tools/ci/security-gates.test.mjs` pins the `test-rider` job
 - [x] Cache `~/.gradle/caches` and `~/.gradle/wrapper` (`ci-test-editors.yml`,
       and the release `build-rider` job mirrors it)
 - [x] The Rider plugin zip is built and attached to tag releases alongside the
