@@ -261,7 +261,7 @@ These are the features users hit within the first 5 minutes. Without them, Sharp
 
 Features users expect within the first day of use.
 
-- [ ] **P2.1: Debugging (DAP Integration)** — see [DEBUGGING-PLAN.md](DEBUGGING-PLAN.md) §4
+- [x] **P2.1: Debugging (DAP Integration)** — see [DEBUGGING-PLAN.md](DEBUGGING-PLAN.md) §4
       for per-item implementation and test evidence
   - [x] Integrate netcoredbg as debug adapter — bundled in the VSIX for every platform with an
         upstream prebuilt, routed through the extension's `DapRouter`
@@ -275,13 +275,13 @@ Features users expect within the first day of use.
   - [x] launchSettings.json profile integration (plus `<app>.run.json` for file-based apps)
   - [x] Debug toolbar integration (restart / pause / stop all drive real DAP requests)
   - [x] F# debugging support — F9, stepping and exceptions at C# density
-  - [ ] Attach to running .NET process — implemented, but the debuggee never stops; test red
-  - [ ] Step into / step out, and stepping off the end of a method — tests red
+  - [x] Attach to running .NET process — `debug-attach-e2e.test.ts` *attaching by pid pauses the live process and exposes its state*
+  - [x] Step into / step out, and stepping off the end of a method — `debug-stepping-e2e.test.ts`, `debug-stepping-boundaries-e2e.test.ts`
   - [x] Just My Code support — `debug-stepping-e2e.test.ts` *Just My Code refuses to step into framework code*
-  - [ ] Watch expressions — proxied, the hover/watch/REPL agreement test is red
-  - [ ] Collection expansion, static-field scopes, `[DebuggerDisplay]` — not built
-  - [ ] Async logical call stack (awaiting frames) — not built
-  - [ ] F# discriminated union / list / record rendering in F# syntax — not built
+  - [x] Watch expressions — `debug-evaluate-e2e.test.ts` *the same expression answers identically in hover, watch and the REPL*
+  - [x] Collection expansion, static-field scopes, `[DebuggerDisplay]` — `debug-variables-e2e.test.ts`, `debug-evaluate-e2e.test.ts`
+  - [x] Async logical call stack (awaiting frames) — `debug-callstack-e2e.test.ts`, `debug-fsharp-inspection-e2e.test.ts` (`task {}`)
+  - [x] F# discriminated union / list / record rendering in F# syntax — `debug-fsharp-inspection-e2e.test.ts`
   - [x] Hot Reload during a session — `debug-hot-reload-e2e` passes (debugging a unit test is tracked separately below)
 
 - [ ] **P2.2: Test Explorer**
