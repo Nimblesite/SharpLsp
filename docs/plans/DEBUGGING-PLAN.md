@@ -614,7 +614,10 @@ waiting; a debug run never writes the result cache.
       — `debug-test-debugging-e2e.test.ts` *the Debug profile starts a session and stops inside
       the test body* and *the session attaches to the test host, not to the parent dotnet test*
       — both green locally
-- [ ] E2E test: breakpoint inside an Expecto test function (F#)
+- [x] E2E test: breakpoint inside an Expecto test function (F#) — `debug-test-expecto-e2e.test.ts`
+      *a breakpoint in an Expecto testCase stops there with its F# locals readable* and
+      *debugging a nested Expecto case with no breakpoint runs it to the end* (Expecto 10.2.3 via
+      YoloDev.Expecto.TestSdk 0.16.1, shared fixture `expecto-fixture.ts`)
 
 ### 4.13 Phase 4 Quality Gates
 

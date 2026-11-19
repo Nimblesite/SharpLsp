@@ -129,6 +129,7 @@
       "description": "The session and the protocol around it, and the hardest consumer of both. The DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id — then debugging a TEST through the Test Explorer Debug profile, which re-attaches to successive test hosts inside one session. Grouped because a test-debugging failure is a session-lifecycle failure. Implements [DEBUG-FEATURES-TESTS].",
       "files": [
         "debug-test-fsharp-e2e.test.js",
+        "debug-test-expecto-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
         "debug-test-decorated-e2e.test.js",
         "debug-test-stop-e2e.test.js",
@@ -176,6 +177,7 @@
       "description": "The Test Explorer RUNNING things, over the widest fixture surface in the matrix: the framework matrix (xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports), and Stop terminating the whole `dotnet test` process TREE across every gesture that starts a run. Kept apart from `testexplorer` because between them they restore and build eight test projects, and because the sleeping-fixture cancellation suite is the likeliest place in the matrix to hang — a hang here must not take the Test Explorer's read surface with it.",
       "files": [
         "test-explorer-frameworks.test.js",
+        "test-explorer-expecto.test.js",
         "test-explorer-outcomes.test.js",
         "test-explorer-adapter-ids.test.js",
         "test-explorer-goto-test.test.js",
