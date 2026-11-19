@@ -95,6 +95,15 @@ pub fn handle(
     Ok(serde_json::to_value(response)?)
 }
 
+/// Reload the compilers that own `project` now, not when the platform watcher
+/// notices the write: on Windows it can miss the host's own edit, and the new
+/// file stays unowned. [SE-ADD-FILE] [DIAG-LSP-REFRESH]
+fn announce_written(project: &str) {
+    if let Err(error) = crate::pull_diagnostics::monitor::written(&[project]) {
+        warn!(project, error = %error, "edited project could not be announced for reload");
+    }
+}
+
 /// Time `run`, log its outcome as `operation`, and shape the response.
 fn respond(
     operation: &str,
@@ -113,6 +122,9 @@ fn respond(
                 ms = elapsed_ms(&started),
                 "compile item edit complete"
             );
+            if outcome.modified {
+                announce_written(project);
+            }
             CompileItemResponse {
                 success: true,
                 message: outcome.message,
