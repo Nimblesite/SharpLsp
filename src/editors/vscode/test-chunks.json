@@ -235,6 +235,7 @@
         "solution-explorer-namespaces.test.js",
         "solution-explorer-add-fsharp-file.test.js",
         "solution-explorer-linked-sources.test.js",
+        "solution-memory.test.js",
         "csharp-reference-import.test.js",
         "context-menus.test.js",
         "project-deps-watcher-e2e.test.js",

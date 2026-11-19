@@ -24,7 +24,7 @@ import * as client from './client.js';
 import * as sharedState from './state.js';
 import { registerEditorNavigation } from './editor-navigation.js';
 import { registerExplorerCommands } from './explorer-commands.js';
-import { solutionLoader } from './solution-load.js';
+import { type SolutionLoaderDeps, solutionLoader } from './solution-load.js';
 import * as log from './log.js';
 import { registerProfiler, type SharpLspProfiler } from './profiler-host.js';
 import { SharpLspStatusBar, ServerState } from './status.js';
@@ -77,7 +77,7 @@ let targetFrameworks: TargetFrameworkUi | undefined;
 let tutorial: TutorialApi | undefined;
 
 /** Accessors the command modules use; the client and explorer appear during activation. */
-const explorerDeps = {
+const explorerDeps: { -readonly [K in keyof SolutionLoaderDeps]: SolutionLoaderDeps[K] } = {
   client: (): LanguageClient | undefined => lspClient,
   explorer: (): SolutionExplorerProvider | undefined => explorerProvider,
 };
@@ -100,6 +100,7 @@ interface DeploymentResult {
 // console where users do not see them — that is the failure mode this prevents.
 export async function activate(context: ExtensionContext): Promise<SharpLspExtensionApi> {
   log.info('SharpLsp activating…');
+  explorerDeps.memory = context.workspaceState;
   log.info(`File log: ${log.logFilePath()}`);
   try {
     return await activateInner(context);
@@ -417,7 +418,7 @@ function registerCommands(context: ExtensionContext): void {
     [CMD_SHOW_TRACE]: () => {
       log.trace().show();
     },
-    [CMD_SELECT_SOLUTION]: solutions.selectAndLoad,
+    [CMD_SELECT_SOLUTION]: solutions.pickAndLoad,
     [CMD_OPEN_SOLUTION]: async (solutionPath: string) => {
       await solutions.load({ path: solutionPath, name: '' });
     },
