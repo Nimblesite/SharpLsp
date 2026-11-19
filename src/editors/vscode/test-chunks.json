@@ -166,6 +166,7 @@
         "test-explorer-glued-banners.test.js",
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
+        "test-language.test.js",
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
         "test-coverage-parser.test.js",

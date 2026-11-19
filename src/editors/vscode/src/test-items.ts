@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import { compareFrameworks, frameworkSummary, TFM_TAG_PREFIX } from './test-frameworks.js';
 import type { FrameworkBuild, TestAssemblyListing, TestLocation } from './test-listing-model.js';
-import { isExpectoTest, isFsCheckTest } from './test-targets.js';
+import { projectLanguageOf } from './test-language.js';
 
 /**
  * Id prefix marking the row that explains WHY discovery failed. Error rows are
@@ -49,23 +49,25 @@ function rangeFor(context: ItemContext, fullName: string): vscode.Range | undefi
 }
 
 /**
- * Build a TestItem for a fully-qualified name, tagging F# tests and, in a
- * multi-targeted project, each framework it is built for ([NETFX-TEST-DISCOVERY]).
+ * Build a TestItem for a fully-qualified name, tagging the tests an `.fsproj`
+ * built (#604) and, in a multi-targeted project, each framework it is built for
+ * ([NETFX-TEST-DISCOVERY]).
  */
 export function makeTestItem(
   context: ItemContext,
   fullName: string,
   frameworks: readonly string[] = [],
+  fsharp = false,
 ): vscode.TestItem {
   const parts = fullName.split('.');
   const label = parts.at(-1) ?? fullName;
   const item = context.controller.createTestItem(fullName, label, uriFor(context, fullName));
   item.description = fullName;
   item.range = rangeFor(context, fullName);
-  const fsharp = isExpectoTest(fullName) || isFsCheckTest(fullName) ? ['fsharp'] : [];
-  item.tags = [...fsharp, ...frameworks.map((each) => `${TFM_TAG_PREFIX}${each}`)].map(
-    (id) => new vscode.TestTag(id),
-  );
+  item.tags = [
+    ...(fsharp ? ['fsharp'] : []),
+    ...frameworks.map((each) => `${TFM_TAG_PREFIX}${each}`),
+  ].map((id) => new vscode.TestTag(id));
   return item;
 }
 
@@ -131,6 +133,7 @@ export function makeAssemblyItem(
   const builds = assembly.frameworks ?? [];
   if (builds.length > 1) root.description = frameworkSummary(builds);
   const frameworks = frameworksByTest(builds);
+  const fsharp = projectLanguageOf(assembly) === 'fsharp';
   const namespaces = new Map<string, vscode.TestItem>();
   const classes = new Map<string, vscode.TestItem>();
   for (const fqn of assembly.names) {
@@ -148,7 +151,7 @@ export function makeAssemblyItem(
         label: classLabel,
       });
     }
-    parent.children.add(makeTestItem(context, fqn, frameworks.get(fqn)));
+    parent.children.add(makeTestItem(context, fqn, frameworks.get(fqn), fsharp));
   }
   return root;
 }

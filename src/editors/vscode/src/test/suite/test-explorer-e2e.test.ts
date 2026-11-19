@@ -56,6 +56,7 @@ import {
   collectLeafIds,
   assertLeavesAre,
   assertPlainLeaf,
+  languageTags,
   announcedPair,
   rootsOf,
   discoverSolution,
@@ -256,6 +257,9 @@ function assertLeavesAreTests(group: vscode.TestItem, prefix: string): void {
 
 /** The fixture's eleven FQNs as a set, for membership assertions. */
 const EXPECTED_SET = new Set<string>(EXPECTED);
+
+/** The pair's ids the .fsproj built: exactly these carry the `fsharp` tag (#604). */
+const FS_IDS = new Set<string>(EXPECTED.filter((id) => id.startsWith('Fs.')));
 
 /** The two texts a depth-4 leaf check names itself with, per walking site. */
 const LEAF_TEXT = {
@@ -504,11 +508,12 @@ function assertRenderedRows(items: vscode.TestItemCollection, anchor: string): v
     sorted(EXPECTED),
     'the rendered TEST rows are exactly the fixtures’ eleven names',
   );
-  for (const snapshot of leaves) assertPlainLeaf(snapshot, anchor);
+  for (const snapshot of leaves) assertPlainLeaf(snapshot, anchor, FS_IDS.has(snapshot.id));
   for (const snapshot of groups) assertGroupSnapshot(snapshot, anchor);
   assertSnapshotUriShape(groups, leaves, {
     fileCount: 2,
     why: 'the rendered rows of the settled fixture tree',
+    fsharp: FS_IDS,
   });
   assert.deepStrictEqual(
     groups.map((snapshot) => snapshot.childCount).sort((a, b) => a - b),
@@ -639,7 +644,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     await activateOnFixture();
     assertSettledTree('item-shape discovery');
     // The spaced F# name keeps its spaces all the way into the rendered label.
-    const spaced = assertLeafItem(api.testController.items, FS_FACT_SPACED);
+    const spaced = assertLeafItem(api.testController.items, FS_FACT_SPACED, ['fsharp']);
     assert.strictEqual(
       spaced.label,
       'adds two numbers with spaces',
@@ -657,7 +662,8 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       'Tests.fs',
       'the spaced F# test is revealed at the .fs file that declares it',
     );
-    for (const expected of EXPECTED) assertLeafItem(api.testController.items, expected);
+    for (const expected of EXPECTED)
+      assertLeafItem(api.testController.items, expected, languageTags(FS_IDS.has(expected)));
     assert.strictEqual(
       findItem(api.testController.items, 'Cs.Xunit.Fixtures.CalculatorTests.Nope'),
       undefined,
@@ -696,7 +702,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
       [FS_FIXTURE.passing, CS.passing, FS_FACT_SPACED, FS_MIXED_THEORY, CS_MIXED_THEORY],
       'discovered',
     );
-    assertLeafItem(api.testController.items, FS_MIXED_THEORY);
+    assertLeafItem(api.testController.items, FS_MIXED_THEORY, ['fsharp']);
     assertLeafItem(api.testController.items, CS_MIXED_THEORY);
   });
 
@@ -720,7 +726,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     // row again: the refresh replaces the tree, never collapses or appends.
     assertSettledTree('testing.refreshTests');
     assertContainsAll(refreshed, [FS_FACT_SPACED, FS_MIXED_THEORY, CS_MIXED_THEORY], 'refreshed');
-    assertLeafItem(api.testController.items, FS_FACT_SPACED);
+    assertLeafItem(api.testController.items, FS_FACT_SPACED, ['fsharp']);
     assertLeafItem(api.testController.items, CS.parameterized);
   });
 
@@ -1070,9 +1076,9 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     for (const snapshot of snapshotItems(api.testController.items).filter(
       (s) => s.childCount === 0,
     )) {
-      assertPlainLeaf(snapshot, root);
+      assertPlainLeaf(snapshot, root, FS_IDS.has(snapshot.id));
     }
-    assertLeafItem(api.testController.items, FS_FACT_SPACED);
+    assertLeafItem(api.testController.items, FS_FACT_SPACED, ['fsharp']);
   });
 
   test('the solution the fixture builds is the shape the CLI produces, not a hand-written one', async function () {
@@ -1577,8 +1583,8 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
         !leaf.canResolveChildren,
         `a leaf resolves no children: ${fqn}`,
         [...leaf.tags].map((tag) => tag.id),
-        [],
-        `a plain xUnit test carries no framework tag: ${fqn}`,
+        languageTags(FS_IDS.has(fqn)),
+        `an xUnit test carries its project's language tag and no framework tag: ${fqn}`,
       );
       assertDeclaredInside(leaf.uri?.fsPath, root, `leaf ${fqn}`);
     }
@@ -1592,7 +1598,7 @@ suite('Test Explorer e2e — real C#/F# discovery', () => {
     );
     assert.ok(!spaced.label.includes('.'), "a leaf label never keeps the FQN's dots");
     assertLeafItem(api.testController.items, CS.passing);
-    assertLeafItem(api.testController.items, FS_FIXTURE.passing);
+    assertLeafItem(api.testController.items, FS_FIXTURE.passing, ['fsharp']);
   });
 
   test('the tree is structurally pure: 4 levels, nothing deeper, nothing misplaced', async function () {

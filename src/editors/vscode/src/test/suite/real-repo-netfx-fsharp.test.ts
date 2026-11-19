@@ -273,14 +273,14 @@ suite('Real repo .NET Framework — GitReader (F#)', () => {
       const item = findItem(api().testController.items, id);
       assert.ok(item, `${id} is a row, spaces and # verbatim`);
       assert.strictEqual(item.label, id.slice(GLOB_CLASS.length + 1), `${id}: its method`);
-      assertTaggedFor(item, runnable);
+      assertTaggedFor(item, runnable, true);
     }
   });
 
   test('running the GlobTests class: every test passes, and a framework with no runtime is logged, not failed', async function () {
     this.timeout(REAL_REPO_MS);
     const anyTest = GLOB_IDS[0] ?? '';
-    await runClass({ anyTest, count: GLOB_TEST_COUNT, declared: TESTS.available });
+    await runClass({ anyTest, count: GLOB_TEST_COUNT, declared: TESTS.available, fsharp: true });
     assert.strictEqual(classRowOf(api(), anyTest).label, 'GlobTests', 'the F# type is the class');
   });
 

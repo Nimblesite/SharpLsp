@@ -121,15 +121,20 @@ suite('Test Explorer e2e — Expecto and FsCheck (F#)', () => {
       [...ALL].sort(),
       'exactly the seven tests of the two projects, nothing invented and nothing lost',
     );
-    for (const id of EXPECTO_ALL) assertLeafItem(api.testController.items, id);
-    // No tag assertion for FsCheck rows: its `fsharp` tag is guessed from the
-    // name today (#604), and this module's name happens to contain "FsCheck".
+    for (const id of EXPECTO_ALL) assertLeafItem(api.testController.items, id, ['fsharp']);
     for (const id of ALL) {
       const item = findItem(api.testController.items, id);
       assert.ok(item, `${id} is in the tree`);
       assert.strictEqual(item.id, id, `${id} is its own id, verbatim`);
       assert.strictEqual(item.children.size, 0, `${id} is a runnable leaf`);
       assert.ok(item.label.length > 0, `${id} has a label to render`);
+      // #604: the tag comes from the .fsproj that built the test, never from a
+      // guess at its name — an Expecto list path names no framework at all.
+      assert.deepStrictEqual(
+        item.tags.map((tag) => tag.id),
+        ['fsharp'],
+        `${id} was built by an .fsproj, so it carries the fsharp tag and nothing else`,
+      );
     }
     assert.ok(
       leaves.every((id) => !id.endsWith('.dll') && !id.includes(' -> ')),

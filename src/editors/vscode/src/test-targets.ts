@@ -58,15 +58,6 @@ export function runCwd(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-/** True when a test name matches Expecto naming conventions. */
-export function isExpectoTest(name: string): boolean {
-  return name.includes('Expecto') || name.includes('testCase') || name.includes('testList');
-}
-
-/** True when a test name matches FsCheck property-test conventions. */
-export function isFsCheckTest(name: string): boolean {
-  return name.includes('FsCheck') || name.includes('Property');
-}
 /**
  * The filter ids a run uses. "Run everything, nothing excluded" is how VS Code
  * expresses ▶ on the root of the Testing view; passing NO filter then runs every

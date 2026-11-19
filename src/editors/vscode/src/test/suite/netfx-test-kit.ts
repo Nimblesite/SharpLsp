@@ -11,6 +11,7 @@
 //
 // Observes [NETFX-TEST-DISCOVERY], [NETFX-TEST-RESULTS], [NETFX-TEST-PROFILES]
 // and [NETFX-SCOPE].
+import { languageTags } from './test-explorer-kit';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -177,7 +178,11 @@ export function frameworkTagsOf(item: vscode.TestItem): string[] {
 }
 
 /** `item` is tagged for EXACTLY `tfms`: one `tfm:` tag each, nothing else. */
-export function assertTaggedFor(item: vscode.TestItem, tfms: readonly string[]): void {
+export function assertTaggedFor(
+  item: vscode.TestItem,
+  tfms: readonly string[],
+  fsharp = false,
+): void {
   const ids = item.tags.map((tag) => tag.id);
   assert.deepStrictEqual(
     frameworkTagsOf(item),
@@ -187,8 +192,8 @@ export function assertTaggedFor(item: vscode.TestItem, tfms: readonly string[]):
   assert.strictEqual(new Set(ids).size, ids.length, `${item.id}: no framework is tagged twice`);
   assert.deepStrictEqual(
     ids.filter((id) => !id.startsWith(TFM_TAG)),
-    [],
-    `${item.id}: tfm tags only`,
+    languageTags(fsharp),
+    `${item.id}: tfm tags plus its project's language tag only (#604)`,
   );
   assert.strictEqual(item.children.size, 0, `${item.id}: a tagged row is a TEST, never a group`);
 }
