@@ -334,10 +334,11 @@ open and are called out as such, because nothing implements them.
       *attaching to a pid that does not exist is refused with one message*.**
 - [ ] Implement `sourceFileMap` path remapping in `stackTrace` responses — **not built.** No
       `sourceFileMap` handling exists anywhere in the extension or the host.
-- [ ] Implement `justMyCode` launch flag forwarding to netcoredbg.
-      **Implemented — the flag is defaulted at `debug.ts:88`, tracked on the router
-      and enforced for step stops at `dap-statement.ts:17` `carriesUserCode` — but
-      `debug-stepping-e2e.test.ts` *Just My Code refuses to step into framework code* fails.**
+- [x] Implement `justMyCode` launch flag forwarding to netcoredbg. Defaulted in `debug.ts`,
+      tracked on the router and enforced for step stops by `dap-statement.ts` `carriesUserCode`;
+      `debug-stepping-e2e.test.ts` *Just My Code refuses to step into framework code* and
+      `debug-just-my-code-e2e.test.ts` *Just My Code skips library-handled exceptions and still
+      breaks on user throws* pass (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [ ] Add `requireExactSource` support — declared in `configurationAttributes`
       (`package.json:338`) and forwarded, but nothing asserts the behaviour; no test.
 - [ ] E2E test: launch console app on macOS ARM64 (no macOS leg in CI; Windows and Ubuntu only)
@@ -373,9 +374,8 @@ open and are called out as such, because nothing implements them.
       grammar netcoredbg actually implements); tests `debug-exceptions-e2e.test.ts` *the adapter
       advertises every exception facility the specification requires* and
       `debug-exception-filters-e2e.test.ts` *a type filter breaks on the named type it selects*
-- [ ] Implement `setFunctionBreakpoints` proxy.
-      **Forwarded, but `debug-breakpoints-e2e.test.ts` *a function breakpoint stops on entry to
-      the named method* is the one red test in the `debug-breakpoints` chunk.**
+- [x] Implement `setFunctionBreakpoints` proxy. `debug-breakpoints-e2e.test.ts` *a function
+      breakpoint stops on entry to the named method* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 
 ### 4.5 Stepping
 
@@ -404,10 +404,10 @@ open and are called out as such, because nothing implements them.
       temporary breakpoint into the source's current set and removes it the moment it hits so
       the Breakpoints view is untouched; test `debug-stepping-e2e.test.ts` *Run to cursor stops
       at the caret and leaves no breakpoint behind*
-- [ ] Implement Just My Code skip. **Implemented (see §4.3) but
-      `debug-stepping-e2e.test.ts` *Just My Code refuses to step into framework code* fails.**
-- [ ] E2E test: step into and out of a method call chain — `debug-stepping-e2e.test.ts` *F11
-      descends into the callee and Shift+F11 climbs back out* is red
+- [x] Implement Just My Code skip (see §4.3). `debug-stepping-e2e.test.ts` *Just My Code
+      refuses to step into framework code* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
+- [x] E2E test: step into and out of a method call chain — `debug-stepping-e2e.test.ts` *F11
+      descends into the callee and Shift+F11 climbs back out* passes (macOS 2026-11-19; green on Ubuntu and Windows CI in #592)
 - [ ] E2E test: stepping off the end of a method and of the program —
       `debug-stepping-boundaries-e2e.test.ts` *stepping over the last statement of a method
       returns to the caller* and *stepping over the last statement of the program terminates

@@ -277,7 +277,7 @@ Features users expect within the first day of use.
   - [x] F# debugging support — F9, stepping and exceptions at C# density
   - [ ] Attach to running .NET process — implemented, but the debuggee never stops; test red
   - [ ] Step into / step out, and stepping off the end of a method — tests red
-  - [ ] Just My Code support — implemented, framework-code skip test red
+  - [x] Just My Code support — `debug-stepping-e2e.test.ts` *Just My Code refuses to step into framework code*
   - [ ] Watch expressions — proxied, the hover/watch/REPL agreement test is red
   - [ ] Collection expansion, static-field scopes, `[DebuggerDisplay]` — not built
   - [ ] Async logical call stack (awaiting frames) — not built
@@ -292,7 +292,7 @@ Features users expect within the first day of use.
   - [x] MSTest test discovery and execution
   - [x] Run an individual test or any selection in ONE `dotnet test` invocation, spec `[TEST-RUN-TRX]`
   - [x] VSTest filter escaping so NUnit `[TestCase]` names run at all, spec `[TEST-FILTER-ESCAPE]`
-  - [ ] Debug individual test (the Debug profile opens a `dotnet test` terminal; no debugger attach yet)
+  - [x] Debug individual test — the Debug profile attaches to the waiting test host, spec `[DEBUG-FEATURES-TESTS]`; `debug-test-debugging-e2e.test.ts` (14 tests: stops in the body, theory rows, conditional and hit-count breakpoints, stepping, locals)
   - [x] Test result display (pass/fail/skip with duration and the real assertion text), spec `[TEST-RUN-TRX]`
   - [x] MTP preflight build errors appear in Run/Coverage output, spec `[TEST-RUN-OUTPUT]` — #574; four F#/C# SDK-mode regressions fail with empty output before the fix and pass afterward (`test-build-output.test.ts`), and `Run on <tfm>` preflight failures carry their text as the run's own output too.
   - [x] MTP projects with no `global.json` opt-in and no runner switch are discovered and run through their own module, never the VSTest target — #581; the restored package graph names the projects MSBuild must evaluate, `xunit.v3`'s own console (`-list full/json`, `-id`, `-result-trx`) is learned per module, and F#-first fixtures — the C# one reproducing the issue's exact package set — pass through the real profiles (`test-explorer-mtp-native.test.ts`, `test-mtp-native-parsers.test.ts`).
@@ -304,7 +304,7 @@ Features users expect within the first day of use.
   - [x] Build command (`dotnet build`) from Command Palette — `sharplsp.build` (`extension.test.ts`, `context-menus.test.ts`)
   - [x] Build/Rebuild/Clean from Solution Explorer context menu — `sharplsp.build`/`rebuild`/`clean` (`context-menus.test.ts`)
   - [x] Build errors routed to diagnostics — every build task carries the `$msCompile` matcher (`run-debug-contributions.test.ts` *errors reach the Problems panel*)
-  - [ ] Auto-build on test discovery refresh
+  - [x] Auto-build on test discovery refresh — ⟳ runs discovery with a build; `test-explorer-reactive.test.ts` *adding a [Fact] on disk adds exactly one item, and removing it undoes that*
   - [x] Build task provider for tasks.json integration — `build.ts` `registerTaskProvider` (`run-debug-contributions.test.ts`)
 
 - [x] **P2.4: NuGet Package Management** — see [NUGET-BROWSER-SPEC.md](../specs/NUGET-BROWSER-SPEC.md) (core complete; remaining items in [#123](https://github.com/Nimblesite/SharpLsp/issues/123))
