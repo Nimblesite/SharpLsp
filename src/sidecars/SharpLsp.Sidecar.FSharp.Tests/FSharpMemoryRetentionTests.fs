@@ -209,6 +209,39 @@ let ``a workspace over the hard limit while loading is served, not restarted in 
             Assert.True(GraceForLoading > loading && GraceForLoading < settled, "the grace is minutes")
         })
 
+/// A workspace that trimmed down to 2900 while loading NEEDS 2900: that is its floor, not
+/// a leak. A later trim that gets it back to that floor must not exit — the restarted
+/// sidecar reloads straight back to it, so exiting restarted it every few minutes for
+/// the rest of the session. Only a trim that cannot get back near the proven floor is
+/// growth worth a fresh start. [SIDECAR-PROCESS-MEMORY]
+[<Fact>]
+let ``a workspace trimmed back to its proven loading size is served, not restarted every session`` () =
+    withProject (fun state _ file ->
+        task {
+            let stops = Collections.Generic.List<int>()
+            let! options = checkedOptions state file
+
+            // Interaction 1 — over the hard limit while loading: the floor it trims to is proven.
+            let loading = TimeSpan.FromMinutes 1.0
+            let proven = watch state budget loading (readings [ 3000L; 2900L ]) stops.Add
+            Assert.Empty(stops)
+            Assert.Equal(3250L, proven.SoftBytes)
+            Assert.Equal(3150L, proven.HardBytes)
+
+            // Interaction 2 — long after loading, caches regrow and a trim returns to the floor.
+            let! rebuilt = checkedOptions state file
+            let regrown = watch state proven settled (readings [ 3300L; 2950L ]) stops.Add
+            Assert.False(cached state file rebuilt, "the regrown caches were trimmed")
+            Assert.Empty(stops)
+            Assert.Equal(proven.HardBytes, regrown.HardBytes)
+
+            // Interaction 3 — a trim that cannot get back near the floor is growth: it exits.
+            let! _ = checkedOptions state file
+            watch state regrown settled (readings [ 3800L; 3600L ]) stops.Add |> ignore
+            Assert.Equal<int list>([ OverLimitExitCode ], List.ofSeq stops)
+            Assert.True(options.SourceFiles.Length > 0, "the workspace kept answering throughout")
+        })
+
 [<Fact>]
 let ``the memory limit setting sets the soft limit and twice it as the hard limit`` () =
     let mb = 1024L * 1024L

@@ -30,14 +30,18 @@ export interface RunnerMap {
 export const VSTEST_ONLY: RunnerMap = { mtp: undefined, vstest: true };
 
 /**
- * The runners one sweep's listings call for. A listing with no MTP plan that
- * named any test was VSTest's; with no MTP plan at all, VSTest runs everything.
+ * The runners one sweep's listings call for. An id no MTP module of its listing
+ * owns was VSTest's; with no MTP plan at all, VSTest runs everything.
  */
 export function runnersFor(listings: readonly TestListing[]): RunnerMap {
   const mtp = mergePlans(
     listings.flatMap((listing) => (listing.mtp === undefined ? [] : [listing.mtp])),
   );
-  const vstest = listings.some((listing) => listing.mtp === undefined && listing.names.length > 0);
+  // An id no module of its own listing owns is VSTest's: a whole VSTest target,
+  // or a VSTest project listed beside MTP modules in one solution.
+  const vstest = listings.some((listing) =>
+    listing.names.some((id) => listing.mtp === undefined || !ownedBy(listing.mtp, id)),
+  );
   const projects = new Map(listings.flatMap((listing) => [...(listing.projects ?? [])]));
   return { mtp, vstest: vstest || mtp === undefined, ...(projects.size === 0 ? {} : { projects }) };
 }

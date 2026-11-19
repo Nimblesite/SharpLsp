@@ -25,6 +25,9 @@ const SOLUTION_EXTENSIONS = ['.sln', '.slnx', '.slnf'];
 /** NuGet package ids whose presence makes a project a possible MTP module. */
 const MTP_PACKAGE_IDS = ['Microsoft.Testing.Platform', 'Microsoft.Testing.Platform.MSBuild'];
 
+/** The test host package every VSTest test project restores. */
+const VSTEST_SDK_ID = 'Microsoft.NET.Test.Sdk';
+
 /**
  * True when `target`'s RESTORED package graph holds a Microsoft.Testing.Platform
  * package, `false` when it holds none, `undefined` when nothing is restored to
@@ -39,6 +42,20 @@ const MTP_PACKAGE_IDS = ['Microsoft.Testing.Platform', 'Microsoft.Testing.Platfo
  * package stays a library.
  */
 export function referencesMtpPackage(projectFile: string): boolean | undefined {
+  return referencesPackage(projectFile, MTP_PACKAGE_IDS);
+}
+
+/**
+ * True when `projectFile`'s restored package graph holds `Microsoft.NET.Test.Sdk`,
+ * the package every VSTest test project carries. A project MSBuild did NOT name
+ * an MTP module that carries it is a VSTest test project beside the MTP ones.
+ */
+export function referencesVsTestSdk(projectFile: string): boolean {
+  return referencesPackage(projectFile, [VSTEST_SDK_ID]) === true;
+}
+
+/** True when the restored graph holds any of `ids`; `undefined` when unreadable. */
+function referencesPackage(projectFile: string, ids: readonly string[]): boolean | undefined {
   const assets = joinPath(directoryOf(projectFile), 'obj', 'project.assets.json');
   let parsed: unknown;
   try {
@@ -49,7 +66,7 @@ export function referencesMtpPackage(projectFile: string): boolean | undefined {
   if (!isRecord(parsed)) return undefined;
   const libraries = parsed.libraries;
   if (!isRecord(libraries)) return undefined;
-  return Object.keys(libraries).some((id) => MTP_PACKAGE_IDS.includes(id.split('/')[0] ?? ''));
+  return Object.keys(libraries).some((id) => ids.includes(id.split('/')[0] ?? ''));
 }
 
 /** True for a plain object, so a JSON shape is narrowed before it is read. */
