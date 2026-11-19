@@ -122,7 +122,8 @@
         "debug-fsharp-stepping-e2e.test.js",
         "debug-fsharp-inspection-e2e.test.js",
         "debug-hot-reload-e2e.test.js",
-        "debug-attach-e2e.test.js"
+        "debug-attach-e2e.test.js",
+        "debug-attach-reliability-e2e.test.js"
       ]
     },
     "debug-tests": {

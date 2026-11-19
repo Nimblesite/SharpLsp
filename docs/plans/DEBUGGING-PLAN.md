@@ -643,8 +643,9 @@ waiting; a debug run never writes the result cache.
       `dap-router.ts` `onChildGone` (idempotent), `dap-wire.ts:143` `watchDeath`,
       `child-signal.ts:28` `signalChild`; tests `debug-adapter-startup.test.ts` (all seven
       cases)
-- [ ] Attach reliability: ≥95% success rate across 20 consecutive attach attempts — attach is
-      red (§4.3)
+- [x] Attach reliability: ≥95% success rate across 20 consecutive attach attempts — each
+      attach pauses the live thread and detaches without killing the process; test
+      `debug-attach-reliability-e2e.test.ts` (20/20 locally on macOS ARM64)
 - [ ] Full E2E test suite passes in CI on Linux x64, macOS ARM64, Windows x64
 
 ### 4.14 Fixed on this branch
@@ -789,7 +790,7 @@ Goal: Replace netcoredbg with a C# Tier 4 sidecar achieving full vsdbg parity. C
 - [ ] Implement `attach`: `DbgShim.RegisterForRuntimeStartup` (race-free; no `0x80070057`)
 - [ ] Implement attach-by-name: resolve PID then attach
 - [ ] Implement child process auto-attach via `ICorDebugManagedCallback::CreateProcess`
-- [ ] E2E test: reliable attach — 20 consecutive attaches succeed (regression for netcoredbg issue #205 scenario)
+- [x] E2E test: reliable attach — 20 consecutive attaches succeed (regression for netcoredbg issue #205 scenario): `debug-attach-reliability-e2e.test.ts`
 
 ### 5.4 Full Breakpoint Implementation
 
