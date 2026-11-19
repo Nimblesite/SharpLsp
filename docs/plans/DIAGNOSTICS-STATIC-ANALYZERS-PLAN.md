@@ -85,13 +85,14 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       list from the spec.
 - [ ] Emit `SLSPC0101` diagnostics with source `sharplsp-static-csharp`,
       severity Information, and tag `Unnecessary`.
-- [ ] Full-stack test: unused public C# type in a monorepo solution is reported.
+- [x] Full-stack test: unused public C# type in a monorepo solution is reported —
+      `configuration_live.rs` `csharp_unused_public_types_are_dead_only_in_a_monorepo`, step 2.
 - [ ] Full-stack test: public C# type referenced by another project is not
       reported.
 - [ ] Full-stack test: public C# member used by reflection/framework attribute is
       suppressed.
-- [ ] Full-stack test: non-monorepo config reports no C# unused-public-code
-      diagnostics.
+- [x] Full-stack test: non-monorepo config reports no C# unused-public-code
+      diagnostics — same test, steps 1 and 3: only the internal type is reported.
 
 ## Phase 4: F# Unused Public Symbols (P0)
 
