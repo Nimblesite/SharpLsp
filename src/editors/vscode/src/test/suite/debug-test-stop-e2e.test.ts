@@ -18,6 +18,7 @@ import {
   requireActive,
   type TestDebugFixture,
   assertTerminalClosed,
+  assertNoTerminalLeft,
   assertOneTerminal,
   assertDebugCache,
 } from './debug-test-kit';
@@ -112,7 +113,11 @@ for (const language of ['fsharp', 'csharp'] as const) {
       });
 
       test('Stop ends its host and terminal, never retries, and the next Debug starts clean', async function () {
-        this.timeout(DEBUG_TEST_MS * 2);
+        this.timeout(DEBUG_TEST_MS * 3);
+        await assertNoTerminalLeft(
+          TEST_DEBUG_TERMINAL_NAME,
+          'every earlier debug run closed its terminal once it settled',
+        );
         const api = await activateTestExplorer();
         await discoverSolution(api, fixture.solutionPath, [id, 'Other.Unselected']);
         const item = findItem(api.testController.items, id);
