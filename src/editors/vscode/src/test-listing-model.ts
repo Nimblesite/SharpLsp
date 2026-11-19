@@ -192,6 +192,26 @@ export function mergePlans(plans: readonly MtpRunPlan[]): MtpRunPlan | undefined
   return modules.length === 0 ? undefined : { modules };
 }
 
+/**
+ * An MTP listing and the VSTest listings of the test projects beside its
+ * modules, as ONE listing of their target. The MTP plan owns only its modules'
+ * ids, so every other id still routes to VSTest ([TEST-MTP-ROUTING]), built
+ * through the project that listed it ([TEST-BUILD-GRAPH]).
+ */
+export function joinRunners(mtp: TestListing, vstest: readonly TestListing[]): TestListing {
+  if (vstest.length === 0) return mtp;
+  const all = [mtp, ...vstest];
+  const projects = new Map(all.flatMap((listing) => [...(listing.projects ?? [])]));
+  return {
+    ...mtp,
+    names: [...new Set(all.flatMap((listing) => [...listing.names]))],
+    ok: all.every((listing) => listing.ok),
+    warnings: all.flatMap((listing) => [...listing.warnings]),
+    byAssembly: all.flatMap((listing) => [...listing.byAssembly]),
+    ...(projects.size === 0 ? {} : { projects }),
+  };
+}
+
 /** True when some module of `plan` owns `id`. */
 export function ownedBy(plan: MtpRunPlan, id: string): boolean {
   return plan.modules.some((module) => module.uidsById.has(id));

@@ -246,7 +246,11 @@ export async function listTests(
   // SDK's VSTest target refuses it outright — the doomed passes below must not
   // run for it at all (#581). Reading the graph costs one JSON read per
   // project; a target it names no MTP project for falls through untouched.
-  const beforeVstest = await mtpBeforeVstest(target, cwd, timeoutMs, noBuild);
+  const beforeVstest = await mtpBeforeVstest(target, cwd, {
+    timeoutMs,
+    noBuild,
+    vstest: async (project) => await listVsTestProject(project, timeoutMs, noBuild),
+  });
   if (beforeVstest !== undefined) return beforeVstest;
   const vstest = await listWithVsTest(target, cwd, timeoutMs, noBuild);
   if (vstest.byAssembly.length > 0) return vstest;
@@ -281,6 +285,16 @@ async function withMtpProbe(
   const mtp = await (noBuild ? listBuiltMtpTests : probeMtpTests)(target, cwd, timeoutMs);
   const warnings = [...vstest.warnings, ...mtp.warnings];
   return mtp.names.length === 0 ? { ...vstest, warnings } : { ...mtp, warnings };
+}
+
+/** One VSTest project's listing, each id owned by that project. [TEST-BUILD-GRAPH] */
+async function listVsTestProject(
+  project: string,
+  timeoutMs: number,
+  noBuild: boolean,
+): Promise<TestListing> {
+  const listing = await listWithVsTest(project, directoryOf(project), timeoutMs, noBuild);
+  return { ...listing, projects: new Map(listing.names.map((name) => [name, project])) };
 }
 
 /** The two VSTest passes: build and announce, then ask for the real names. */

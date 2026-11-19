@@ -3,9 +3,10 @@
 // whole target as soon as the package graph names ONE MTP project, so the
 // VSTest project beside it must still be listed — it was in v0.33.0.
 //
-// Covers [TEST-MTP-DETECT] and [TEST-DISCOVERY-FQN].
+// Covers [TEST-MTP-DETECT], [TEST-MTP-ROUTING] and [TEST-DISCOVERY-FQN].
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
+import * as vscode from 'vscode';
 import { listTests } from '../../test-discovery.js';
 import {
   createSolution,
@@ -25,6 +26,7 @@ import {
   discoverSolution,
   teardownFixtureSolution,
 } from './test-explorer-kit';
+import { cachedFor, runIds } from './test-explorer-outcome-assertions';
 import { removeDirRecursive } from './test-helpers';
 import { FIXTURE_BUILD_MS } from './test-timeouts';
 
@@ -83,6 +85,22 @@ suite('Test Explorer e2e — a VSTest project beside an MTP project in one solut
         [...expected].sort(),
         'exactly both projects, nothing invented',
       );
+
+      // 3. One Run across both runners: each id reaches the runner that owns
+      //    it, so neither half reports "No result reported" [TEST-MTP-ROUTING].
+      const [holds, alsoHolds] = VSTEST_IDS;
+      assert.ok(NATIVE.passing && holds && alsoHolds);
+      await runIds(api, vscode.TestRunProfileKind.Run, [NATIVE.passing, NATIVE.failing, holds]);
+      await api.testController.whenIdle();
+      assert.equal(cachedFor(api, NATIVE.passing).outcome, 'passed', 'the MTP pass ran');
+      assert.equal(cachedFor(api, NATIVE.failing).outcome, 'failed', 'the MTP failure ran');
+      assert.equal(cachedFor(api, holds).outcome, 'passed', 'the VSTest fact ran beside them');
+
+      // 4. A VSTest-only selection never touches the MTP module.
+      await runIds(api, vscode.TestRunProfileKind.Run, [alsoHolds]);
+      await api.testController.whenIdle();
+      assert.equal(cachedFor(api, alsoHolds).outcome, 'passed', 'the VSTest-only run passed');
+      assert.equal(cachedFor(api, NATIVE.passing).outcome, 'passed', 'the MTP result stays');
     } finally {
       await teardownFixtureSolution(api, root, removeDirRecursive);
     }
