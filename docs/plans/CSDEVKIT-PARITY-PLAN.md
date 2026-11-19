@@ -225,8 +225,9 @@ These are the features users hit within the first 5 minutes. Without them, Sharp
   - [x] Implement `textDocument/formatting` via Fantomas (F#) — behind `#[cfg(feature = "formatting")]`
   - [x] Implement `textDocument/rangeFormatting` — behind `#[cfg(feature = "formatting")]`
   - [x] Implement `textDocument/onTypeFormatting` — behind `#[cfg(feature = "formatting")]`
-  - [ ] EditorConfig full integration for formatting rules
-  - [ ] Wire up format-on-save in VS Code extension settings
+  - [x] ~~EditorConfig full integration for formatting rules~~ and ~~format-on-save~~ — dropped:
+        [SHARPLSP-FEATURES-FORMATTING] leaves formatting to CSharpier and Fantomas, whose own
+        extensions read `.editorconfig` and own `editor.formatOnSave`
 
 - [x] **P1.3: Semantic Highlighting**
   - [x] Implement `textDocument/semanticTokens/full` via Roslyn classifier (C#) — `semantic_tokens.rs`
