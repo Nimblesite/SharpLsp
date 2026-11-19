@@ -46,6 +46,18 @@ function remembered(memory: Memento | undefined): solution.SolutionSelection | u
   return solution.toSolutionSelections([stored])[0];
 }
 
+/** The configured solution; a server that cannot answer leaves the choice open. */
+async function configured(
+  client: LanguageClient | undefined,
+): Promise<solution.SolutionSelection | undefined> {
+  try {
+    return await solution.configuredSolution(client);
+  } catch (err: unknown) {
+    log.warn(`Configured solution not read: ${getErrorMessage(err)}`);
+    return undefined;
+  }
+}
+
 /** Build the loader; selection generations make a superseded pick a no-op. */
 export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
   let generation = 0;
@@ -81,13 +93,16 @@ export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
     }
   };
 
+  // `csharp.solution_path` settles the choice, then what this workspace last
+  // loaded; only a workspace with neither is asked.
+  // [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
   const selectAndLoad = async (): Promise<void> => {
-    const known = remembered(deps.memory);
+    const known = (await configured(deps.client())) ?? remembered(deps.memory);
     if (known === undefined) {
       await pickAndLoad();
       return;
     }
-    log.info(`Reopening remembered solution: ${known.path}`);
+    log.info(`Opening the configured or remembered solution: ${known.path}`);
     await load(known);
   };
 
