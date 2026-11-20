@@ -438,6 +438,9 @@ item and its required evidence are complete.
 ### 11.5 Endpoint leases and READY `[SIDECAR-PLAN-CHECKLIST-STARTUP]`
 
 - [ ] Generate at least 64 unpredictable bits from the OS CSPRNG for every spawn attempt.
+      Progress: every MANAGER's endpoint now carries 64 `getrandom` bits (`launch.rs`
+      `endpoint_nonce`, test `endpoint_tokens_are_unpredictable_and_constant_length`); a fresh
+      nonce per restart lands with the per-generation endpoint item below.
 - [ ] Include language, host PID, generation, and nonce in a length-bounded platform endpoint.
 - [ ] Create/use a validated owner-only Unix runtime directory and keep socket mode `0600`.
 - [ ] Keep `PipeOptions.CurrentUserOnly` and a single named-pipe server instance on Windows.
@@ -484,7 +487,9 @@ item and its required evidence are complete.
 - [ ] Poison and restart when a written request cannot be drained within its 120s/600s budget.
 - [ ] Distinguish clean EOF between frames from truncated length/payload EOF and classify the latter as
       a protocol failure.
-- [ ] Keep the 64MiB frame check before allocation in Rust and .NET.
+- [x] Keep the 64MiB frame check before allocation in Rust and .NET — `transport.rs` `MAX_FRAME_LEN`
+      (test `rejects_oversized_frame_length`), `FramedTransport.cs` `MaxFrameLength` (tests
+      `ReadFrameAsync_rejects_oversized_length_prefix`, `WriteFrameAsync_rejects_oversized_payload`).
 - [ ] Add a real wrong-ID scenario proving the stale response reaches neither current nor next caller.
 - [ ] Add a real notification-before-response scenario proving both are delivered correctly.
 

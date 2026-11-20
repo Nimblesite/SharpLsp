@@ -297,7 +297,11 @@ in three steps:
    and TUnit carry it — is evaluated by MSBuild at once, and a target every evaluation names
    an MTP project for goes straight to MTP (#581): the .NET 10 SDK's VSTest target refuses
    such a project outright ("Testing with VSTest target is no longer supported"), so the
-   pass MUST NOT run for it. The graph is a JSON document and is parsed, never searched; a
+   pass MUST NOT run for it. A VSTest test project BESIDE those modules — one MSBuild did not
+   name an MTP application whose restored graph holds `Microsoft.NET.Test.Sdk` — is still
+   VSTest's: the VSTest passes run for THAT project alone, one project at a time, and its
+   tests join the same listing, each owned by its project, so a run routes them to VSTest
+   ([TEST-MTP-ROUTING]). Dropping them listed a mixed solution's MTP tests only. The graph is a JSON document and is parsed, never searched; a
    project nothing has restored yet is left alone, and the graph never overrules MSBuild —
    `IsTestingPlatformApplication` decides that a project IS an MTP application, so a library
    that merely references the package stays a library and never builds as a module.
@@ -571,7 +575,8 @@ a project created and built in a folder that had none is still observed.
 ## Microsoft.Testing.Platform: two runners in one tree `[TEST-MTP-ROUTING]`
 
 The runner is chosen per discovery TARGET ([TEST-MTP-DETECT]), and a multi-root workspace
-with no solution loaded has one target per eligible folder. One tree can therefore hold VSTest tests
+with no solution loaded has one target per eligible folder; one solution can also hold a VSTest
+project beside an MTP one ([TEST-MTP-DETECT]). One tree can therefore hold VSTest tests
 beside MTP tests, and one ▶ can select from both. Each test MUST go to the runner that
 discovered it:
 

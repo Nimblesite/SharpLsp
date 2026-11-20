@@ -122,13 +122,15 @@
         "debug-fsharp-stepping-e2e.test.js",
         "debug-fsharp-inspection-e2e.test.js",
         "debug-hot-reload-e2e.test.js",
-        "debug-attach-e2e.test.js"
+        "debug-attach-e2e.test.js",
+        "debug-attach-reliability-e2e.test.js"
       ]
     },
     "debug-tests": {
       "description": "The session and the protocol around it, and the hardest consumer of both. The DAP 1.71.0 handshake and the whole [DEBUG-PROTOCOL-CAPABILITIES] table in both directions, stopAtEntry, args/env/cwd, run-without-debugging, restart, pause and stop, debuggee output routing, and two simultaneous sessions multiplexed by session id — then debugging a TEST through the Test Explorer Debug profile, which re-attaches to successive test hosts inside one session. Grouped because a test-debugging failure is a session-lifecycle failure. Implements [DEBUG-FEATURES-TESTS].",
       "files": [
         "debug-test-fsharp-e2e.test.js",
+        "debug-test-expecto-e2e.test.js",
         "debug-test-debugging-e2e.test.js",
         "debug-test-decorated-e2e.test.js",
         "debug-test-stop-e2e.test.js",
@@ -164,6 +166,7 @@
         "test-explorer-glued-banners.test.js",
         "test-explorer-names.test.js",
         "testing-lens-e2e.test.js",
+        "test-language.test.js",
         "testing-lens-status.test.js",
         "test-explorer-coverage.test.js",
         "test-coverage-parser.test.js",
@@ -176,6 +179,7 @@
       "description": "The Test Explorer RUNNING things, over the widest fixture surface in the matrix: the framework matrix (xUnit, NUnit and MSTest in both C# and F#, per-test outcome attribution from TRX, run/debug/coverage profiles, and the pinned 2.2.0 VSTest adapter that decorates the names it reports), and Stop terminating the whole `dotnet test` process TREE across every gesture that starts a run. Kept apart from `testexplorer` because between them they restore and build eight test projects, and because the sleeping-fixture cancellation suite is the likeliest place in the matrix to hang — a hang here must not take the Test Explorer's read surface with it.",
       "files": [
         "test-explorer-frameworks.test.js",
+        "test-explorer-fsharp-frameworks.test.js",
         "test-explorer-outcomes.test.js",
         "test-explorer-adapter-ids.test.js",
         "test-explorer-goto-test.test.js",
@@ -196,6 +200,7 @@
       "description": "Where Microsoft.Testing.Platform meets everything that is NOT one MTP solution: a VSTest folder and an MTP folder open in ONE multi-root workspace, each test routed to the runner that discovered it and an MTP module rebuilt from its own folder ([TEST-MTP-ROUTING]); the probe sweep a solution with no MTP project must not pay for, folders and project files enumerated the way `dotnet` resolves them, and the run plan a failed sweep keeps with its tree ([TEST-MTP-DETECT], [TEST-MTP-MODULES]); and a selection spanning several `--filter-uid` batches, plus Run with Coverage on a module with no coverage extension ([TEST-MTP-RUN]); and a run queued behind a discovery sweep, which must run with the runner that sweep found ([TEST-REACTIVITY]); and what a test WRITES, on both runners — every channel xUnit, NUnit and MSTest capture, in F# and C#, shown on its own test in Test Results through all three report shapes, and the runner’s own console as the run’s output ([TEST-RUN-OUTPUT]). The multi-root suite lives under `multiroot/` and runs in the second editor start `.vscode-test.mjs` opens for it. Its own job because every suite here builds its own fixtures, and joining `testexplorer-mtp` would take that job past the 15-minute ceiling ([DIST-CI-WIN-VSIX]).",
       "files": [
         "multiroot/test-explorer-mixed-runners.test.js",
+        "test-explorer-mtp-mixed.test.js",
         "test-explorer-mtp-sweeps.test.js",
         "test-explorer-mtp-batches.test.js",
         "test-explorer-mtp-coverage.test.js",

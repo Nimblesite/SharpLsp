@@ -119,6 +119,10 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
       this.writeEmitter.fire(this.buffered);
       this.buffered = '';
     }
+    // A run that ended before VS Code opened the terminal fired its close into
+    // the void: VS Code only listens once it has opened the pty. Close now, or
+    // the terminal outlives its run as a ghost beside the next one.
+    if (this.ended) this.closeEmitter.fire();
   }
 
   /** VS Code's notice that the USER disposed the terminal. */
@@ -146,7 +150,7 @@ class DebugRunTerminal implements vscode.Pseudoterminal {
   public end(): void {
     if (this.ended) return;
     this.ended = true;
-    this.closeEmitter.fire();
+    if (this.opened) this.closeEmitter.fire();
   }
 }
 
@@ -201,6 +205,8 @@ class DebugRunFlow {
     this.onFirstAttach = resolve;
   });
   private announcements: Promise<void> = Promise.resolve();
+  /** The run's terminal window, when the gesture opened one. */
+  private window: vscode.Terminal | undefined;
   private finished = false;
   private readonly watcher = new TestHostWatcher((pid) => {
     this.queueHost(pid);
@@ -232,7 +238,15 @@ class DebugRunFlow {
     const bridge = token.onCancellationRequested(() => {
       this.stop.abort();
     });
-    vscode.window.createTerminal({ name: TEST_DEBUG_TERMINAL_NAME, pty: this.terminal }).show(true);
+    // An already-cancelled gesture runs nothing worth showing: opening a
+    // terminal for it only leaves a ghost beside the next run.
+    if (!this.stop.signal.aborted) {
+      this.window = vscode.window.createTerminal({
+        name: TEST_DEBUG_TERMINAL_NAME,
+        pty: this.terminal,
+      });
+      this.window.show(true);
+    }
     try {
       await Promise.race([this.attached, this.settle()]);
     } finally {
@@ -257,6 +271,9 @@ class DebugRunFlow {
       this.endedWaiters.clear();
       this.run.end();
       this.terminal.end();
+      // The pty's close only reaches a terminal VS Code has opened; disposing
+      // the window itself closes one it never opened, too.
+      this.window?.dispose();
     }
   }
 

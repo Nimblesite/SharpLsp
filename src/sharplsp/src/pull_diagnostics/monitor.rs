@@ -144,6 +144,28 @@ async fn observe(
     }
 }
 
+/// Announce files the host itself just wrote through the notification the native
+/// watcher sends, so the compilers that own them reload even when the platform
+/// watcher misses the host's own write. Before the dispatch queue exists there
+/// is nobody to tell. [DIAG-LSP-REFRESH]
+pub fn written(paths: &[&str]) -> anyhow::Result<()> {
+    let changes: Vec<Value> = paths
+        .iter()
+        .filter_map(|path| crate::paths::path_to_uri(path).ok())
+        .map(|uri| json!({ "uri": uri, "type": 2 }))
+        .collect();
+    let inbound = super::state::inbound()?;
+    if let Some(inbound) = inbound.filter(|_| !changes.is_empty()) {
+        if !notify_changes(&inbound, &changes, false) {
+            tracing::warn!(
+                count = changes.len(),
+                "written files not announced: dispatch queue closed"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Route native observations through the existing foreground notification queue.
 fn notify_changes(inbound: &Sender<Message>, changes: &[Value], rescan: bool) -> bool {
     let notification = Notification::new(

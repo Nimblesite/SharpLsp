@@ -20,7 +20,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { buildFilterArgs, isExpectoTest, isFsCheckTest } from '../../testing.js';
+import { buildFilterArgs } from '../../testing.js';
 import type { CachedTestResult } from '../../testing.js';
 import {
   batchAssemblies,
@@ -532,17 +532,6 @@ suite('Testing module e2e — run/debug commands and helpers', () => {
       !isDiscoveredTestLine('Proj -> C:\\out\\Proj.dll'),
       'the MSBuild output mapping is never a test name',
     );
-
-    // The same addTestItem tagging logic (Expecto || FsCheck => F#).
-    const isFsharp = (name: string): boolean => isExpectoTest(name) || isFsCheckTest(name);
-    assert.ok(isFsharp('MyLib.Tests.testCase'));
-    assert.ok(isFsharp('MyLib.Tests.testList'));
-    assert.ok(isFsharp('MyLib.Expecto.Foo'));
-    assert.ok(isFsharp('MyLib.FsCheck.Prop'));
-    assert.ok(isFsharp('MyLib.Property.Roundtrip'));
-    assert.ok(!isFsharp('Sample.Tests.CalculatorTests.Adds_TwoNumbers'));
-    assert.ok(!isExpectoTest('FsCheck'));
-    assert.ok(!isFsCheckTest('Expecto'));
   });
 
   test('buildFilterArgs assembles the dotnet --filter clause for selected tests', async function () {

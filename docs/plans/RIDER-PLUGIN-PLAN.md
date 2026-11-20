@@ -173,14 +173,19 @@ only — Community editions are not supported.
 
 ### Phase 7: Build infrastructure
 
-- [ ] Add `build-rider` Makefile target — calls `./gradlew buildPlugin`
+- [x] Add `build-rider` Makefile target — calls `./gradlew buildPlugin`
       and copies the zip to `dist/sharplsp-rider.zip` — **but only if**
-      the environment has a JVM; otherwise skip with a warning
-- [ ] Add `package-rider` Makefile target — alias for `build-rider` for
-      naming symmetry with `package-zed`
-- [ ] Add `test-rider` Makefile target — `./gradlew test`
-- [ ] Add `lint-rider` Makefile target — `./gradlew check`
-- [ ] Add `clean-rider` Makefile target — `./gradlew clean`
+      the environment has a JVM; otherwise skip with a warning — as the private `_build-rider` leg of `make build`: the Makefile's twelve public targets are its whole surface.
+      `tools/rider/gradle.sh` finds a JDK 21+, and records a skipped-leg marker when there is none
+- [x] Add `package-rider` Makefile target — alias for `build-rider` for
+      naming symmetry with `package-zed` — `_build-rider` IS the packaging step, as `_build-zed`
+      is Zed's; neither editor has a public package target
+- [x] Add `test-rider` Makefile target — `./gradlew test` — `_test-rider` (Kover report and
+      coverage gate), a leg of `make test`
+- [ ] Add `lint-rider` Makefile target — `./gradlew check`. Open: no Kotlin linter is
+      configured and `check` reruns the test suite; needs a decision on detekt/ktlint or
+      `allWarningsAsErrors` before `make lint` can cover the plugin
+- [x] Add `clean-rider` Makefile target — `./gradlew clean` — `_clean-rider`, a leg of `make clean`
 - [x] Wire Rider build into the top-level `build` target (`_build-rider`)
 - [x] Wire Rider tests into the top-level `test` target (`_test-rider`)
 - [x] Update README `Install` section with a one-paragraph Rider block
@@ -214,8 +219,10 @@ how it was installed — and CI built and coverage-gated it in that state.
 
 ### Phase 9: CI
 
-- [ ] Add `build-rider` + `test-rider` to `.github/workflows/ci.yml`
-      under a matrix job that requires JDK 17
+- [x] Add `build-rider` + `test-rider` to CI — the reusable workflows of [DIST-CI-LAYOUT]:
+      `ci-build.yml` `build-rider` and `ci-test-editors.yml` `test-rider` (`RIDER_REQUIRED=1`),
+      both through `.github/actions/rider-environment` on JDK 21, which the current Rider SDK
+      needs; `tools/ci/security-gates.test.mjs` pins the `test-rider` job
 - [x] Cache `~/.gradle/caches` and `~/.gradle/wrapper` (`ci-test-editors.yml`,
       and the release `build-rider` job mirrors it)
 - [x] The Rider plugin zip is built and attached to tag releases alongside the

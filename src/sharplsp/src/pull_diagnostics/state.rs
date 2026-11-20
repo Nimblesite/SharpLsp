@@ -132,6 +132,11 @@ pub fn connect_inputs(
     })
 }
 
+/// The foreground dispatch queue, once the connection has created it.
+pub(super) fn inbound() -> Result<Option<crossbeam_channel::Sender<Message>>> {
+    with_session(|session| Ok(session.inbound.clone()))
+}
+
 /// The actual selected solution can live outside the editor's workspace folder.
 pub fn workspace() -> Result<Option<String>> {
     with_session(|session| Ok(session.workspace.clone()))
@@ -379,6 +384,10 @@ fn analyzer(
 #[cfg(test)]
 #[path = "release_tests.rs"]
 mod release_tests;
+
+#[cfg(test)]
+#[path = "written_tests.rs"]
+mod written_tests;
 
 #[cfg(test)]
 mod load_completion_tests {

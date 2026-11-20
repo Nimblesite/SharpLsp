@@ -3,7 +3,8 @@
 /// the soft limit the checker drops its caches and rebuilds on demand, and the limit
 /// rises past the level it trimmed at, so a workspace that needs that much is trimmed
 /// once. Still above the hard limit afterwards, a sidecar past its loading grace exits
-/// so the host restarts it fresh rather than let it swap the machine.
+/// so the host restarts it fresh rather than let it swap the machine; within the grace,
+/// the size it trimmed to is the workspace's proven floor and the hard limit rises past it.
 /// Implements [SIDECAR-PROCESS-MEMORY] (GitHub #566).
 module SharpLsp.Sidecar.FSharp.FSharpMemoryBudget
 
@@ -79,23 +80,23 @@ let private raisedPast (before: int64) (budget: Budget) =
 
 /// One check of a running sidecar of the given `age`, returning the budget the next
 /// check keeps. A trim raises the soft limit past the level it answered, so a workspace
-/// that settles there keeps its caches instead of losing them every check. Still over
-/// the hard limit after trimming, `stop` ends the process with `OverLimitExitCode` so
-/// the host restarts it, unless the sidecar is younger than `GraceForLoading`: its
-/// workspace is simply that large, a restart would loop, and it keeps serving.
+/// that settles there keeps its caches instead of losing them every check. Over the hard
+/// limit after trimming while younger than `GraceForLoading`, the workspace is simply
+/// that large: the size it trimmed to is its proven floor, the hard limit rises an eighth
+/// past it, and it keeps serving — a restart would reload straight back to it, in a loop.
+/// Older and still over the hard limit after trimming, `stop` ends the process with
+/// `OverLimitExitCode` so the host restarts it.
 let watch state (budget: Budget) (age: TimeSpan) measure (stop: int -> unit) : Budget =
     match trimmed state budget measure with
     | None -> budget
-    | Some(before, after) ->
-        if after <= budget.HardBytes then
-            ()
-        elif age < GraceForLoading then
-            Log.Error("F# workspace needs more than the hard memory limit; raise {Variable} to stop trimming it",
-                      LimitVariable)
-        else
-            Log.Error("F# sidecar exceeds its hard memory limit after trimming; exiting for a restart")
-            stop OverLimitExitCode
-
+    | Some(before, after) when after <= budget.HardBytes -> raisedPast before budget
+    | Some(before, after) when age < GraceForLoading ->
+        Log.Error("F# workspace needs more than the hard memory limit; raise {Variable} to stop trimming it",
+                  LimitVariable)
+        { raisedPast before budget with HardBytes = after + budget.HardBytes / 8L }
+    | Some(before, _) ->
+        Log.Error("F# sidecar exceeds its hard memory limit after trimming; exiting for a restart")
+        stop OverLimitExitCode
         raisedPast before budget
 
 let private exitProcess (code: int) =

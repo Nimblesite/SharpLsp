@@ -27,6 +27,7 @@ import {
   type MtpCli,
 } from './test-mtp-cli.js';
 import {
+  joinRunners,
   mergeMultiTargeted,
   type MtpModuleRun,
   type TestAssemblyListing,
@@ -46,6 +47,8 @@ import {
   evaluatedMtpProjects,
   probeMtpProjects,
   probeScan,
+  projectsOf,
+  referencesVsTestSdk,
   scanMtpProjects,
   type MtpProject,
   type MtpProjectScan,
@@ -214,29 +217,51 @@ function collectLocations(
  */
 export const listMtpTests = sweepOf(scanMtpProjects);
 
+/** Lists ONE VSTest project; the VSTest passes live in `test-discovery.ts`. */
+export type VsTestLister = (projectFile: string) => Promise<TestListing>;
+
 /**
- * The MTP listing when MSBuild already names an MTP project in `target`, before
- * any VSTest pass runs; `undefined` when it names none, so the caller runs the
+ * The listing when MSBuild already names an MTP project in `target`, before any
+ * VSTest pass runs; `undefined` when it names none, so the caller runs the
  * VSTest passes it always ran.
  *
  * On the .NET 10 SDK the VSTest target REFUSES an MTP project outright
  * ("Testing with VSTest target is no longer supported"), so a target whose
- * package graph holds Microsoft.Testing.Platform must never pay that pass:
- * discovery goes straight to the runner that can answer (#581). Spec:
- * [TEST-MTP-DETECT].
+ * package graph holds Microsoft.Testing.Platform must never pay that pass for
+ * it: its modules go straight to the runner that can answer (#581). A VSTest
+ * test project BESIDE them is still VSTest's, and is listed on its own so the
+ * refused pass never reaches the MTP one. Spec: [TEST-MTP-DETECT].
  */
 export async function mtpBeforeVstest(
   target: string,
   cwd: string,
-  timeoutMs: number,
-  noBuild: boolean,
+  options: { readonly timeoutMs: number; readonly noBuild: boolean; readonly vstest: VsTestLister },
 ): Promise<TestListing | undefined> {
+  const { timeoutMs, noBuild } = options;
   const found = await evaluatedMtpProjects(target, timeoutMs);
   if (found.projects.length === 0) return undefined;
   const scan = noBuild
     ? await builtMtpProjects(target, timeoutMs)
     : await probeScan(found, target, cwd, timeoutMs);
-  return await listScanned(scan, { target, cwd, timeoutMs });
+  const mtp = await listScanned(scan, { target, cwd, timeoutMs });
+  const beside = await vstestProjectsBeside(target, found.projects, timeoutMs);
+  const vstest: TestListing[] = [];
+  // One at a time: parallel builds of a shared dependency race on its `obj`.
+  for (const project of beside) vstest.push(await options.vstest(project));
+  return joinRunners(mtp, vstest);
+}
+
+/** The VSTest test projects of `target` that MSBuild did not name MTP modules. */
+async function vstestProjectsBeside(
+  target: string,
+  mtp: readonly MtpProject[],
+  timeoutMs: number,
+): Promise<string[]> {
+  const projects = await projectsOf(target, timeoutMs);
+  return projects.filter(
+    (project) =>
+      !mtp.some((one) => samePath(one.projectFile, project)) && referencesVsTestSdk(project),
+  );
 }
 
 /**

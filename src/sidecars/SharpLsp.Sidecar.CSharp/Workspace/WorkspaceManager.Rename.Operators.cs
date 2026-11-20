@@ -245,6 +245,11 @@ internal sealed partial class WorkspaceManager
         return root is null || model is null ? [] : ConversionCasts(root, model, method, ct);
     }
 
+    /// <summary>
+    /// One edit per OUTERMOST converted expression. A conversion nested inside another
+    /// (<c>Twice(Pass(a))</c>) is cast inside the outer replacement, never as a second,
+    /// overlapping edit that <see cref="SourceText.WithChanges(TextChange[])"/> rejects.
+    /// </summary>
     private static List<TextChange> ConversionCasts(
         SyntaxNode root,
         SemanticModel model,
@@ -252,21 +257,58 @@ internal sealed partial class WorkspaceManager
         CancellationToken ct
     )
     {
+        var converted = root.DescendantNodes()
+            .OfType<ExpressionSyntax>()
+            .Where(expression => ConvertsThrough(model, expression, method, ct))
+            .ToList();
+        var nested = converted.ToHashSet();
         return
         [
-            .. root.DescendantNodes()
-                .OfType<ExpressionSyntax>()
-                .Where(expression =>
-                    SymbolEqualityComparer.Default.Equals(
-                        model.GetConversion(expression, ct).MethodSymbol?.OriginalDefinition,
-                        method.OriginalDefinition
+            .. converted
+                .Where(expression => !expression.Ancestors().Any(nested.Contains))
+                .Select(outer => new TextChange(
+                    outer.Span,
+                    CastText(
+                        outer.ReplaceNodes(
+                            converted.Where(inner =>
+                                inner != outer && outer.Span.Contains(inner.Span)
+                            ),
+                            (_, rewritten) =>
+                                SyntaxFactory.ParseExpression(
+                                    CastText(rewritten, method, model, outer)
+                                )
+                        ),
+                        method,
+                        model,
+                        outer
                     )
-                )
-                .Select(expression => new TextChange(
-                    expression.Span,
-                    $"({method.ReturnType.ToMinimalDisplayString(model, expression.SpanStart)})({expression})"
                 )),
         ];
+    }
+
+    /// <summary>True when <paramref name="expression"/> is converted through <paramref name="method"/>.</summary>
+    private static bool ConvertsThrough(
+        SemanticModel model,
+        ExpressionSyntax expression,
+        IMethodSymbol method,
+        CancellationToken ct
+    )
+    {
+        return SymbolEqualityComparer.Default.Equals(
+            model.GetConversion(expression, ct).MethodSymbol?.OriginalDefinition,
+            method.OriginalDefinition
+        );
+    }
+
+    /// <summary><c>(T)(expression)</c>, the target type spelled as it reads at <paramref name="at"/>.</summary>
+    private static string CastText(
+        SyntaxNode expression,
+        IMethodSymbol method,
+        SemanticModel model,
+        SyntaxNode at
+    )
+    {
+        return $"({method.ReturnType.ToMinimalDisplayString(model, at.SpanStart)})({expression})";
     }
 
     /// <summary>The edit, when the compiler finds no error the respelling introduced.</summary>

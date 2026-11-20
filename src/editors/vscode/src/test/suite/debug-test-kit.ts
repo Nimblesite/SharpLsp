@@ -30,6 +30,7 @@ import {
   writeMtpGlobalJson,
   type PackageRef,
 } from './dotnet-project-kit';
+import { EXPECTO_PROJECT, writeExpectoProject } from './expecto-fixture';
 import { isolateFromRepoMsbuild } from './run-debug-fixtures';
 import { DEBUG_TYPE_ID, type DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import { activateTestExplorer } from './test-explorer-kit';
@@ -41,7 +42,7 @@ import {
   requireWorkspaceRoot,
   pollUntilResult,
 } from './test-helpers';
-import { COMMAND_MS } from './test-timeouts';
+import { COMMAND_MS, DEBUG_SESSION_MS } from './test-timeouts';
 
 /** Wait for the actual terminal object to close, not an unrelated queue. */
 export async function assertTerminalClosed(terminal: vscode.Terminal): Promise<void> {
@@ -52,6 +53,22 @@ export async function assertTerminalClosed(terminal: vscode.Terminal): Promise<v
     50,
   );
   assert.equal(closed, true, 'Stop must settle the owned runner and close its debug terminal');
+}
+
+/**
+ * No `name` terminal survives from an EARLIER test: a debug run's terminal closes
+ * once that run settles, which can trail its suite by the debuggee's own wait.
+ * A test that counts terminals starts from none, and a terminal that never closes
+ * fails here, naming the leak instead of the next test's count.
+ */
+export async function assertNoTerminalLeft(name: string, why: string): Promise<void> {
+  const left = await pollUntilResult(
+    async () => vscode.window.terminals.filter((terminal) => terminal.name === name).length,
+    (count) => count === 0,
+    DEBUG_SESSION_MS,
+    100,
+  );
+  assert.equal(left, 0, why);
 }
 
 /** Require exactly one named terminal and return the actual object owned by the run. */
@@ -253,8 +270,9 @@ export type FixtureLanguage = 'csharp' | 'fsharp';
  * `xunit.v3` — whose `[Fact]`, `[Theory]` and `Skip` are the ones the source
  * already uses — opted in with `global.json`, so the Debug profile debugs a
  * Microsoft.Testing.Platform MODULE rather than a VSTest host ([TEST-MTP-DEBUG]).
+ * `expecto` is F#-only and writes its own project (`expecto-fixture.ts`).
  */
-export type FixtureRunner = 'vstest' | 'mtp' | 'vstest-decorating';
+export type FixtureRunner = 'vstest' | 'mtp' | 'vstest-decorating' | 'expecto';
 
 /** The project file for one language on one runner. */
 function fixtureProjectXml(csharp: boolean, runner: FixtureRunner, sourceName: string): string {
@@ -291,11 +309,26 @@ export async function writeDebugTestFixture(
 ): Promise<TestDebugFixture> {
   const scratchDir = fs.mkdtempSync(path.join(requireWorkspaceRoot(), prefix));
   isolateFromRepoMsbuild(scratchDir);
+  if (runner === 'expecto')
+    return await builtFixture(scratchDir, EXPECTO_PROJECT, (dir) =>
+      writeExpectoProject(dir, { Configuration: 'Release' }),
+    );
   if (runner === 'mtp') writeMtpGlobalJson(scratchDir);
   const csharp = language === 'csharp';
+  return await builtFixture(scratchDir, csharp ? CS_PROJECT : FS_PROJECT, (dir) =>
+    writeXunitProject(dir, csharp, runner, source),
+  );
+}
+
+/** Write the xUnit fixture project (either language) into `projectDir`; return its source. */
+function writeXunitProject(
+  projectDir: string,
+  csharp: boolean,
+  runner: FixtureRunner,
+  source: string | undefined,
+): string {
   const project = csharp ? CS_PROJECT : FS_PROJECT;
   const sourceName = csharp ? 'CalculatorTests.cs' : 'Tests.fs';
-  const projectDir = path.join(scratchDir, project);
   fs.mkdirSync(projectDir, { recursive: true });
   fs.writeFileSync(
     path.join(projectDir, `${project}.${csharp ? 'csproj' : 'fsproj'}`),
@@ -304,6 +337,17 @@ export async function writeDebugTestFixture(
   );
   const sourceFile = path.join(projectDir, sourceName);
   fs.writeFileSync(sourceFile, source ?? (csharp ? CS_SOURCE : FS_SOURCE).text, 'utf8');
+  return sourceFile;
+}
+
+/** Solution-ify and build the project `write` puts in `scratchDir/project`. */
+async function builtFixture(
+  scratchDir: string,
+  project: string,
+  write: (projectDir: string) => string,
+): Promise<TestDebugFixture> {
+  const projectDir = path.join(scratchDir, project);
+  const sourceFile = write(projectDir);
   const solutionPath = await createSolution(scratchDir, `${project}Sln`, [projectDir]);
   // BUILT HERE, not by whichever test happens to run first. Discovery and every
   // debug run shell out to `dotnet test`, which RESTORES and COMPILES on its

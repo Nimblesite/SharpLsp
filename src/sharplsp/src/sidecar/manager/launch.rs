@@ -161,9 +161,10 @@ static IPC_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 /// before READY; on Unix it deletes and steals the live socket. Folding the
 /// process id and a monotonic counter into the hash keeps the token short
 /// (constant length, so it never trips the Unix socket-path limit) while making
-/// it unique across hosts (pid) and within a host (counter). It is computed once
-/// per manager and reused across restarts, so a restart keeps its own endpoint.
-// TODO [SIDECAR-STARTUP-ENDPOINT]: generate a fresh OS-CSPRNG nonce for every spawn generation.
+/// it unique across hosts (pid) and within a host (counter). 64 OS-CSPRNG bits
+/// are folded in, so no other local process can predict the endpoint and bind it
+/// first. It is computed once per manager and reused across restarts, so a
+/// restart keeps its own endpoint. [SIDECAR-STARTUP-ENDPOINT]
 fn unique_endpoint_token(workspace_root: &Path) -> String {
     let sequence = IPC_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let key = format!(
@@ -172,7 +173,19 @@ fn unique_endpoint_token(workspace_root: &Path) -> String {
         std::process::id(),
         sequence
     );
-    format!("{:x}", fxhash(key.as_bytes()))
+    format!(
+        "{:016x}",
+        u64::from(fxhash(key.as_bytes())) ^ endpoint_nonce()
+    )
+}
+
+/// 64 unpredictable bits from the OS CSPRNG. Its failure is logged, never
+/// silent, and leaves the hash alone: still unique, only predictable.
+fn endpoint_nonce() -> u64 {
+    getrandom::u64().unwrap_or_else(|error| {
+        warn!(%error, "OS CSPRNG unavailable; the sidecar endpoint is predictable");
+        0
+    })
 }
 
 /// Build a platform-appropriate IPC path for a sidecar.
@@ -227,4 +240,29 @@ pub(super) fn fxhash(bytes: &[u8]) -> u32 {
         hash = hash.wrapping_mul(0x0100_0193);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{endpoint_nonce, unique_endpoint_token};
+    use std::collections::HashSet;
+    use std::path::Path;
+
+    /// [SIDECAR-STARTUP-ENDPOINT]: every token carries fresh CSPRNG bits at a
+    /// constant length, so it is unpredictable and never trips the socket-path limit.
+    #[test]
+    fn endpoint_tokens_are_unpredictable_and_constant_length() {
+        let nonces: HashSet<u64> = (0..64).map(|_| endpoint_nonce()).collect();
+        assert_eq!(nonces.len(), 64, "every nonce is fresh");
+        assert!(!nonces.contains(&0), "the CSPRNG answered");
+        let root = Path::new("/workspace");
+        let tokens: HashSet<String> = (0..64).map(|_| unique_endpoint_token(root)).collect();
+        assert_eq!(tokens.len(), 64, "the same root never repeats a token");
+        assert!(
+            tokens
+                .iter()
+                .all(|token| token.len() == 16 && token.bytes().all(|b| b.is_ascii_hexdigit())),
+            "every token is 16 hex digits"
+        );
+    }
 }

@@ -38,7 +38,6 @@ import {
 } from './test-framework-runs';
 
 export { buildFilterArgs } from './test-execution';
-export { isExpectoTest, isFsCheckTest } from './test-targets';
 export type { CachedTestResult } from './test-reporting';
 
 /** What one discovery sweep collected across every target. */

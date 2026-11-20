@@ -137,6 +137,7 @@ public sealed class DeadCodeAnalyzerTests : IDisposable
         Assert.NotNull(hidden);
         Assert.Equal("Warning", hidden!.Severity);
         Assert.Equal("SLSPC0101", hidden.Code);
+        Assert.Equal("https://sharplsp.dev/docs/diagnostics/#dead-code", hidden.HelpLink);
         Assert.Contains("Dead code", hidden.Message);
         Assert.Contains("method", hidden.Message);
 

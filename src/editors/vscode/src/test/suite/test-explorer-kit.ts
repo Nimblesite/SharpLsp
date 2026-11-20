@@ -125,17 +125,27 @@ export function assertDeclaredInside(
   assert.ok(['.cs', '.fs'].includes(path.extname(file)), `${id} is declared in C# or F#: ${file}`);
 }
 
+/** The tags a test row of a project in that language carries: `fsharp` for an .fsproj (#604). */
+export function languageTags(fsharp: boolean): string[] {
+  return fsharp ? ['fsharp'] : [];
+}
+
 /**
- * A plain (untagged) discovered test row: the FQN as description, the last
- * dotted segment as label, a leaf, carrying a uri declared inside `anchor`.
+ * A plain discovered test row: the FQN as description, the last dotted segment
+ * as label, a leaf, carrying a uri declared inside `anchor`, tagged with its
+ * project's language and nothing else.
  */
-export function assertPlainLeaf(snapshot: TestItemSnapshot, anchor: string): void {
+export function assertPlainLeaf(snapshot: TestItemSnapshot, anchor: string, fsharp = false): void {
   const { id, label } = snapshot;
   assert.strictEqual(snapshot.description, id, `the description is the whole FQN: ${id}`);
   assert.strictEqual(label, id.split('.').at(-1), `the label is the last dotted segment of ${id}`);
   assert.ok(label.length > 0 && id.endsWith(label), `${id} must end with a non-empty label`);
   assert.strictEqual(snapshot.childCount, 0, `a discovered TEST is a leaf: ${id}`);
-  assert.deepStrictEqual(snapshot.tags, [], `a plain test carries no framework tag: ${id}`);
+  assert.deepStrictEqual(
+    snapshot.tags,
+    languageTags(fsharp),
+    `a plain test carries its project's language tag and no framework tag: ${id}`,
+  );
   assertDeclaredInside(snapshot.uriPath, anchor, id);
 }
 
@@ -174,7 +184,11 @@ export function findItem(
 }
 
 /** Every property one leaf item exposes, asserted against its own FQN. */
-export function assertLeafItem(items: vscode.TestItemCollection, id: string): vscode.TestItem {
+export function assertLeafItem(
+  items: vscode.TestItemCollection,
+  id: string,
+  tags: readonly string[] = [],
+): vscode.TestItem {
   const item = findItem(items, id);
   assert.ok(item, `findItem must resolve ${id}`);
   assert.strictEqual(item.id, id, `the id is the fully-qualified name, verbatim: ${id}`);
@@ -187,7 +201,11 @@ export function assertLeafItem(items: vscode.TestItemCollection, id: string): vs
   assert.ok(!item.canResolveChildren, `a leaf test resolves no children: ${id}`);
   assert.strictEqual(item.children.size, 0, `${id} must have no children`);
   assert.strictEqual(item.error, undefined, `${id} must not carry a discovery error`);
-  assert.strictEqual(item.tags.length, 0, `${id} carries no framework tag`);
+  assert.deepStrictEqual(
+    item.tags.map((tag) => tag.id),
+    [...tags],
+    `${id} carries exactly the tags of its project's language (#604)`,
+  );
   return item;
 }
 
