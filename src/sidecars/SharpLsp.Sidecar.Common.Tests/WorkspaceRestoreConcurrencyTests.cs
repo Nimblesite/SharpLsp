@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System.Globalization;
 
 // RS1035: this end-to-end test deliberately writes real project files for the real SDK.
 #pragma warning disable RS1035
@@ -31,17 +31,18 @@ public sealed class WorkspaceRestoreConcurrencyTests : IDisposable
     {
         string[] projects = [Slow("A"), Slow("B")];
 
-        var clock = Stopwatch.StartNew();
         var result = await WorkspaceRestore.EnsureProjectsAsync(projects, CancellationToken.None);
-        clock.Stop();
 
         Assert.True(result.IsOk, result.Match(_ => string.Empty, error => error));
         Assert.All(projects, project => Assert.Equal(1, WorkspaceRestore.RestoresOf(project)));
         Assert.All(projects, project => Assert.True(File.Exists(Assets(project)), project));
-        // One after another takes at least the sum of the deliberate waits.
+        // Side by side: each restore's slow step began before the other's ended. One
+        // after another, the second would begin only after the first ended.
+        var windows = projects.Select(Window).ToArray();
+        Assert.All(windows, window => Assert.True(window.Start < window.End, "a real wait"));
         Assert.True(
-            clock.Elapsed < TimeSpan.FromSeconds(SlowSeconds * projects.Length),
-            $"{projects.Length} {SlowSeconds}s restores took {clock.Elapsed.TotalSeconds:F1}s: they ran in series"
+            windows.Max(window => window.Start) < windows.Min(window => window.End),
+            $"the restores ran in series: {string.Join(", ", windows)}"
         );
 
         var again = await WorkspaceRestore.EnsureProjectsAsync(projects, CancellationToken.None);
@@ -73,13 +74,27 @@ public sealed class WorkspaceRestoreConcurrencyTests : IDisposable
         Assert.Equal(1, WorkspaceRestore.RestoresOf(after));
     }
 
-    /// <summary>A package-free project whose restore takes <see cref="SlowSeconds"/>.</summary>
+    /// <summary>When a project's slow restore step began and ended, as it recorded them.</summary>
+    private static (long Start, long End) Window(string project)
+    {
+        var ticks = File.ReadAllLines(
+            NativePaths.Resolve(NativePaths.DirectoryOf(project), "window.txt")
+        );
+        return (
+            long.Parse(ticks[0], CultureInfo.InvariantCulture),
+            long.Parse(ticks[1], CultureInfo.InvariantCulture)
+        );
+    }
+
+    /// <summary>A package-free project whose restore takes <see cref="SlowSeconds"/> and records when.</summary>
     private string Slow(string name)
     {
         var wait = $"""
             <Target Name="SlowRestore" BeforeTargets="Restore">
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)/window.txt" Lines="$([System.DateTime]::UtcNow.Ticks)" Overwrite="true" />
               <Exec Condition="'$(OS)' == 'Windows_NT'" Command="powershell -NoProfile -Command Start-Sleep {SlowSeconds}" />
               <Exec Condition="'$(OS)' != 'Windows_NT'" Command="sleep {SlowSeconds}" />
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)/window.txt" Lines="$([System.DateTime]::UtcNow.Ticks)" />
             </Target>
             """;
         return Project(name, "", wait);
