@@ -165,7 +165,7 @@ let deadCodeInFile (workspace: FSharpWorkspace.FSharpWorkspaceState) (config: An
             let shared =
                 scope
                 |> List.tryHead
-                |> Option.exists (fun own -> workspace.ReferencedFromCSharp.ContainsKey own.ProjectFileName)
+                |> Option.exists (fun own -> workspace.CrossLanguage.Contains own.ProjectFileName)
             let config = { config with SharedAcrossLanguages = shared }
             let! checkedProjects = FSharpWorkspace.checkAllWithCancellation workspace projects ct
             let uses = checkedProjects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq

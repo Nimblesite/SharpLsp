@@ -54,6 +54,7 @@ pub mod configuration_session;
 pub mod coverage_boost;
 pub mod coverage_boost2;
 pub mod coverage_boost3;
+pub mod dead_code_cross_language;
 pub mod definition;
 pub mod definition_cross_language;
 pub mod definition_full_stack;

@@ -23,7 +23,7 @@ internal sealed partial class WorkspaceManager
     /// The workspace's C# projects an F# project references: Roslyn cannot see their F#
     /// callers, so their public symbols are never reported unused (#617). [ANALYZERS-TRUTH]
     /// </summary>
-    private IReadOnlySet<string> _referencedFromFSharp = new HashSet<string>();
+    private CrossLanguageReferences _crossLanguage = CrossLanguageReferences.None;
 
     /// <summary>
     /// Whether project analyzers — the SDK/NuGet analyzers the project references and
@@ -51,9 +51,7 @@ internal sealed partial class WorkspaceManager
     /// <summary>Record which C# projects of <paramref name="path"/> F# code references.</summary>
     private async Task RecordCrossLanguageReferencesAsync(string path, CancellationToken ct)
     {
-        _referencedFromFSharp = await CrossLanguageReferences
-            .OfAsync(path, ct)
-            .ConfigureAwait(false);
+        _crossLanguage = await CrossLanguageReferences.OfAsync(path, ct).ConfigureAwait(false);
     }
 
     public void ConfigureAnalyzers(bool deadCode, bool monorepo)
@@ -227,7 +225,7 @@ internal sealed partial class WorkspaceManager
         var scope = await SearchScope
             .OfAsync(document, _activeFrameworks, ct)
             .ConfigureAwait(false);
-        var sharedWithFSharp = _referencedFromFSharp.Contains(document.Project.FilePath ?? "");
+        var sharedWithFSharp = _crossLanguage.Contains(document.Project.FilePath ?? "");
         return await DeadCodeAnalyzer
             .AnalyzeAsync(document, scope, new DeadCodeMode(_monorepo, sharedWithFSharp), ct)
             .ConfigureAwait(false);

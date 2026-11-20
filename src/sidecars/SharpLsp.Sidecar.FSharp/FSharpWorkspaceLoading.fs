@@ -104,9 +104,7 @@ let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Res
 let private recordCrossLanguageReferences (state: FSharpWorkspaceState) (path: string) ct =
     task {
         let! referenced = CrossLanguageReferences.OfAsync(path, ct)
-        state.ReferencedFromCSharp.Clear()
-        for project in referenced do
-            state.ReferencedFromCSharp[project] <- ()
+        state.CrossLanguage <- referenced
     }
 
 /// Load a project, solution, workspace directory, or self-describing script.

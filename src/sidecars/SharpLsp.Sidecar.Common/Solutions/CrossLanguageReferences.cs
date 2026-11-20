@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace SharpLsp.Sidecar.Common.Solutions;
 
 /// <summary>
@@ -8,28 +10,52 @@ namespace SharpLsp.Sidecar.Common.Solutions;
 /// prove a public symbol of such a project unused: [ANALYZERS-TRUTH] prefers silence to a
 /// false error, so these projects report no unused PUBLIC code (#617). Private and
 /// internal code stays the declaring compiler's to judge.
+///
+/// A compiler never reloads for the other language's project edits, so each project's
+/// references are re-read whenever its file has been written since they were last read.
 /// </summary>
-public static class CrossLanguageReferences
+public sealed class CrossLanguageReferences
 {
-    /// <summary>
-    /// The project files of <paramref name="target"/> — a solution, a project file or a
-    /// folder — that a project of the other language in that same target references.
-    /// </summary>
-    public static async Task<IReadOnlySet<string>> OfAsync(string target, CancellationToken ct)
+    private readonly IReadOnlyList<string> _projects;
+    private readonly ConcurrentDictionary<string, Read> _read = new(NativePaths.Comparer);
+
+    private CrossLanguageReferences(IReadOnlyList<string> projects)
     {
-        return Across(await ProjectsOfAsync(target, ct).ConfigureAwait(false));
+        _projects = projects;
     }
 
-    /// <summary>Every project in <paramref name="projects"/>' references written in the other language.</summary>
-    public static IReadOnlySet<string> Across(IEnumerable<string> projects)
+    /// <summary>No workspace: nothing is referenced across languages.</summary>
+    public static CrossLanguageReferences None { get; } = new([]);
+
+    /// <summary>The projects of <paramref name="target"/> — a solution, a project file or a folder.</summary>
+    public static async Task<CrossLanguageReferences> OfAsync(string target, CancellationToken ct)
     {
-        return projects
-            .SelectMany(project =>
-                ProjectReferences
-                    .ReadReferencedProjects(project)
-                    .Where(referenced => IsFSharp(referenced) != IsFSharp(project))
+        return new(await ProjectsOfAsync(target, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>True when a project of the other language references <paramref name="project"/> now.</summary>
+    public bool Contains(string project)
+    {
+        return _projects.Any(referencing =>
+            IsFSharp(referencing) != IsFSharp(project)
+            && ReferencesOf(referencing).Contains(project, NativePaths.Comparer)
+        );
+    }
+
+    /// <summary>The projects <paramref name="project"/> references, re-read when its file changed.</summary>
+    private IReadOnlyList<string> ReferencesOf(string project)
+    {
+        var written = File.GetLastWriteTimeUtc(project);
+        return _read
+            .AddOrUpdate(
+                project,
+                _ => new(written, ProjectReferences.ReadReferencedProjects(project)),
+                (_, known) =>
+                    known.Written == written
+                        ? known
+                        : new(written, ProjectReferences.ReadReferencedProjects(project))
             )
-            .ToHashSet(NativePaths.Comparer);
+            .Referenced;
     }
 
     private static bool IsFSharp(string project)
@@ -55,4 +81,7 @@ public static class CrossLanguageReferences
             : File.Exists(target) ? [target]
             : [];
     }
+
+    /// <summary>A project's references as of the write time they were read at.</summary>
+    private sealed record Read(DateTime Written, IReadOnlyList<string> Referenced);
 }

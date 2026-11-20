@@ -11,6 +11,7 @@ open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Symbols
 open FSharp.Compiler.Text
 open Serilog
+open SharpLsp.Sidecar.Common.Solutions
 open SharpLsp.Sidecar.Common
 
 /// Definition result: file path + start line/col + end line/col (0-based).
@@ -59,9 +60,9 @@ type FSharpWorkspaceState =
         /// .fsproj is re-evaluated once, and ownership lookups never spawn MSBuild per
         /// request. Lazy, so concurrent first lookups share ONE evaluation. [NETFX-PROJECTS-FSHARP]
         CompileSources: ConcurrentDictionary<string, Lazy<Task<Result<string array, string>>>>
-        /// The workspace's F# projects a C# project references, whose public symbols the
-        /// dead-code analyzer can never prove unused (#617). [ANALYZERS-TRUTH]
-        ReferencedFromCSharp: ConcurrentDictionary<string, unit>
+        /// Which of the workspace's F# projects a C# project references, whose public symbols
+        /// the dead-code analyzer can never prove unused (#617). [ANALYZERS-TRUTH]
+        mutable CrossLanguage: CrossLanguageReferences
         /// Every referenced assembly's public entities, by assembly file: built once,
         /// rebuilt when that file changes. [SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]
         Entities: EntityCache
@@ -96,7 +97,7 @@ let create () : FSharpWorkspaceState =
       CSharpBuilds = ConcurrentDictionary(NativePaths.Comparer)
       CSharpBuffers = ConcurrentDictionary(NativePaths.Comparer)
       CompileSources = ConcurrentDictionary(NativePaths.Comparer)
-      ReferencedFromCSharp = ConcurrentDictionary(NativePaths.Comparer)
+      CrossLanguage = CrossLanguageReferences.None
       Entities = EntityCache() }
 
 /// The project that compiles `filePath`, if any loaded project does.
