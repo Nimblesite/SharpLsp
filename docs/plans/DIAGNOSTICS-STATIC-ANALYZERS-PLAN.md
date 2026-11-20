@@ -23,10 +23,12 @@ Implements [ANALYZERS-MONOREPO-GATE] and [ANALYZERS-SOLUTION-SCOPE].
 - [x] Hot-reload workspace/static-analyzer config through
       `workspace/didChangeConfiguration` (shipped as `[analyzers] dead_code`/`monorepo`) — `configuration_live.rs` `reconfigure`;
       e2e `analyzer_settings_from_the_editor_or_the_file_apply_to_the_next_pull` (editor and on-disk edits).
-- [ ] Bump `global_state_version` and send `workspace/diagnostic/refresh` when
-      monorepo/static-analyzer settings change.
-- [ ] Full-stack test: default config produces no unused-public-code
-      diagnostics.
+- [x] Bump `global_state_version` and send `workspace/diagnostic/refresh` when
+      monorepo/static-analyzer settings change — `configuration_live.rs` `reconfigure` →
+      `pull_diagnostics::state::configure` invalidates the store (its revision) and schedules the
+      refresh; `csharp_unused_public_types_are_dead_only_in_a_monorepo` waits for it after each switch.
+- [x] Full-stack test: default config produces no unused-public-code
+      diagnostics — same test, step 1: no `sharplsp.toml`, only the internal type is reported.
 - [x] Full-stack test: `repository_kind = "standard"` suppresses the analyzer
       even when `unused_public_symbols = true` (shipped as `[analyzers] dead_code`/`monorepo`) — same e2e, step 2: `dead_code` on,
       no monorepo, the public F# function is not reported.
@@ -87,8 +89,9 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       severity Information, and tag `Unnecessary`.
 - [x] Full-stack test: unused public C# type in a monorepo solution is reported —
       `configuration_live.rs` `csharp_unused_public_types_are_dead_only_in_a_monorepo`, step 2.
-- [ ] Full-stack test: public C# type referenced by another project is not
-      reported.
+- [x] Full-stack test: public C# type referenced by another project is not
+      reported — `configuration_live.rs` `a_public_csharp_type_another_project_uses_is_not_dead_in_a_monorepo`
+      (a two-project `.slnx`: only the unused `Orphan` is reported).
 - [ ] Full-stack test: public C# member used by reflection/framework attribute is
       suppressed.
 - [x] Full-stack test: non-monorepo config reports no C# unused-public-code
@@ -118,8 +121,10 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       severity Information, and tag `Unnecessary`.
 - [x] Full-stack test: unused public F# function in a monorepo solution is
       reported — `configuration_live.rs` step 3: `unusedPublic` reported as an error.
-- [ ] Full-stack test: public F# value referenced by another project is not
-      reported.
+- [x] Full-stack test: public F# value referenced by another project is not
+      reported —
+      `configuration_live.rs` `a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo`
+      (a two-project `.slnx`: only the unused `orphan` is reported).
 - [ ] Full-stack test: `.fsi` public-surface declarations receive diagnostics at
       the signature declaration where possible.
 - [x] Full-stack test: non-monorepo config reports no F# unused-public-code
@@ -160,7 +165,7 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 
 - [ ] Add `WorkspaceConfig.repository_kind` defaulting to `"standard"`.
 - [ ] Add `DiagnosticsConfig.static_analyzers`.
-- [ ] Hot-reload monorepo/static-analyzer settings.
+- [x] Hot-reload monorepo/static-analyzer settings. (see the matching phase row)
 - [ ] Update example config through a TOML parser/serializer.
 
 ### Pipeline
@@ -173,17 +178,17 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 
 ### C#
 
-- [ ] Collect public C# symbols via Roslyn.
-- [ ] Count solution-wide Roslyn semantic references.
+- [x] Collect public C# symbols via Roslyn. (see the matching phase row)
+- [x] Count solution-wide Roslyn semantic references. (see the matching phase row)
 - [ ] Emit `SLSPC0101`.
-- [ ] Add C# monorepo/non-monorepo full-stack tests.
+- [x] Add C# monorepo/non-monorepo full-stack tests. (see the matching phase row)
 
 ### F#
 
 - [ ] Collect public F# symbols via FCS and `.fsi` public surface.
-- [ ] Count solution-wide FCS semantic references.
+- [x] Count solution-wide FCS semantic references. (see the matching phase row)
 - [ ] Emit `SLSPF0101`.
-- [ ] Add F# monorepo/non-monorepo full-stack tests.
+- [x] Add F# monorepo/non-monorepo full-stack tests. (see the matching phase row)
 
 ### Cross-Language
 
