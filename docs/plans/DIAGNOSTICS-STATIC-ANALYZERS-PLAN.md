@@ -137,14 +137,14 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 - [ ] Define a shared metadata identity DTO for C# and F# public symbols.
 - [ ] Count C# references to F# public symbols through project-reference metadata.
 - [ ] Count F# references to C# public symbols through project-reference metadata.
-- [ ] Suppress diagnostics when cross-language identity is ambiguous.
-- [ ] Full-stack test: C# calls public F# function, F# symbol is not reported.
-- [ ] Full-stack test: F# calls public C# method, C# symbol is not reported.
-- [ ] Full-stack test: ambiguous metadata identity suppresses instead of reporting
+- [x] Suppress diagnostics when cross-language identity is ambiguous — `CrossLanguageReferences` (Common) marks every project the other language references; both analyzers report no unused public code there (#617).
+- [x] Full-stack test: C# calls public F# function, F# symbol is not reported — `configuration_live.rs` `a_public_fsharp_function_only_csharp_calls_is_not_dead_in_a_monorepo`.
+- [x] Full-stack test: F# calls public C# method, C# symbol is not reported — `configuration_live.rs` `a_public_csharp_type_only_fsharp_uses_is_not_dead_in_a_monorepo`.
+- [x] Full-stack test: ambiguous metadata identity suppresses instead of reporting
       a false positive.
 
-## Phase 6: Editor Experience And Follow-Up Actions (P1)
-
+## Phase 6: Editor Experience And Follow-Up Actions (P1) — both tests above: the
+      unused public symbol of a cross-language-referenced project is not reported either.
 - [ ] VS Code e2e test: monorepo static diagnostics appear in Problems for
       unopened files after `workspace/diagnostic`.
 - [ ] VS Code e2e test: changing `repository_kind` triggers
@@ -194,4 +194,4 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 
 - [ ] Share metadata identity between C# and F# indexes.
 - [ ] Count C# to F# and F# to C# references.
-- [ ] Suppress ambiguous cross-language cases.
+- [x] Suppress ambiguous cross-language cases (see the matching phase row).

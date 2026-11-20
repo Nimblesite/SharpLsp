@@ -23,6 +23,13 @@ namespace SharpLsp.Sidecar.CSharp.Workspace;
 /// A type is referenced when it or any of its members is referenced — member uses
 /// (extension calls, static access, generated partials) never name the type.
 /// </summary>
+/// <summary>
+/// How public deadness is judged: only in a <paramref name="Monorepo"/>, and never for a
+/// project the other language references (<paramref name="SharedAcrossLanguages"/>), whose
+/// callers Roslyn cannot see. [ANALYZERS-TRUTH]
+/// </summary>
+internal readonly record struct DeadCodeMode(bool Monorepo, bool SharedAcrossLanguages);
+
 internal static class DeadCodeAnalyzer
 {
     /// <summary>Diagnostic code for unused C# symbols (see the spec).</summary>
@@ -32,7 +39,7 @@ internal static class DeadCodeAnalyzer
     public static async Task<List<DiagnosticResult>> AnalyzeAsync(
         Document document,
         SearchScope scope,
-        bool monorepo,
+        DeadCodeMode mode,
         CancellationToken ct
     )
     {
@@ -59,7 +66,7 @@ internal static class DeadCodeAnalyzer
                 continue;
             }
 
-            var diagnostic = await ClassifyAsync(symbol, node, filePath, scope, monorepo, ct)
+            var diagnostic = await ClassifyAsync(symbol, node, filePath, scope, mode, ct)
                 .ConfigureAwait(false);
             if (diagnostic is not null)
             {
@@ -150,13 +157,15 @@ internal static class DeadCodeAnalyzer
         SyntaxNode node,
         string filePath,
         SearchScope scope,
-        bool monorepo,
+        DeadCodeMode mode,
         CancellationToken ct
     )
     {
+        var monorepo = mode.Monorepo;
         var isPublic = Visibility(symbol) == true;
-        // Public symbols are an external API unless the repo is the whole world.
-        if (isPublic && !monorepo)
+        // Public symbols are an external API unless the repo is the whole world, and
+        // unprovable when the other language — whose callers Roslyn cannot see — uses them.
+        if (isPublic && (!monorepo || mode.SharedAcrossLanguages))
         {
             return null;
         }

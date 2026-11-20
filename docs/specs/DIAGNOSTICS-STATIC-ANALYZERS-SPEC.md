@@ -243,5 +243,5 @@ The analyzer must prefer silence over false positives:
 
 - If the workspace is not explicitly configured as a monorepo, return no unused-public-code diagnostics.
 - If a project is unloaded or failed to load, return no unused-public-code diagnostics for symbols that could be referenced by that project.
-- If cross-language identity cannot be proven for a symbol, do not report it as unused.
+- If cross-language identity cannot be proven for a symbol, do not report it as unused. Until metadata identity is shared between the compilers, every project the other language references — a C# project an F# project references, or the reverse — reports no unused public code at all; private and internal code is still judged (#617). Implemented by `SharpLsp.Sidecar.Common.Solutions.CrossLanguageReferences`.
 - If the analyzer cannot distinguish a framework entry point from ordinary public API, suppress the diagnostic and emit structured trace logging for future rule tuning.
