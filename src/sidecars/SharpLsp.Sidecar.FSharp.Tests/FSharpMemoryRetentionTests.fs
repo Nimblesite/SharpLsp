@@ -5,6 +5,7 @@ module SharpLsp.Sidecar.FSharp.Tests.FSharpMemoryRetentionTests
 
 open System
 open System.IO
+open System.Runtime.CompilerServices
 open System.Xml.Linq
 open FSharp.Compiler.Text
 open Xunit
@@ -89,7 +90,7 @@ let private settled = TimeSpan.FromHours 1.0
 /// A weak handle on a referenced assembly's cached entity: alive for as long as the
 /// workspace's entity cache holds the build that made it. Not inlined, so no local of
 /// the calling test keeps the entity alive.
-[<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)>]
+[<MethodImpl(MethodImplOptions.NoInlining)>]
 let private referencedEntity state (results: FSharp.Compiler.CodeAnalysis.FSharpCheckFileResults) =
     FSharpEntityIndex.entities state results ()
     |> List.find (fun entity -> entity.FullName = "System.Object")
