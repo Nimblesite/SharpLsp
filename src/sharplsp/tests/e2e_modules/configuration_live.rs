@@ -90,18 +90,14 @@ fn a_public_csharp_type_another_project_uses_is_not_dead_in_a_monorepo() {
     require_dotnet();
     let workspace = tempfile::tempdir().expect("real C# solution");
     let root = workspace.path();
-    let library = write_csharp_project(
+    let library = write_project(
         root,
         "Lib",
-        "<OutputType>Library</OutputType>",
-        "",
+        "cs",
+        ["<OutputType>Library</OutputType>", ""],
         "namespace Lib;\n\npublic sealed class Used { }\n\npublic sealed class Orphan { }\n",
     );
-    let _app = write_csharp_project(
-        root,
-        "App",
-        "<OutputType>Exe</OutputType>",
-        r#"<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>"#,
+    let _app = write_project(root, "App", "cs", ["<OutputType>Exe</OutputType>", r#"<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>"#],
         "internal static class Program\n{\n    private static void Main() => _ = new Lib.Used();\n}\n",
     );
     std::fs::write(
@@ -117,24 +113,62 @@ fn a_public_csharp_type_another_project_uses_is_not_dead_in_a_monorepo() {
     session.client.shutdown_and_exit();
 }
 
-/// Write `<name>/<name>.csproj` with `properties` and `items`, and `<name>/<name>.cs`; returns the source.
-fn write_csharp_project(
-    root: &Path,
-    name: &str,
-    properties: &str,
-    items: &str,
-    source: &str,
-) -> PathBuf {
+/// The F# twin: a public F# value another project of the solution uses is
+/// live in a monorepo, and only the one nobody uses is dead.
+#[test]
+fn a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo() {
+    require_dotnet();
+    let workspace = tempfile::tempdir().expect("real F# solution");
+    let root = workspace.path();
+    let library = write_project(
+        root,
+        "Lib",
+        "fs",
+        ["<OutputType>Library</OutputType>", ""],
+        "module Lib.Values\n\nlet used () = 1\n\nlet orphan () = 2\n",
+    );
+    let _app = write_project(
+        root,
+        "App",
+        "fs",
+        [
+            "<OutputType>Exe</OutputType>",
+            r#"<ItemGroup><ProjectReference Include="../Lib/Lib.fsproj" /></ItemGroup>"#,
+        ],
+        "module App.Program\n\n[<EntryPoint>]\nlet main _ = Lib.Values.used ()\n",
+    );
+    std::fs::write(
+        root.join("Mono.slnx"),
+        "<Solution>\n  <Project Path=\"Lib/Lib.fsproj\" />\n  <Project Path=\"App/App.fsproj\" />\n</Solution>\n",
+    )
+    .expect("write the solution");
+    write_configuration(root, "[analyzers]\ndead_code = true\nmonorepo = true\n");
+    let mut session = LiveSession::start(root, &library, "SLSPF0101");
+
+    // `used` is called from App, so only `orphan` is dead — an error in a monorepo.
+    session.await_dead(&[("orphan", 1)]);
+    session.client.shutdown_and_exit();
+}
+
+/// Write `<name>/<name>.<ext>proj` with `properties` and `items`, and its one
+/// source `<name>.<ext>` (`cs` or `fs`; F# lists it in compile order); returns the source.
+fn write_project(root: &Path, name: &str, ext: &str, settings: [&str; 2], source: &str) -> PathBuf {
+    let [properties, items] = settings;
     let project = root.join(name);
     std::fs::create_dir_all(&project).expect("project directory");
+    let compile = if ext == "fs" {
+        format!("<ItemGroup><Compile Include=\"{name}.fs\" /></ItemGroup>")
+    } else {
+        String::new()
+    };
     std::fs::write(
-        project.join(format!("{name}.csproj")),
+        project.join(format!("{name}.{ext}proj")),
         format!(
-            "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup><TargetFramework>net10.0</TargetFramework>{properties}</PropertyGroup>\n  {items}\n</Project>"
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup><TargetFramework>net10.0</TargetFramework>{properties}</PropertyGroup>\n  {compile}\n  {items}\n</Project>"
         ),
     )
     .expect("write the project");
-    let file = project.join(format!("{name}.cs"));
+    let file = project.join(format!("{name}.{ext}"));
     std::fs::write(&file, source).expect("write the source");
     file
 }
@@ -142,35 +176,22 @@ fn write_csharp_project(
 /// A C# project with dead types and no `sharplsp.toml`: the defaults apply.
 fn dead_csharp_workspace() -> (tempfile::TempDir, PathBuf) {
     let workspace = tempfile::tempdir().expect("real C# workspace");
-    let project = workspace.path().join("Dead");
-    std::fs::create_dir_all(&project).expect("project directory");
-    std::fs::write(
-        project.join("Dead.csproj"),
-        r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Library</OutputType></PropertyGroup>
-</Project>"#,
-    )
-    .expect("write the project");
-    std::fs::write(project.join("Dead.cs"), DEAD_CS).expect("write the source");
-    (workspace, project.join("Dead.cs"))
+    let source = write_project(
+        workspace.path(),
+        "Dead",
+        "cs",
+        ["<OutputType>Library</OutputType>", ""],
+        DEAD_CS,
+    );
+    (workspace, source)
 }
 
 /// An F# project with dead code, and a `sharplsp.toml` turning the dead-code analyzer off.
 fn dead_code_workspace() -> (tempfile::TempDir, PathBuf) {
     let workspace = tempfile::tempdir().expect("real F# workspace");
-    let project = workspace.path().join("Dead");
-    std::fs::create_dir_all(&project).expect("project directory");
-    std::fs::write(
-        project.join("Dead.fsproj"),
-        r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup><Compile Include="Dead.fs" /></ItemGroup>
-</Project>"#,
-    )
-    .expect("write the project");
-    std::fs::write(project.join("Dead.fs"), DEAD_FS).expect("write the source");
+    let source = write_project(workspace.path(), "Dead", "fs", ["", ""], DEAD_FS);
     write_configuration(workspace.path(), "[analyzers]\ndead_code = false\n");
-    (workspace, project.join("Dead.fs"))
+    (workspace, source)
 }
 
 /// Replace the workspace's `sharplsp.toml`.

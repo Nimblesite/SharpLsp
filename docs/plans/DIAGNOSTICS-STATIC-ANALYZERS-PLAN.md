@@ -121,8 +121,10 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       severity Information, and tag `Unnecessary`.
 - [x] Full-stack test: unused public F# function in a monorepo solution is
       reported — `configuration_live.rs` step 3: `unusedPublic` reported as an error.
-- [ ] Full-stack test: public F# value referenced by another project is not
-      reported.
+- [x] Full-stack test: public F# value referenced by another project is not
+      reported —
+      `configuration_live.rs` `a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo`
+      (a two-project `.slnx`: only the unused `orphan` is reported).
 - [ ] Full-stack test: `.fsi` public-surface declarations receive diagnostics at
       the signature declaration where possible.
 - [x] Full-stack test: non-monorepo config reports no F# unused-public-code
