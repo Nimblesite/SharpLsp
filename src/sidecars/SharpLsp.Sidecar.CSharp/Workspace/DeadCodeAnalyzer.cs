@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.FindSymbols;
+using SharpLsp.Sidecar.Common;
 
 namespace SharpLsp.Sidecar.CSharp.Workspace;
 
@@ -185,7 +186,7 @@ internal static class DeadCodeAnalyzer
             Message: message,
             Severity: severity,
             Code: DiagnosticCode,
-            HelpLink: SharpLsp.Sidecar.Common.RuleDocumentation.DeadCode,
+            HelpLink: RuleDocumentation.DeadCode,
             Tags: [DiagnosticTags.Unnecessary]
         );
     }
