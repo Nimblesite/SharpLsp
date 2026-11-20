@@ -49,20 +49,32 @@ public static class WorkspaceRestore
         }
     }
 
+    /// <summary>Most SDK restores run at once: each is its own MSBuild process.</summary>
+    private static readonly int ConcurrentRestores = Math.Clamp(Environment.ProcessorCount, 2, 4);
+
+    /// <summary>
+    /// Restore stale projects side by side, bounded, and report the first failure in
+    /// project order; one failure never abandons the rest. [PERF-PROGRESSIVE-LOAD]
+    /// </summary>
     private static async Task<RestoreResult> RestoreProjectsAsync(
         IEnumerable<string> projects,
         CancellationToken ct
     )
     {
-        foreach (var project in projects)
+        var distinct = projects.Distinct(NativePaths.Comparer).ToArray();
+        var results = new RestoreResult[distinct.Length];
+        var bound = new ParallelOptions
         {
-            var result = await EnsureProjectAsync(project, ct).ConfigureAwait(false);
-            if (result.IsError)
-            {
-                return result;
-            }
-        }
-        return new RestoreResult.Ok<Outcome.Unit, string>(Outcome.Unit.Value);
+            MaxDegreeOfParallelism = ConcurrentRestores,
+            CancellationToken = ct,
+        };
+        await Parallel
+            .ForEachAsync(Enumerable.Range(0, distinct.Length), bound, async (at, token) =>
+                results[at] = await EnsureProjectAsync(distinct[at], token).ConfigureAwait(false)
+            )
+            .ConfigureAwait(false);
+        return results.FirstOrDefault(result => result.IsError)
+            ?? new RestoreResult.Ok<Outcome.Unit, string>(Outcome.Unit.Value);
     }
 
     private static async Task<RestoreResult> EnsureProjectAsync(
