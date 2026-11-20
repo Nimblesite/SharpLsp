@@ -150,6 +150,83 @@ fn a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo() {
     session.client.shutdown_and_exit();
 }
 
+/// [ANALYZERS-CROSS-LANGUAGE]: a public F# function that only C# calls is live.
+/// FCS sees no C# caller, so the F# analyzer alone would call it dead — in a
+/// monorepo, as an ERROR on code the solution uses.
+#[test]
+fn a_public_fsharp_function_only_csharp_calls_is_not_dead_in_a_monorepo() {
+    require_dotnet();
+    let workspace = tempfile::tempdir().expect("real mixed solution");
+    let root = workspace.path();
+    let library = write_project(
+        root,
+        "Lib",
+        "fs",
+        ["<OutputType>Library</OutputType>", ""],
+        "module Lib.Values\n\nlet used () = 1\n\nlet orphan () = 2\n",
+    );
+    let _app = write_project(
+        root,
+        "App",
+        "cs",
+        [
+            "<OutputType>Exe</OutputType>",
+            r#"<ItemGroup><ProjectReference Include="../Lib/Lib.fsproj" /></ItemGroup>"#,
+        ],
+        "internal static class Program\n{\n    private static int Main() => Lib.Values.used();\n}\n",
+    );
+    std::fs::write(
+        root.join("Mixed.slnx"),
+        "<Solution>\n  <Project Path=\"Lib/Lib.fsproj\" />\n  <Project Path=\"App/App.csproj\" />\n</Solution>\n",
+    )
+    .expect("write the solution");
+    write_configuration(root, "[analyzers]\ndead_code = true\nmonorepo = true\n");
+    let mut session = LiveSession::start(root, &library, "SLSPF0101");
+
+    // C#'s call keeps `used` alive. FCS cannot see C# callers, so neither can it
+    // prove `orphan` unused: [ANALYZERS-TRUTH] prefers silence to a false error.
+    session.await_dead(&[]);
+    session.client.shutdown_and_exit();
+}
+
+/// The other direction: Roslyn sees no F# caller, so a public C# type only F#
+/// uses must not be reported dead either.
+#[test]
+fn a_public_csharp_type_only_fsharp_uses_is_not_dead_in_a_monorepo() {
+    require_dotnet();
+    let workspace = tempfile::tempdir().expect("real mixed solution");
+    let root = workspace.path();
+    let library = write_project(
+        root,
+        "Lib",
+        "cs",
+        ["<OutputType>Library</OutputType>", ""],
+        "namespace Lib;\n\npublic sealed class Used { }\n\npublic sealed class Orphan { }\n",
+    );
+    let _app = write_project(
+        root,
+        "App",
+        "fs",
+        [
+            "<OutputType>Exe</OutputType>",
+            r#"<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>"#,
+        ],
+        "module App.Program\n\n[<EntryPoint>]\nlet main _ =\n    Lib.Used() |> ignore\n    0\n",
+    );
+    std::fs::write(
+        root.join("Mixed.slnx"),
+        "<Solution>\n  <Project Path=\"Lib/Lib.csproj\" />\n  <Project Path=\"App/App.fsproj\" />\n</Solution>\n",
+    )
+    .expect("write the solution");
+    write_configuration(root, "[analyzers]\ndead_code = true\nmonorepo = true\n");
+    let mut session = LiveSession::start(root, &library, "SLSPC0101");
+
+    // F#'s use keeps `Used` alive; `Orphan` is reported only if the analyzer can
+    // prove no F# code uses it, which it cannot — so neither is reported.
+    session.await_dead(&[]);
+    session.client.shutdown_and_exit();
+}
+
 /// Write `<name>/<name>.<ext>proj` with `properties` and `items`, and its one
 /// source `<name>.<ext>` (`cs` or `fs`; F# lists it in compile order); returns the source.
 fn write_project(root: &Path, name: &str, ext: &str, settings: [&str; 2], source: &str) -> PathBuf {
@@ -263,9 +340,16 @@ impl LiveSession {
     /// Pull until exactly `expected` is reported dead, within [`NOTICED`].
     fn await_dead(&mut self, expected: &[(&str, u64)]) {
         let expected = owned(expected);
-        self.wait_for(NOTICED, "the new analyzer settings", |session| {
-            session.dead() == expected
-        });
+        let mut last = Vec::new();
+        let deadline = Instant::now() + NOTICED;
+        while Instant::now() < deadline {
+            last = self.dead();
+            if last == expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        panic!("expected {expected:?} dead; the last pull reported {last:?}");
     }
 
     /// The restart warning received so far, if any.
