@@ -17,7 +17,12 @@ import {
   stopInTestSource,
   useDebugTestFixture,
 } from './debug-test-harness';
-import { assertHandshakeOrder, type TestDebugFixture } from './debug-test-kit';
+import {
+  assertHandshakeOrder,
+  assertNoTerminalLeft,
+  type TestDebugFixture,
+} from './debug-test-kit';
+import { TEST_DEBUG_TERMINAL_NAME } from '../../test-debug';
 import { EXPECTO_ALL, EXPECTO_NESTED, EXPECTO_PASSING, EXPECTO_SOURCE } from './expecto-fixture';
 import { DebugSessionRecorder } from './run-debug-kit';
 import { deepEq, eq, neq } from './test-helpers';
@@ -96,5 +101,7 @@ suite('Debug an Expecto test — a breakpoint inside a testCase lambda', () => {
     eq(sessions.ours.length, 1, 'yet a real session attached and ran it');
     deepEq(stubs.log.errorMessages, [], 'and nothing was reported as an error');
     assertSessionEnded(recorder, 'the nested Expecto case');
+    // Run to the END: the `dotnet test` run itself settles and closes its terminal.
+    await assertNoTerminalLeft(TEST_DEBUG_TERMINAL_NAME, 'the nested case run settled');
   });
 });
