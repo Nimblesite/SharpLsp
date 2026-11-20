@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import { configuredSolution, findSolutions } from '../../solution.js';
 import {
   activation,
+  assertSameFiles,
   configurationClient,
   NO_COMPILERS as BASE,
   WorkspaceMemory,
@@ -60,11 +61,11 @@ suite('A configured solution is loaded without asking [SE-SOLUTION]', () => {
       const memory = new WorkspaceMemory();
       const configured: string[] = [];
       const selection = await configuredSolution(client);
-      assert.strictEqual(selection?.path, app, 'the relative entry is the file under the root');
-      assert.strictEqual(selection.name, 'App.sln', 'named by its own file');
+      assertSameFiles([selection?.path], [app], 'the relative entry is the file under the root');
+      assert.strictEqual(selection?.name, 'App.sln', 'named by its own file');
       await activation(memory, configured, client, asked).selectAndLoad();
       assert.strictEqual(asked.length, 1, 'a configured workspace never asks');
-      assert.deepStrictEqual(configured, [app], 'the configured solution is the one loaded');
+      assertSameFiles(configured, [app], 'the configured solution is the one loaded');
 
       // 3 — an absolute entry that moves the setting beats what step 2 remembered.
       fs.writeFileSync(toml, `${BASE}solution_path = ${JSON.stringify(other)}\n`);

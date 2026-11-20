@@ -17,7 +17,12 @@ import type { SharpLspExtensionApi } from '../../extension.js';
 import { type SolutionLoader, solutionLoader } from '../../solution-load.js';
 import type { SharpLspClient } from '../../client';
 import { createSolution, projectXml, warmDiscovery, writeProject } from './dotnet-project-kit';
-import { configurationClient, NO_COMPILERS, WorkspaceMemory } from './solution-loader-kit';
+import {
+  assertSameFiles,
+  configurationClient,
+  NO_COMPILERS,
+  WorkspaceMemory,
+} from './solution-loader-kit';
 import {
   activateTestExplorer,
   clearTestTree,
@@ -189,7 +194,7 @@ suite('Test Explorer follows the solution the loader chooses [SE-SOLUTION]', () 
     await reloadWindow();
     await activation(memory, true).selectAndLoad();
     assert.strictEqual(stubs.log.quickPickItems.length, 1, 'a configured solution never asks');
-    assert.strictEqual(memory.get(REMEMBERED), csharp.sln, 'and becomes the remembered one');
+    assertSameFiles([memory.get(REMEMBERED)], [csharp.sln], 'and becomes the remembered one');
     await assertShows(csharp, fsharp, 'the configured C# solution');
 
     // 4 — the configured file is gone: the remembered C# solution stands in, unasked.

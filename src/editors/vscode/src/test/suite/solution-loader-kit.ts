@@ -7,6 +7,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { SharpLspClient } from '../../client';
+import { samePath } from '../../paths';
 import { type SolutionLoader, solutionLoader } from '../../solution-load.js';
 import type { SolutionExplorerProvider } from '../../tree.js';
 import { fakeFolder } from './run-debug-kit';
@@ -14,6 +15,23 @@ import { findSharpLspBinary } from './test-helpers';
 
 /** No compiler: a client that only answers which solution `sharplsp.toml` configures. */
 export const NO_COMPILERS = '[fsharp]\nenabled = false\n[csharp]\nenabled = false\n';
+
+/**
+ * `actual` names exactly the files `expected` does, in order, under the product's
+ * own path identity: VS Code spells a Windows drive `c:`, the OS spells it `C:`.
+ * [SHARPLSP-ARCHITECTURE-PATHS]
+ */
+export function assertSameFiles(
+  actual: readonly (string | undefined)[],
+  expected: readonly string[],
+  why: string,
+): void {
+  assert.strictEqual(actual.length, expected.length, `${why}: ${actual.join(', ')}`);
+  expected.forEach((file, at) => {
+    const seen = actual[at];
+    assert.ok(seen !== undefined && samePath(seen, file), `${why}: ${String(seen)} is not ${file}`);
+  });
+}
 
 /** A real server rooted at `root`, so `sharplsp/configuration` reads ITS `sharplsp.toml`. */
 export function configurationClient(root: string): SharpLspClient {
