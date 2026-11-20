@@ -1,6 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Serilog;
 using SharpLsp.Sidecar.Common;
+using SharpLsp.Sidecar.Common.Solutions;
 using DiagnosticsResult = Outcome.Result<
     System.Collections.Generic.List<SharpLsp.Sidecar.CSharp.DiagnosticResult>,
     string
@@ -17,6 +18,12 @@ internal sealed partial class WorkspaceManager
 {
     private bool _deadCodeEnabled;
     private bool _monorepo;
+
+    /// <summary>
+    /// The workspace's C# projects an F# project references: Roslyn cannot see their F#
+    /// callers, so their public symbols are never reported unused (#617). [ANALYZERS-TRUTH]
+    /// </summary>
+    private CrossLanguageReferences _crossLanguage = CrossLanguageReferences.None;
 
     /// <summary>
     /// Whether project analyzers — the SDK/NuGet analyzers the project references and
@@ -41,6 +48,12 @@ internal sealed partial class WorkspaceManager
     /// Defaults are off so direct test construction never gets dead-code diagnostics
     /// unless explicitly enabled; the host always configures in production.
     /// </summary>
+    /// <summary>Record which C# projects of <paramref name="path"/> F# code references.</summary>
+    private async Task RecordCrossLanguageReferencesAsync(string path, CancellationToken ct)
+    {
+        _crossLanguage = await CrossLanguageReferences.OfAsync(path, ct).ConfigureAwait(false);
+    }
+
     public void ConfigureAnalyzers(bool deadCode, bool monorepo)
     {
         _deadCodeEnabled = deadCode;
@@ -212,8 +225,9 @@ internal sealed partial class WorkspaceManager
         var scope = await SearchScope
             .OfAsync(document, _activeFrameworks, ct)
             .ConfigureAwait(false);
+        var sharedWithFSharp = _crossLanguage.Contains(document.Project.FilePath ?? "");
         return await DeadCodeAnalyzer
-            .AnalyzeAsync(document, scope, _monorepo, ct)
+            .AnalyzeAsync(document, scope, new DeadCodeMode(_monorepo, sharedWithFSharp), ct)
             .ConfigureAwait(false);
     }
 

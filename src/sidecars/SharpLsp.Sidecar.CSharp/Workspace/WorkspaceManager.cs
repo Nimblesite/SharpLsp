@@ -326,6 +326,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         var (target, candidates) = +discovered;
         var standalone = (+discovered).Projects;
+        await RecordCrossLanguageReferencesAsync(path, ct).ConfigureAwait(false);
 
         if (target is null)
         {

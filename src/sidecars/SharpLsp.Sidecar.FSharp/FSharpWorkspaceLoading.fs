@@ -10,6 +10,7 @@ open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
 open Serilog
 open SharpLsp.Sidecar.Common
+open SharpLsp.Sidecar.Common.Solutions
 open SharpLsp.Sidecar.FSharp.FSharpOwningEpoch
 open SharpLsp.Sidecar.FSharp.FSharpWorkspace
 
@@ -99,6 +100,13 @@ let private loadDiscoveredProject (state: FSharpWorkspaceState) (discovered: Res
                 return Error message
     }
 
+/// Record which of `path`'s F# projects a C# project references. [ANALYZERS-TRUTH]
+let private recordCrossLanguageReferences (state: FSharpWorkspaceState) (path: string) ct =
+    task {
+        let! referenced = CrossLanguageReferences.OfAsync(path, ct)
+        state.CrossLanguage <- referenced
+    }
+
 /// Load a project, solution, workspace directory, or self-describing script.
 let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct: CancellationToken) =
     task {
@@ -108,6 +116,7 @@ let loadProjectWithCancellation (state: FSharpWorkspaceState) (path: string) (ct
             if File.Exists(path) && FSharpProjectLoading.isScriptPath path then
                 return! loadScript state (NativePaths.NormalizeFullPath path) ct
             else
+                do! recordCrossLanguageReferences state path ct
                 let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
                 return! loadDiscoveredProject state discovered true ct
         with ex ->
@@ -134,6 +143,7 @@ let loadWorkspaceWithCancellation (state: FSharpWorkspaceState) path autoRestore
         if FSharpProjectLoading.isScriptPath path then
             return! loadProjectWithCancellation state path ct
         else
+            do! recordCrossLanguageReferences state path ct
             let! discovered = FSharpProjectLoading.discoverFsprojFiles path ct
             match discovered with
             | Error message -> return Error message

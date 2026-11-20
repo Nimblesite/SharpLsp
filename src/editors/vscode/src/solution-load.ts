@@ -3,7 +3,8 @@
  * work from, and the debounced tree refresh that follows source or solution
  * file changes. Implements [SE-SOLUTION] and [SE-LOADING-FEEDBACK].
  */
-import { type ExtensionContext, window, workspace } from 'vscode';
+import * as fs from 'node:fs';
+import { type ExtensionContext, type Memento, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { VIEW_SOLUTION_EXPLORER } from './constants.js';
 import * as log from './log.js';
@@ -16,12 +17,16 @@ import { getErrorMessage } from './utils.js';
 export interface SolutionLoaderDeps {
   readonly client: () => LanguageClient | undefined;
   readonly explorer: () => SolutionExplorerProvider | undefined;
+  /** Per-workspace storage that outlives a window reload; absent until activation. */
+  readonly memory?: Memento;
 }
 
 /** Solution selection and loading bound to one extension activation. */
 export interface SolutionLoader {
-  /** Select a solution (auto or user-picked) and load it into the explorer. */
+  /** Reopen the remembered solution, else select one (auto or user-picked) and load it. */
   readonly selectAndLoad: () => Promise<void>;
+  /** Always ask which solution to load: the user is switching on purpose. */
+  readonly pickAndLoad: () => Promise<void>;
   /** Load a solution into the explorer tree AND the LSP sidecar. */
   readonly load: (selected: solution.SolutionSelection) => Promise<void>;
   /** Re-fetch workspace symbols when source or solution files change. */
@@ -31,6 +36,27 @@ export interface SolutionLoader {
 const REFRESH_DEBOUNCE_MS = 1_000;
 const RELEVANT_LANGUAGES = new Set(['csharp', 'fsharp']);
 const SOLUTION_FILE_GLOB = '**/*.{sln,slnx}';
+/** The workspace-storage key holding the solution last loaded in this workspace. */
+const REMEMBERED_SOLUTION = 'sharplsp.solution';
+
+/** The remembered solution while its file still exists; a deleted one is forgotten. */
+function remembered(memory: Memento | undefined): solution.SolutionSelection | undefined {
+  const stored = memory?.get<string>(REMEMBERED_SOLUTION);
+  if (stored === undefined || !fs.existsSync(stored)) return undefined;
+  return solution.toSolutionSelections([stored])[0];
+}
+
+/** The configured solution; a server that cannot answer leaves the choice open. */
+async function configured(
+  client: LanguageClient | undefined,
+): Promise<solution.SolutionSelection | undefined> {
+  try {
+    return await solution.configuredSolution(client);
+  } catch (err: unknown) {
+    log.warn(`Configured solution not read: ${getErrorMessage(err)}`);
+    return undefined;
+  }
+}
 
 /** Build the loader; selection generations make a superseded pick a no-op. */
 export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
@@ -61,12 +87,26 @@ export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
     try {
       await reloadSidecars(deps.client(), selected.path);
       await deps.explorer()?.loadSolution(selected.path);
+      await deps.memory?.update(REMEMBERED_SOLUTION, selected.path);
     } finally {
       sharedState.endLoadPhase(phase);
     }
   };
 
+  // `csharp.solution_path` settles the choice, then what this workspace last
+  // loaded; only a workspace with neither is asked.
+  // [SHARPLSP-ARCHITECTURE-PROJECTS-SOLUTION-PATH]
   const selectAndLoad = async (): Promise<void> => {
+    const known = (await configured(deps.client())) ?? remembered(deps.memory);
+    if (known === undefined) {
+      await pickAndLoad();
+      return;
+    }
+    log.info(`Opening the configured or remembered solution: ${known.path}`);
+    await load(known);
+  };
+
+  const pickAndLoad = async (): Promise<void> => {
     const started = ++generation;
     const initialSolution = sharedState.solutionPath.value;
     // [SE-LOADING-FEEDBACK]: `window.withProgress` puts a native progress bar in
@@ -113,7 +153,7 @@ export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
     log.traceInfo(`Solution file watcher active: ${SOLUTION_FILE_GLOB}`);
   };
 
-  return { selectAndLoad, load, wireRefresh };
+  return { selectAndLoad, pickAndLoad, load, wireRefresh };
 }
 
 /** Scan the workspace; a failed scan must still clear the discovery phase. */

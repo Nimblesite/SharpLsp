@@ -28,14 +28,18 @@ type AnalyzerConfig =
       DeadCodeEnabled: bool
       /// Whether the workspace is the entire world (monorepo). When true, unused
       /// public symbols are dead-code errors; when false they are skipped.
-      Monorepo: bool }
+      Monorepo: bool
+      /// Whether the declaring project is referenced from C#, whose callers FCS cannot
+      /// see: its public symbols can never be proven unused (#617). [ANALYZERS-TRUTH]
+      SharedAcrossLanguages: bool }
 
     /// Conservative defaults: dead-code on, monorepo off (public API preserved).
-    static member Default = { DeadCodeEnabled = true; Monorepo = false }
+    static member Default =
+        { DeadCodeEnabled = true; Monorepo = false; SharedAcrossLanguages = false }
 
     /// Build a config from the wire flags the host pushes via `analyzers/configure`.
     static member Create(deadCode: bool, monorepo: bool) =
-        { DeadCodeEnabled = deadCode; Monorepo = monorepo }
+        { DeadCodeEnabled = deadCode; Monorepo = monorepo; SharedAcrossLanguages = false }
 
 /// Stable identity for a declaration site, used to test whether a symbol is
 /// referenced anywhere. Two uses of the same symbol share a declaration range.
@@ -88,8 +92,9 @@ let private classifyDead
     match symbol with
     | :? FSharpMemberOrFunctionOrValue as mfv when isDeadCodeCandidate mfv ->
         let isPublic = mfv.Accessibility.IsPublic
-        // Public symbols are only dead when the monorepo is the whole world.
-        if isPublic && not config.Monorepo then
+        // Public symbols are only dead when the monorepo is the whole world, and never
+        // provably so when C# — whose callers FCS cannot see — references the project.
+        if isPublic && (not config.Monorepo || config.SharedAcrossLanguages) then
             None
         else
             let severity = if config.Monorepo then "Error" else "Warning"
@@ -157,6 +162,11 @@ let deadCodeInFile (workspace: FSharpWorkspace.FSharpWorkspaceState) (config: An
         else
             let scope = FSharpWorkspace.queryScope workspace filePath
             let projects = if config.Monorepo then scope else List.truncate 1 scope
+            let shared =
+                scope
+                |> List.tryHead
+                |> Option.exists (fun own -> workspace.CrossLanguage.Contains own.ProjectFileName)
+            let config = { config with SharedAcrossLanguages = shared }
             let! checkedProjects = FSharpWorkspace.checkAllWithCancellation workspace projects ct
             let uses = checkedProjects |> Seq.collect _.GetAllUsesOfAllSymbols() |> Array.ofSeq
             return deadCodeDiagnosticsForFile config uses filePath

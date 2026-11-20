@@ -152,7 +152,13 @@ fn a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo() {
 
 /// Write `<name>/<name>.<ext>proj` with `properties` and `items`, and its one
 /// source `<name>.<ext>` (`cs` or `fs`; F# lists it in compile order); returns the source.
-fn write_project(root: &Path, name: &str, ext: &str, settings: [&str; 2], source: &str) -> PathBuf {
+pub(super) fn write_project(
+    root: &Path,
+    name: &str,
+    ext: &str,
+    settings: [&str; 2],
+    source: &str,
+) -> PathBuf {
     let [properties, items] = settings;
     let project = root.join(name);
     std::fs::create_dir_all(&project).expect("project directory");
@@ -195,13 +201,13 @@ fn dead_code_workspace() -> (tempfile::TempDir, PathBuf) {
 }
 
 /// Replace the workspace's `sharplsp.toml`.
-fn write_configuration(root: &Path, text: &str) {
+pub(super) fn write_configuration(root: &Path, text: &str) {
     std::fs::write(root.join("sharplsp.toml"), text).expect("write the workspace configuration");
 }
 
 /// A real server over the dead-code workspace, with every message it sent.
-struct LiveSession {
-    client: LspClient,
+pub(super) struct LiveSession {
+    pub(super) client: LspClient,
     uri: String,
     /// The dead-code rule of the source's language: `SLSPF0101` or `SLSPC0101`.
     code: &'static str,
@@ -210,7 +216,7 @@ struct LiveSession {
 
 impl LiveSession {
     /// Start the server with pull diagnostics and wait until the project loads.
-    fn start(root: &Path, source: &Path, code: &'static str) -> Self {
+    pub(super) fn start(root: &Path, source: &Path, code: &'static str) -> Self {
         let mut client = LspClient::spawn_in(Stdio::null(), Some(root));
         let initialized = client.initialize_with_capabilities(
             json!(path_to_file_uri(root)),
@@ -261,11 +267,18 @@ impl LiveSession {
     }
 
     /// Pull until exactly `expected` is reported dead, within [`NOTICED`].
-    fn await_dead(&mut self, expected: &[(&str, u64)]) {
+    pub(super) fn await_dead(&mut self, expected: &[(&str, u64)]) {
         let expected = owned(expected);
-        self.wait_for(NOTICED, "the new analyzer settings", |session| {
-            session.dead() == expected
-        });
+        let mut last = Vec::new();
+        let deadline = Instant::now() + NOTICED;
+        while Instant::now() < deadline {
+            last = self.dead();
+            if last == expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        panic!("expected {expected:?} dead; the last pull reported {last:?}");
     }
 
     /// The restart warning received so far, if any.

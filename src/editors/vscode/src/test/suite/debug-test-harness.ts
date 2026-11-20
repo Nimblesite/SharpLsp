@@ -23,6 +23,7 @@ import { assertStopReason, topFrame, type Frame } from './debug-drive-kit';
 import { assertBoundAtLines, useArmedRecorders } from './debug-suite-kit';
 import {
   assertHandshakeOrder,
+  assertNoTerminalLeft,
   assertOneTestSession,
   breakpointAt,
   disposeDebugTestFixture,
@@ -32,6 +33,7 @@ import {
   type FixtureRunner,
   type TestDebugFixture,
 } from './debug-test-kit';
+import { TEST_DEBUG_TERMINAL_NAME } from '../../test-debug';
 import { DebugSessionRecorder, type ObservedSession } from './run-debug-kit';
 import {
   activateTestExplorer,
@@ -71,7 +73,13 @@ export function useDebugTestFixture(
 
   suiteTeardown(async function () {
     this.timeout(FIXTURE_BUILD_MS);
-    await disposeDebugTestFixture(fixture);
+    try {
+      // A debug run outlives its session by the `dotnet test` wrap-up; deleting
+      // the project under it strands that run and its terminal in the NEXT suite.
+      await assertNoTerminalLeft(TEST_DEBUG_TERMINAL_NAME, 'every debug run settled first');
+    } finally {
+      await disposeDebugTestFixture(fixture);
+    }
   });
 
   return useArmedRecorders(() => ({ fixture }), 'debug-test');
