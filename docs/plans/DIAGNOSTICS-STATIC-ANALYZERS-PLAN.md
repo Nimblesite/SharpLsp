@@ -23,10 +23,12 @@ Implements [ANALYZERS-MONOREPO-GATE] and [ANALYZERS-SOLUTION-SCOPE].
 - [x] Hot-reload workspace/static-analyzer config through
       `workspace/didChangeConfiguration` (shipped as `[analyzers] dead_code`/`monorepo`) — `configuration_live.rs` `reconfigure`;
       e2e `analyzer_settings_from_the_editor_or_the_file_apply_to_the_next_pull` (editor and on-disk edits).
-- [ ] Bump `global_state_version` and send `workspace/diagnostic/refresh` when
-      monorepo/static-analyzer settings change.
-- [ ] Full-stack test: default config produces no unused-public-code
-      diagnostics.
+- [x] Bump `global_state_version` and send `workspace/diagnostic/refresh` when
+      monorepo/static-analyzer settings change — `configuration_live.rs` `reconfigure` →
+      `pull_diagnostics::state::configure` invalidates the store (its revision) and schedules the
+      refresh; `csharp_unused_public_types_are_dead_only_in_a_monorepo` waits for it after each switch.
+- [x] Full-stack test: default config produces no unused-public-code
+      diagnostics — same test, step 1: no `sharplsp.toml`, only the internal type is reported.
 - [x] Full-stack test: `repository_kind = "standard"` suppresses the analyzer
       even when `unused_public_symbols = true` (shipped as `[analyzers] dead_code`/`monorepo`) — same e2e, step 2: `dead_code` on,
       no monorepo, the public F# function is not reported.

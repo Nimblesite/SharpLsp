@@ -60,23 +60,29 @@ fn csharp_unused_public_types_are_dead_only_in_a_monorepo() {
     let (workspace, source) = dead_csharp_workspace();
     let mut session = LiveSession::start(workspace.path(), &source, "SLSPC0101");
 
-    // 1. A standard repository: the internal type is dead, a warning; the public one is API.
+    // 1. No configuration at all: the default is a standard repository, so the
+    //    internal type is dead, a warning, and the public one is possible API.
     session.await_dead(&[("Hidden", 2)]);
 
-    // 2. The file declares a monorepo: the public type is dead too, and both are errors.
+    // 2. The file declares a monorepo: the public type is dead too, and both are
+    //    errors — and the editor is told to pull again rather than left stale.
+    let refreshes = session.count("workspace/diagnostic/refresh");
     write_configuration(
         workspace.path(),
         "[analyzers]\ndead_code = true\nmonorepo = true\n",
     );
     session.await_dead(&[("Hidden", 1), ("Orphan", 1)]);
+    session.await_refresh_after(refreshes, "a monorepo switch");
 
-    // 3. Back to a standard repository: the public type is API again.
+    // 3. Back to a standard repository: the public type is API again, refreshed again.
+    let refreshes = session.count("workspace/diagnostic/refresh");
     write_configuration(workspace.path(), "[analyzers]\ndead_code = true\n");
     session.await_dead(&[("Hidden", 2)]);
+    session.await_refresh_after(refreshes, "leaving monorepo mode");
     session.client.shutdown_and_exit();
 }
 
-/// A C# project with dead types, and a `sharplsp.toml` turning the dead-code analyzer on.
+/// A C# project with dead types and no `sharplsp.toml`: the defaults apply.
 fn dead_csharp_workspace() -> (tempfile::TempDir, PathBuf) {
     let workspace = tempfile::tempdir().expect("real C# workspace");
     let project = workspace.path().join("Dead");
@@ -89,7 +95,6 @@ fn dead_csharp_workspace() -> (tempfile::TempDir, PathBuf) {
     )
     .expect("write the project");
     std::fs::write(project.join("Dead.cs"), DEAD_CS).expect("write the source");
-    write_configuration(workspace.path(), "[analyzers]\ndead_code = true\n");
     (workspace, project.join("Dead.cs"))
 }
 
@@ -198,6 +203,24 @@ impl LiveSession {
             session.restart_warning().is_some()
         });
         self.restart_warning().expect("the restart warning arrived")
+    }
+
+    /// How many messages of `method` the server has sent so far.
+    fn count(&self, method: &str) -> usize {
+        self.traffic
+            .iter()
+            .filter(|message| message["method"] == method)
+            .count()
+    }
+
+    /// Wait, within [`NOTICED`], for a `workspace/diagnostic/refresh` beyond the
+    /// `seen` already counted: the server debounces it after a settings change.
+    fn await_refresh_after(&mut self, seen: usize, change: &str) {
+        self.wait_for(
+            NOTICED,
+            &format!("a diagnostic refresh after {change}"),
+            |session| session.count("workspace/diagnostic/refresh") > seen,
+        );
     }
 
     /// The last notification of `method` the server sent.
