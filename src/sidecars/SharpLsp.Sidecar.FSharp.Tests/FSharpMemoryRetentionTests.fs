@@ -86,6 +86,69 @@ let ``reloading a project releases the builds of the options it replaced`` () =
 /// Long past the grace a fresh sidecar gets to load its workspace.
 let private settled = TimeSpan.FromHours 1.0
 
+/// A weak handle on a referenced assembly's cached entity: alive for as long as the
+/// workspace's entity cache holds the build that made it. Not inlined, so no local of
+/// the calling test keeps the entity alive.
+[<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)>]
+let private referencedEntity state (results: FSharp.Compiler.CodeAnalysis.FSharpCheckFileResults) =
+    FSharpEntityIndex.entities state results ()
+    |> List.find (fun entity -> entity.FullName = "System.Object")
+    |> WeakReference
+
+/// Whether a full collection frees what `handle` points at.
+let private collected (handle: WeakReference) =
+    GC.Collect()
+    GC.WaitForPendingFinalizers()
+    GC.Collect()
+    not handle.IsAlive
+
+/// Check `file`, build its project's referenced entities, and return the project
+/// context with a weak handle on one of them, asserting the cache holds them.
+let private warmedEntities (state: FSharpWorkspace.FSharpWorkspaceState) file =
+    task {
+        let! checkedFile = FSharpWorkspace.checkFile state file
+        let results = fst checkedFile.Value
+        FSharpEntityIndex.warm state results.ProjectContext Threading.CancellationToken.None
+        Assert.True(entitiesBuilt state results.ProjectContext, "warming builds the referenced entities")
+        let handle = referencedEntity state results
+        Assert.False(collected handle, "the cache holds the entities of the current build")
+        return results.ProjectContext, handle
+    }
+
+/// Each cached entity is an FCS symbol that holds the import tables of the build that
+/// made it, so entities kept across a reload pin every build the workspace ever had:
+/// thirteen hours of reloads held 17 import tables for 4 projects, 1.5 GB live.
+/// A reload and a budget trim both release them. [SIDECAR-PROCESS-MEMORY] (GitHub #566)
+[<Fact>]
+let ``a reload and a trim release the referenced entities of the build they replace`` () =
+    withProject (fun state root file ->
+        task {
+            let project = NativePaths.Resolve(root, "Leak", "Leak.fsproj")
+
+            // Interaction 1 — a checked, warmed project holds its referenced entities.
+            let! context, first = warmedEntities state file
+            Assert.NotEmpty(FSharpEntityIndex.referencedFiles context)
+
+            // Interaction 2 — a reload releases them with the build it replaces.
+            addFile project 1
+            let! reloaded = FSharpWorkspaceLoading.loadProject state root
+            Assert.True(Result.isOk reloaded, $"the reload succeeds: {reloaded}")
+            Assert.False(entitiesBuilt state context, "the reload emptied the entity cache")
+            Assert.True(collected first, "nothing pins the replaced build's entities")
+
+            // Interaction 3 — rebuilt on demand, then a trim over the soft limit releases them too.
+            let! rebuilt, second = warmedEntities state file
+            let stops = Collections.Generic.List<int>()
+            watch state budget settled (readings [ 1500L; 1200L ]) stops.Add |> ignore
+            Assert.Empty(stops)
+            Assert.False(entitiesBuilt state rebuilt, "the trim emptied the entity cache")
+            Assert.True(collected second, "nothing pins the trimmed build's entities")
+
+            // Interaction 4 — the workspace still answers, rebuilding what it needs.
+            let! _, third = warmedEntities state file
+            Assert.False(collected third, "the entities are rebuilt for the current build")
+        })
+
 /// One check of a settled sidecar: the budget it keeps next, and the exit codes it asked for.
 let private checkOnce state values =
     let stops = Collections.Generic.List<int>()
@@ -124,7 +187,11 @@ let ``still over the hard limit after trimming asks for a restart`` () =
             Assert.Equal<int list>([ OverLimitExitCode ], snd (checkOnce state [ 3000L; 2001L ]))
             Assert.False(cached state file options, "the sidecar trimmed before giving up")
             Assert.Equal(3, OverLimitExitCode)
-            Assert.True(residentBytes () > 0L, "the live measurement reads this process's resident set")
+            use self = Diagnostics.Process.GetCurrentProcess()
+            let held = heldBytes ()
+            Assert.True(held > 0L, "the live measurement reads this process's memory")
+            Assert.True(held >= GC.GetGCMemoryInfo().TotalCommittedBytes / 2L, "swapped-out heap still counts: the committed heap is a floor")
+            Assert.True(held >= self.WorkingSet64 / 2L, "and so is the resident set")
         })
 
 [<Fact>]

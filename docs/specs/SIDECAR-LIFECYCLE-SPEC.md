@@ -207,16 +207,16 @@ A generation-scoped watcher reports every exit. Zero exit after acknowledged shu
 
 ### Memory Budget `[SIDECAR-PROCESS-MEMORY]`
 
-The F# sidecar keeps its resident set under a budget, because FSharp.Compiler.Service keeps every project builder, typed tree and check result it has made (GitHub #566).
+The F# sidecar keeps the memory it holds under a budget, because FSharp.Compiler.Service keeps every project builder, typed tree and check result it has made (GitHub #566).
 
 - **Soft limit:** 2 GB by default. A fully checked twelve-project F# repository settles near 1.5 GB, so a lower default would trim a healthy workspace into a rebuild loop. Set it in megabytes with `SHARPLSP_FSHARP_MEMORY_LIMIT_MB`; a missing, malformed or non-positive value keeps the default.
 - **Hard limit:** always twice the soft limit.
-- **Check:** every 30 s, the process entry point measures the working set.
-  - Above the soft limit, the sidecar invalidates every checker cache, collects, and logs the before and after sizes. Later requests rebuild what they need.
+- **Check:** every 30 s, the process entry point measures the larger of the working set and the heap the collector has committed. The working set alone reads low once the OS compresses or swaps an idle sidecar's pages, so it can never be the only measure.
+  - Above the soft limit, the sidecar invalidates every checker cache and its referenced-entity cache, collects, and logs the before and after sizes. Later requests rebuild what they need.
   - A trim raises the soft limit to the size it trimmed at plus an eighth of the hard limit, for the life of the process. A workspace whose live set settles above the default soft limit is therefore trimmed once, not every 30 s; only growth past the raised limit trims again.
   - Still above the hard limit after a trim, a sidecar older than ten minutes logs an error and exits with code `3`. The host's backoff restart ([SIDECAR-PROCESS-EXIT]) then brings up a fresh sidecar.
   - A sidecar that is over the hard limit within its first ten minutes holds a workspace that large: a restart would reload straight back over the limit. It keeps serving and logs an error naming `SHARPLSP_FSHARP_MEMORY_LIMIT_MB`. The size that trim reached is the workspace's proven floor, so the hard limit rises to it plus an eighth of the hard limit for the life of the process. A later trim that gets back under that raised limit keeps serving; only one that cannot exits. Judging it by the old limit restarted it every time its caches regrew, and each restart reloaded straight back to the same size.
-- **Reloads:** a workspace reload releases the builds of the options it replaced.
+- **Reloads:** a workspace reload releases the builds of the options it replaced, and the referenced-entity cache with them: each cached entity is a compiler symbol that holds the import tables of the build that made it.
 - **GC:** the sidecar runs with `System.GC.ConserveMemory`, so the collector compacts rather than grow the heap between collections.
 - **Tests:** in-process test hosts never start the budget.
 
