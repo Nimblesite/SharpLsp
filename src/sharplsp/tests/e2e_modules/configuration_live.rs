@@ -82,6 +82,63 @@ fn csharp_unused_public_types_are_dead_only_in_a_monorepo() {
     session.client.shutdown_and_exit();
 }
 
+/// [ANALYZERS-REFERENCE-MODEL] solution-wide: in a monorepo, a public C# type
+/// another project of the solution uses is live, and only the one nobody uses
+/// is dead.
+#[test]
+fn a_public_csharp_type_another_project_uses_is_not_dead_in_a_monorepo() {
+    require_dotnet();
+    let workspace = tempfile::tempdir().expect("real C# solution");
+    let root = workspace.path();
+    let library = write_csharp_project(
+        root,
+        "Lib",
+        "<OutputType>Library</OutputType>",
+        "",
+        "namespace Lib;\n\npublic sealed class Used { }\n\npublic sealed class Orphan { }\n",
+    );
+    let _app = write_csharp_project(
+        root,
+        "App",
+        "<OutputType>Exe</OutputType>",
+        r#"<ItemGroup><ProjectReference Include="../Lib/Lib.csproj" /></ItemGroup>"#,
+        "internal static class Program\n{\n    private static void Main() => _ = new Lib.Used();\n}\n",
+    );
+    std::fs::write(
+        root.join("Mono.slnx"),
+        "<Solution>\n  <Project Path=\"Lib/Lib.csproj\" />\n  <Project Path=\"App/App.csproj\" />\n</Solution>\n",
+    )
+    .expect("write the solution");
+    write_configuration(root, "[analyzers]\ndead_code = true\nmonorepo = true\n");
+    let mut session = LiveSession::start(root, &library, "SLSPC0101");
+
+    // `Used` is referenced from App, so only `Orphan` is dead — an error in a monorepo.
+    session.await_dead(&[("Orphan", 1)]);
+    session.client.shutdown_and_exit();
+}
+
+/// Write `<name>/<name>.csproj` with `properties` and `items`, and `<name>/<name>.cs`; returns the source.
+fn write_csharp_project(
+    root: &Path,
+    name: &str,
+    properties: &str,
+    items: &str,
+    source: &str,
+) -> PathBuf {
+    let project = root.join(name);
+    std::fs::create_dir_all(&project).expect("project directory");
+    std::fs::write(
+        project.join(format!("{name}.csproj")),
+        format!(
+            "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup><TargetFramework>net10.0</TargetFramework>{properties}</PropertyGroup>\n  {items}\n</Project>"
+        ),
+    )
+    .expect("write the project");
+    let file = project.join(format!("{name}.cs"));
+    std::fs::write(&file, source).expect("write the source");
+    file
+}
+
 /// A C# project with dead types and no `sharplsp.toml`: the defaults apply.
 fn dead_csharp_workspace() -> (tempfile::TempDir, PathBuf) {
     let workspace = tempfile::tempdir().expect("real C# workspace");

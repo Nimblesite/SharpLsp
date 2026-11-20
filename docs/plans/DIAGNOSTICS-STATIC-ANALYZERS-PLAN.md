@@ -89,8 +89,9 @@ Implements [ANALYZERS-UNUSED-PUBLIC], [ANALYZERS-REFERENCE-MODEL], and
       severity Information, and tag `Unnecessary`.
 - [x] Full-stack test: unused public C# type in a monorepo solution is reported —
       `configuration_live.rs` `csharp_unused_public_types_are_dead_only_in_a_monorepo`, step 2.
-- [ ] Full-stack test: public C# type referenced by another project is not
-      reported.
+- [x] Full-stack test: public C# type referenced by another project is not
+      reported — `configuration_live.rs` `a_public_csharp_type_another_project_uses_is_not_dead_in_a_monorepo`
+      (a two-project `.slnx`: only the unused `Orphan` is reported).
 - [ ] Full-stack test: public C# member used by reflection/framework attribute is
       suppressed.
 - [x] Full-stack test: non-monorepo config reports no C# unused-public-code
