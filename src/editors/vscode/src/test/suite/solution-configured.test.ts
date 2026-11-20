@@ -10,17 +10,16 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import * as vscode from 'vscode';
-import { SharpLspClient } from '../../client';
 import { configuredSolution, findSolutions } from '../../solution.js';
-import { fakeFolder } from './run-debug-kit';
-import { activation, WorkspaceMemory } from './solution-loader-kit';
-import { findSharpLspBinary, removeDirRecursive } from './test-helpers';
+import {
+  activation,
+  configurationClient,
+  NO_COMPILERS as BASE,
+  WorkspaceMemory,
+} from './solution-loader-kit';
+import { removeDirRecursive } from './test-helpers';
 import { DEBUG_TEST_MS } from './test-timeouts';
 import { installUiStubs, type UiStubs } from './ui-stubs';
-
-/** No compiler: these tests are about which solution is chosen, not loading it. */
-const BASE = '[fsharp]\nenabled = false\n[csharp]\nenabled = false\n';
 
 suite('A configured solution is loaded without asking [SE-SOLUTION]', () => {
   let stubs: UiStubs;
@@ -42,15 +41,7 @@ suite('A configured solution is loaded without asking [SE-SOLUTION]', () => {
       fs.writeFileSync(file, '');
     }
     fs.writeFileSync(toml, BASE);
-    const binary = findSharpLspBinary();
-    assert.ok(binary, 'Test host must resolve a staged sharplsp binary');
-    const outputChannel = vscode.window.createOutputChannel('Solution test', { log: true });
-    const client = new SharpLspClient(
-      'solution-test',
-      'Solution test',
-      { command: binary, options: { cwd: root } },
-      { documentSelector: [], workspaceFolder: fakeFolder(root), outputChannel },
-    );
+    const client = configurationClient(root);
     // Every pick is dismissed, so each time a loader asks it lands here.
     const asked: unknown[] = [];
     try {

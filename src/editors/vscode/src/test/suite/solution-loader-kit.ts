@@ -3,10 +3,30 @@
  * it (workspace storage) and what it drives (the Solution Explorer), shared by
  * the suites that pin which solution an activation loads. [SE-SOLUTION]
  */
-import type * as vscode from 'vscode';
+import * as assert from 'node:assert/strict';
+import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
+import { SharpLspClient } from '../../client';
 import { type SolutionLoader, solutionLoader } from '../../solution-load.js';
 import type { SolutionExplorerProvider } from '../../tree.js';
+import { fakeFolder } from './run-debug-kit';
+import { findSharpLspBinary } from './test-helpers';
+
+/** No compiler: a client that only answers which solution `sharplsp.toml` configures. */
+export const NO_COMPILERS = '[fsharp]\nenabled = false\n[csharp]\nenabled = false\n';
+
+/** A real server rooted at `root`, so `sharplsp/configuration` reads ITS `sharplsp.toml`. */
+export function configurationClient(root: string): SharpLspClient {
+  const binary = findSharpLspBinary();
+  assert.ok(binary, 'Test host must resolve a staged sharplsp binary');
+  const outputChannel = vscode.window.createOutputChannel('Solution test', { log: true });
+  return new SharpLspClient(
+    'solution-test',
+    'Solution test',
+    { command: binary, options: { cwd: root } },
+    { documentSelector: [], workspaceFolder: fakeFolder(root), outputChannel },
+  );
+}
 
 /** Workspace storage that outlives one activation, as `context.workspaceState` does. */
 export class WorkspaceMemory implements vscode.Memento {

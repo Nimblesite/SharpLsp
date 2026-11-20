@@ -160,6 +160,7 @@
         "test-explorer-e2e.test.js",
         "test-explorer-refusals.test.js",
         "test-explorer-reactive.test.js",
+        "test-explorer-solution-choice.test.js",
         "test-explorer-multitarget.test.js",
         "test-explorer-windows.test.js",
         "test-explorer-parsers.test.js",

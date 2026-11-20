@@ -150,7 +150,7 @@ fn a_public_fsharp_value_another_project_uses_is_not_dead_in_a_monorepo() {
     session.client.shutdown_and_exit();
 }
 
-/// [ANALYZERS-CROSS-LANGUAGE]: a public F# function that only C# calls is live.
+/// [ANALYZERS-TRUTH]: a public F# function that only C# calls is live.
 /// FCS sees no C# caller, so the F# analyzer alone would call it dead — in a
 /// monorepo, as an ERROR on code the solution uses.
 #[test]
