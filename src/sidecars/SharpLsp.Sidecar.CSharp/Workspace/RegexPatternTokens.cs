@@ -107,10 +107,22 @@ internal static class RegexPatternTokens
     /// <summary>
     /// True when the <c>[</c> at <paramref name="at"/> opens a subtraction (<c>-[…]</c>). Any
     /// other <c>[</c> inside a class is a literal member: <c>[a[b]</c> ends at its first <c>]</c>.
+    /// The <c>-</c> is escaped only behind an ODD run of backslashes: <c>[\\-[x]]</c> subtracts.
     /// </summary>
     private static bool OpensSubtraction(string pattern, int at)
     {
-        return at > 0 && pattern[at - 1] == '-' && (at < 2 || pattern[at - 2] != '\\');
+        return at > 0 && pattern[at - 1] == '-' && BackslashesBefore(pattern, at - 1) % 2 == 0;
+    }
+
+    /// <summary>How many backslashes run immediately before <paramref name="at"/>.</summary>
+    private static int BackslashesBefore(string pattern, int at)
+    {
+        var start = at;
+        while (start > 0 && pattern[start - 1] == '\\')
+        {
+            start--;
+        }
+        return at - start;
     }
 
     /// <summary><c>(</c> with its prefix: <c>(?:</c>, <c>(?=</c>, <c>(?&lt;name&gt;</c>, inline options; a comment group whole.</summary>
