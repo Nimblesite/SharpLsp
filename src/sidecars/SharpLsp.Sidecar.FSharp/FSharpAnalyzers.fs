@@ -76,7 +76,7 @@ let buildDiagnostic
       Message = message
       Severity = severity
       Code = code
-      HelpLink = ""
+      HelpLink = SharpLsp.Sidecar.Common.RuleDocumentation.For code
       Tags = DiagnosticTags.ofCode code }
 
 /// Classify a dead declaration into a diagnostic, honoring the monorepo gate.

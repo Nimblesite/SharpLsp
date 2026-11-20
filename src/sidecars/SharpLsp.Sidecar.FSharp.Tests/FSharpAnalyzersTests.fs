@@ -58,6 +58,10 @@ let ``buildDiagnostic maps a 1-based range to 0-based positions`` () =
     Assert.Equal("SLSPF0101", d.Code)
     Assert.Equal("Warning", d.Severity)
     Assert.Equal("msg", d.Message)
+    // [ANALYZERS-DIAGNOSTICS]: the rule links to its documentation, as codeDescription.href.
+    Assert.Equal("https://sharplsp.dev/docs/diagnostics/#dead-code", d.HelpLink)
+    let other = FSharpAnalyzers.buildDiagnostic "SLSPF0102" "Warning" "msg" r
+    Assert.Equal("", other.HelpLink)
 
 [<Fact>]
 let ``deadCodeDiagnostics returns empty when disabled`` () =

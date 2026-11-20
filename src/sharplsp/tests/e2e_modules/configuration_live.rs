@@ -7,6 +7,10 @@ use workspace_diagnostic_support::{completed_pull, observed_request};
 /// One private and one public function that nothing calls.
 const DEAD_FS: &str = "module Dead\n\nlet private unusedHelper () = 1\n\nlet unusedPublic () = 2\n";
 
+/// One internal and one public C# type that nothing references.
+const DEAD_CS: &str =
+    "namespace Dead;\n\ninternal sealed class Hidden { }\n\npublic sealed class Orphan { }\n";
+
 /// How long the server is given to notice an edited configuration file.
 const NOTICED: Duration = Duration::from_secs(30);
 
@@ -14,7 +18,7 @@ const NOTICED: Duration = Duration::from_secs(30);
 fn analyzer_settings_from_the_editor_or_the_file_apply_to_the_next_pull() {
     require_dotnet();
     let (workspace, source) = dead_code_workspace();
-    let mut session = LiveSession::start(workspace.path(), &source);
+    let mut session = LiveSession::start(workspace.path(), &source, "SLSPF0101");
 
     // 1. The file turns the dead-code analyzer off: nothing is reported dead.
     session.assert_dead(&[]);
@@ -47,6 +51,48 @@ fn analyzer_settings_from_the_editor_or_the_file_apply_to_the_next_pull() {
     session.client.shutdown_and_exit();
 }
 
+/// [ANALYZERS-MONOREPO-GATE] through the real host and C# sidecar: an unused
+/// internal type is dead code everywhere, but an unused PUBLIC type is reported
+/// only once the workspace declares itself a monorepo — and then as an error.
+#[test]
+fn csharp_unused_public_types_are_dead_only_in_a_monorepo() {
+    require_dotnet();
+    let (workspace, source) = dead_csharp_workspace();
+    let mut session = LiveSession::start(workspace.path(), &source, "SLSPC0101");
+
+    // 1. A standard repository: the internal type is dead, a warning; the public one is API.
+    session.await_dead(&[("Hidden", 2)]);
+
+    // 2. The file declares a monorepo: the public type is dead too, and both are errors.
+    write_configuration(
+        workspace.path(),
+        "[analyzers]\ndead_code = true\nmonorepo = true\n",
+    );
+    session.await_dead(&[("Hidden", 1), ("Orphan", 1)]);
+
+    // 3. Back to a standard repository: the public type is API again.
+    write_configuration(workspace.path(), "[analyzers]\ndead_code = true\n");
+    session.await_dead(&[("Hidden", 2)]);
+    session.client.shutdown_and_exit();
+}
+
+/// A C# project with dead types, and a `sharplsp.toml` turning the dead-code analyzer on.
+fn dead_csharp_workspace() -> (tempfile::TempDir, PathBuf) {
+    let workspace = tempfile::tempdir().expect("real C# workspace");
+    let project = workspace.path().join("Dead");
+    std::fs::create_dir_all(&project).expect("project directory");
+    std::fs::write(
+        project.join("Dead.csproj"),
+        r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Library</OutputType></PropertyGroup>
+</Project>"#,
+    )
+    .expect("write the project");
+    std::fs::write(project.join("Dead.cs"), DEAD_CS).expect("write the source");
+    write_configuration(workspace.path(), "[analyzers]\ndead_code = true\n");
+    (workspace, project.join("Dead.cs"))
+}
+
 /// An F# project with dead code, and a `sharplsp.toml` turning the dead-code analyzer off.
 fn dead_code_workspace() -> (tempfile::TempDir, PathBuf) {
     let workspace = tempfile::tempdir().expect("real F# workspace");
@@ -74,12 +120,14 @@ fn write_configuration(root: &Path, text: &str) {
 struct LiveSession {
     client: LspClient,
     uri: String,
+    /// The dead-code rule of the source's language: `SLSPF0101` or `SLSPC0101`.
+    code: &'static str,
     traffic: Vec<Value>,
 }
 
 impl LiveSession {
-    /// Start the server with pull diagnostics and wait until the F# project loads.
-    fn start(root: &Path, source: &Path) -> Self {
+    /// Start the server with pull diagnostics and wait until the project loads.
+    fn start(root: &Path, source: &Path, code: &'static str) -> Self {
         let mut client = LspClient::spawn_in(Stdio::null(), Some(root));
         let initialized = client.initialize_with_capabilities(
             json!(path_to_file_uri(root)),
@@ -89,9 +137,10 @@ impl LiveSession {
         let mut session = Self {
             client,
             uri: path_to_file_uri(source),
+            code,
             traffic: Vec::new(),
         };
-        session.wait_for(NOTICED, "the F# project to load", |session| {
+        session.wait_for(NOTICED, "the project to load", |session| {
             session
                 .received("workspace/projectInitializationComplete")
                 .is_some()
@@ -111,7 +160,7 @@ impl LiveSession {
             .as_array()
             .expect("a full report")
             .iter()
-            .filter(|item| item["code"] == "SLSPF0101")
+            .filter(|item| item["code"] == self.code)
             .filter_map(|item| {
                 Some((
                     named(item["message"].as_str()?)?,

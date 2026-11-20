@@ -68,6 +68,10 @@ monorepo = false
 
 Project filters apply to workspace results for both languages. Direct `textDocument/diagnostic` requests remain unfiltered. Filters also accept full native project paths, using forward slashes in glob patterns.
 
+<h2 id="dead-code">Dead code</h2>
+
+SharpLsp reports code that nothing references as `SLSPC0101` in C# and `SLSPF0101` in F#. The code in the Problems panel links here.
+
 In normal mode, private/internal dead code is reported as a warning and public symbols are treated as possible external API. In monorepo mode, unused public symbols are also reported and use error severity.
 
 ## Severity Mapping
