@@ -162,7 +162,7 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 
 - [ ] Add `WorkspaceConfig.repository_kind` defaulting to `"standard"`.
 - [ ] Add `DiagnosticsConfig.static_analyzers`.
-- [ ] Hot-reload monorepo/static-analyzer settings.
+- [x] Hot-reload monorepo/static-analyzer settings. (see the matching phase row)
 - [ ] Update example config through a TOML parser/serializer.
 
 ### Pipeline
@@ -175,17 +175,17 @@ Implements the cross-language part of [ANALYZERS-REFERENCE-MODEL].
 
 ### C#
 
-- [ ] Collect public C# symbols via Roslyn.
-- [ ] Count solution-wide Roslyn semantic references.
+- [x] Collect public C# symbols via Roslyn. (see the matching phase row)
+- [x] Count solution-wide Roslyn semantic references. (see the matching phase row)
 - [ ] Emit `SLSPC0101`.
-- [ ] Add C# monorepo/non-monorepo full-stack tests.
+- [x] Add C# monorepo/non-monorepo full-stack tests. (see the matching phase row)
 
 ### F#
 
 - [ ] Collect public F# symbols via FCS and `.fsi` public surface.
-- [ ] Count solution-wide FCS semantic references.
+- [x] Count solution-wide FCS semantic references. (see the matching phase row)
 - [ ] Emit `SLSPF0101`.
-- [ ] Add F# monorepo/non-monorepo full-stack tests.
+- [x] Add F# monorepo/non-monorepo full-stack tests. (see the matching phase row)
 
 ### Cross-Language
 
