@@ -13,7 +13,7 @@ open System.Diagnostics
 open System.Threading
 open Serilog
 
-/// The resident-set limits, in bytes, the sidecar keeps under.
+/// The limits, in bytes, on the memory the sidecar holds.
 type Budget = { SoftBytes: int64; HardBytes: int64 }
 
 /// The environment variable that sets the soft limit in megabytes; the hard limit is twice it.
@@ -40,13 +40,17 @@ let budgetFrom (setting: string option) =
 let configuredBudget () =
     Environment.GetEnvironmentVariable LimitVariable |> Option.ofObj |> budgetFrom
 
-/// The sidecar's resident set, in bytes.
-let residentBytes () =
+/// The memory the sidecar holds, in bytes: the larger of its resident set and the heap
+/// the collector has committed. The resident set alone reads low once the OS compresses
+/// or swaps an idle sidecar's pages (141 MB resident for 2.2 GB committed), which is
+/// exactly when the budget has to act.
+let heldBytes () =
     use self = Process.GetCurrentProcess()
-    self.WorkingSet64
+    max self.WorkingSet64 (GC.GetGCMemoryInfo().TotalCommittedBytes)
 
-/// Drop every cached builder and check result, then hand the memory back.
+/// Drop every cached builder, check result and referenced entity, then hand the memory back.
 let private trim (state: FSharpWorkspace.FSharpWorkspaceState) =
+    state.Entities.Clear()
     state.Checker.InvalidateAll()
     state.Checker.ClearLanguageServiceRootCachesAndCollectAndFinalizeAllTransients()
 
@@ -107,5 +111,5 @@ let private exitProcess (code: int) =
 let start (state: FSharpWorkspace.FSharpWorkspaceState) : IDisposable =
     let mutable budget = configuredBudget ()
     let age = Stopwatch.StartNew()
-    let tick _ = budget <- watch state budget age.Elapsed residentBytes exitProcess
+    let tick _ = budget <- watch state budget age.Elapsed heldBytes exitProcess
     new Timer(tick, null, interval, interval)
