@@ -40,6 +40,8 @@ suite('Memory introspection — real end-to-end', () => {
     const debuggee = harness.debuggee();
     vscode.debug.removeBreakpoints([...vscode.debug.breakpoints]);
     const session = await launch(debuggee, launchConfig(debuggee, 'Memory introspection'));
+    // The heap holds the cached Widgets only once the program has started its loop.
+    await harness.recorder().waitForOutput('READY');
     const started = await execute<{ memory_session_id: string }>('memory.start', {
       pid: await debuggeePid(session),
     });

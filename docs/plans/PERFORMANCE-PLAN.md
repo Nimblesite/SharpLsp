@@ -26,7 +26,10 @@ user never waits on projects they are not looking at.
       current ([DIAG-RESTORE]). This repo's own projects were restored on every open because
       the root `Directory.Build.props` imports through `$(MSBuildThisFileDirectory)` —
       `WorkspaceRestoreDigestTests`
-- [ ] Restore and evaluate projects concurrently (bounded), not one after another
+- [x] Restore projects concurrently (bounded: 2-4 SDK restores at once), not one after another;
+      the first failure is reported in project order and never abandons the rest —
+      `WorkspaceRestoreConcurrencyTests`. Evaluation: F# already loads projects with
+      `Task.WhenAll`; Roslyn's `MSBuildWorkspace` evaluates its own solution
 - [ ] Order the load: the project owning the active editor first, then its
       references, then the rest of the solution
 - [ ] Sidecars stream per-project progress to the host (`$/progress`-style
