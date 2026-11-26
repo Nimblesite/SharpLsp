@@ -20,7 +20,7 @@ open SharpLsp.Sidecar.FSharp.Tests.FSharpCoverageTests
 /// Whether the entities of every assembly file `context` references are built. FCS's
 /// cache entry type is internal, so its option's members cannot be called from here: an
 /// entry is told apart by presence alone, since a missing one is the null option.
-let private entitiesBuilt (state: FSharpWorkspace.FSharpWorkspaceState) (context: FSharp.Compiler.CodeAnalysis.FSharpProjectContext) =
+let internal entitiesBuilt (state: FSharpWorkspace.FSharpWorkspaceState) (context: FSharp.Compiler.CodeAnalysis.FSharpProjectContext) =
     let cache = state.Entities :> FSharp.Compiler.EditorServices.IAssemblyContentCache
 
     FSharpEntityIndex.referencedFiles context

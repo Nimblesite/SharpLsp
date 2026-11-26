@@ -34,6 +34,7 @@ let private clearWorkspace (state: FSharpWorkspaceState) =
     state.References.Clear()
     state.CSharpBuilds.Clear()
     state.CompileSources.Clear()
+    state.Entities.Clear()
     state.Checker.InvalidateAll()
 
 /// Load EVERY project; the first one is the workspace's for project-wide queries.
@@ -52,6 +53,8 @@ let private loadProjects (state: FSharpWorkspaceState) (fsprojFiles: string arra
                 let! entries = fsprojFiles |> Array.map (fun path -> FSharpDesignTime.loadEntryWithRestore state.Checker fallback path autoRestore ct) |> Task.WhenAll
                 state.Projects.Clear()
                 state.References.Clear()
+                // Cached entities pin the import tables of the build that made them. [SIDECAR-PROCESS-MEMORY]
+                state.Entities.Clear()
 
                 for entry in entries do
                     let key = NativePaths.NormalizeFullPath entry.Path

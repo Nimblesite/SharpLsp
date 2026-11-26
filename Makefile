@@ -90,11 +90,13 @@ SHARD_COUNT       ?= 2
 PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 
 # The shared profiler ([PROFILER-SHARED-LIBRARY]) is lspkit (https://lspkit.dev):
-# crates.io crates and the @nimblesite/lsp-profiler-ui npm package. Its .NET
-# engine and fixtures ship only in the release source, which `_fetch-lspkit`
-# unpacks to LSPKIT_DIR; `_build-dotnet` publishes the engine to PROFILER_ENGINE_OUT.
-LSPKIT_VERSION      := 0.10.1
-LSPKIT_SHA256       := 1ed4e9fbb02641891e1373849b392c3799e9fa7802422ff52ced972cd68948a4
+# crates.io crates and the @nimblesite/lsp-profiler-ui npm package. Its prebuilt
+# .NET engine, consumer kit (fixtures) are release assets, never
+# its source: `_fetch-lspkit` unpacks the kit to LSPKIT_DIR and `_build-dotnet`
+# the engine for VSIX_PLAT to PROFILER_ENGINE_OUT (tools/ci/fetch-lspkit.mjs).
+export LSPKIT_VERSION := 0.10.1
+# Pins the release's SHA256SUMS, which pins every asset fetched from it.
+export LSPKIT_SUMS_SHA256 := 4c6b7c5b451dbce8e6e3540fb5bd6eab61520455b7e3730be3214eddbcd0062f
 # Outside target/: CI caches restore target/ partially, which would skip the fetch.
 export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine
@@ -165,7 +167,7 @@ KOVER_PERCENT = $(if $(COVERAGE_TOOLS_PREBUILT),$(DOTNET) target/coverage-tools/
         _fmt-rust _fmt-zed _fmt-vsix _fmt-dotnet \
         _package-vsix _package-archive \
         _deploy-rust _deploy-sidecars \
-        _kill _clean-rider _clean-artifacts
+        _kill _clean-rider _clean-artifacts _vscode-deps
 
 # The sidecars build against the SDK pinned in global.json ([DIST-RUNTIME-ACQUIRE]).
 # `dotnet --list-sdks | grep '^10\.'` was never that check: a 10.0.2xx SDK passes
@@ -268,17 +270,10 @@ _build-dotnet: _fetch-lspkit
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
-	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
+	node tools/ci/fetch-lspkit.mjs engine $(VSIX_PLAT) $(PROFILER_ENGINE_OUT)
 
-_fetch-lspkit: $(LSPKIT_DIR)
-
-$(LSPKIT_DIR):
-	@echo "==> Fetching lspkit $(LSPKIT_VERSION) source (profiler engine, fixtures)..."
-	mkdir -p .lspkit
-	curl -fsSL -o .lspkit/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
-	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('.lspkit/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
-	rm -rf .lspkit/extract && mkdir -p .lspkit/extract && tar -xzf .lspkit/lspkit.tar.gz -C .lspkit/extract
-	mv .lspkit/extract/lspkit-$(LSPKIT_VERSION) $(LSPKIT_DIR) && rm -rf .lspkit/extract .lspkit/lspkit.tar.gz
+_fetch-lspkit:
+	node tools/ci/fetch-lspkit.mjs kit $(LSPKIT_DIR)
 
 # [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
 # afterwards copies these exact Release assemblies; coverage retains their PDBs.
@@ -471,7 +466,7 @@ AUDIT_LEVEL       ?= moderate
 AUDIT_CARGO_LOCKS  = Cargo.lock $(ZED_DIR)/Cargo.lock
 AUDIT_NPM_DIRS     = $(VSCODE_DIR) src/website src/website/tools/video
 AUDIT_DOTNET_JSON  = target/audit-dotnet.json
-AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN) $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
+AUDIT_DOTNET_TARGETS = $(SIDECAR_SLN)
 
 .PHONY: audit _audit-rust _audit-dotnet _audit-npm
 
@@ -877,7 +872,7 @@ _check-sdk-pin:
 # Every spec ID cited anywhere resolves to exactly one defining heading, so a
 # deleted section cannot leave its citations pointing at nothing
 # ([DIST-CI-SPEC-CITATIONS]).
-_check-spec-citations: _fetch-lspkit
+_check-spec-citations:
 	node tools/ci/spec-citations.mjs
 
 # Production source never writes a project, solution or manifest as one string
@@ -1206,6 +1201,7 @@ reinstall-vsix:
 		$(MAKE) uninstall-vsix VSCODE_PROFILES="$$profiles" && \
 		$(MAKE) _kill && \
 		$(MAKE) _clean-artifacts && \
+		$(MAKE) _vscode-deps && \
 		$(MAKE) _build-vsix && \
 		$(MAKE) install-vsix VSCODE_PROFILES="$$profiles"
 
@@ -1263,13 +1259,17 @@ clean: _clean-rider _clean-artifacts
 # output. `reinstall-vsix` calls this directly, never the full `clean`, so
 # uninstalling and rebuilding the extension never shells out to Gradle for a
 # Rider plugin it does not touch ([DIST-VSIX-REBUILD]).
+# The clean deletes node_modules; the rebuild installs exactly the lockfile.
+_vscode-deps:
+	npm ci --prefix $(VSCODE_DIR)
+
 _clean-artifacts:
 	@echo "==> Cleaning build artifacts..."
 	cargo clean
 	cargo clean --manifest-path $(ZED_DIR)/Cargo.toml
 	node tools/vsix/clean-sidecar-output.mjs
 	rm -rf $(SIDECAR_CS_OUT) $(SIDECAR_FS_OUT)
-	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out
+	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/out $(VSCODE_DIR)/node_modules .lspkit
 	rm -rf $(ZED_PKG_DIR) $(DIST_DIR)
 	rm -f $(DEV_VSIX) $(ZED_PKG_TAR)
 

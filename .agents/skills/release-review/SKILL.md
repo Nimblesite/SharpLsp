@@ -1,5 +1,5 @@
 ---
-name: regression-review
+name: release-review
 description: Aggressive adversarial review of the current branch against the last release, hunting regressions. Logs every confirmed bug as a GitHub issue. Use when the user says "adversarial review", "regression review", "review against the release", or before cutting a release.
 ---
 

@@ -29,10 +29,7 @@ const repository = (t, files) => gitRepository(t, "sharplsp-spec-citations-", fi
 
 /** Run the real gate over `root`. */
 function gate(root) {
-    return spawnSync(process.execPath, [GATE, root], {
-        encoding: "utf8",
-        env: { ...process.env, LSPKIT_DIR: "lspkit" },
-    });
+    return spawnSync(process.execPath, [GATE, root], { encoding: "utf8" });
 }
 
 test("a clean repository passes and says so", (t) => {
@@ -47,15 +44,17 @@ test("a clean repository passes and says so", (t) => {
     assert.equal(run.stderr, "");
 });
 
-test("host citations resolve against the shared profiler's canonical spec", (t) => {
+test("lspkit's groups resolve upstream, without its source; lookalike groups still fail", (t) => {
     const root = repository(t, {
-        "lspkit/docs/specs/LSP-PROFILER-SPEC.md": "# [PROF-UI] Shared UI\n",
-        "src/profiler.ts": "// Implements [PROF-UI].\n",
+        "src/profiler.ts": "// Implements [PROF-UI] and [LSP-PULL-WATCH].\n",
+        "src/lookalike.ts": "// Implements [PROFX-UI] and [LSPKIT-GONE].\n",
     });
     const run = gate(root);
-    assert.equal(run.status, 0, run.stderr);
-    assert.equal(run.stderr, "");
-    assert.match(run.stdout, /Every spec citation resolves/);
+    assert.equal(run.status, 1);
+    assert.doesNotMatch(run.stderr, /\[PROF-UI\]|\[LSP-PULL-WATCH\]/);
+    assert.match(run.stderr, /src\/lookalike\.ts:1: \[PROFX-UI\] is cited but no heading defines it/);
+    assert.match(run.stderr, /src\/lookalike\.ts:1: \[LSPKIT-GONE\] is cited but no heading defines it/);
+    assert.match(run.stderr, /2 spec citation problem\(s\)/);
 });
 
 test("a citation nothing defines fails with its file and line", (t) => {

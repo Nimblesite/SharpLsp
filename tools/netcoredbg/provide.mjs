@@ -9,11 +9,10 @@
 // received, and unpacks it only if the digest matches. A mismatch, or a
 // supported platform with no pin, is FATAL. Local builds, CI and releases all
 // come through here, so every one of them ships the same bytes.
-import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchPinned, unpack } from '../download/pinned.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -59,64 +58,18 @@ function alreadyProvided(platform, id) {
     return readFileSync(marker, 'utf8').trim() === id;
 }
 
-function run(command, args, label, cwd = ROOT) {
-    const result = spawnSync(command, args, { stdio: 'inherit', cwd, shell: false });
-    if (result.error) throw new Error(`${label}: ${result.error.message}`);
-    if (result.status !== 0) throw new Error(`${label}: exited ${result.status}`);
-}
-
-/** Archive member name used for the staged download, see extract(). */
-const DOWNLOAD_NAME = 'netcoredbg-download';
-
-// The fork release ships .tar.gz for every platform. bsdtar reads it and detects
-// the format itself; it is `tar` on macOS and System32's tar.exe on Windows,
-// where Git Bash's GNU tar would otherwise win on PATH. Only the `netcoredbg/`
-// member is extracted. A bare relative filename with `cwd` set keeps every
-// argument colon-free: GNU tar reads `C:\...` as host:path.
-function tarCommand() {
-    return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
-}
-
-function extract(destination) {
-    run(tarCommand(), ['-xf', DOWNLOAD_NAME, '--strip-components=1', 'netcoredbg'], 'tar', destination);
-}
-
-async function fetchVerified(platform, pin) {
-    console.log(`netcoredbg: fetching ${platform} adapter\n  ${pin.url}`);
-    const response = await fetch(pin.url, { redirect: 'follow' });
-    if (!response.ok) {
-        throw new Error(`netcoredbg: download failed with HTTP ${response.status} for ${pin.url}`);
-    }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    const digest = createHash('sha256').update(bytes).digest('hex');
-    if (digest !== pin.sha256) {
-        throw new Error(
-            `netcoredbg: SHA-256 MISMATCH for ${platform}\n` +
-                `  expected ${pin.sha256}\n` +
-                `  received ${digest}\n` +
-                `  from     ${pin.url}\n` +
-                'Refusing to unpack. Either the pin is stale or the artifact was tampered with.',
-        );
-    }
-    return { bytes, digest };
-}
-
 async function downloadPinned(platform, pin, id) {
-    const { bytes, digest } = await fetchVerified(platform, pin);
+    console.log(`netcoredbg: fetching ${platform} adapter\n  ${pin.url}`);
+    const bytes = await fetchPinned(`netcoredbg ${platform}`, pin.url, pin.sha256);
     const destination = outputDir(platform);
-    rmSync(destination, { recursive: true, force: true });
-    mkdirSync(destination, { recursive: true });
-    const archive = join(destination, DOWNLOAD_NAME);
-    writeFileSync(archive, bytes);
-    extract(destination);
-    rmSync(archive, { force: true });
-
+    // Only the `netcoredbg/` member is extracted.
+    unpack('netcoredbg', bytes, destination, ['--strip-components=1', 'netcoredbg']);
     if (!existsSync(executable(platform))) {
         throw new Error(`netcoredbg: archive for ${platform} contained no ${executable(platform)}`);
     }
     chmodSync(executable(platform), 0o755);
     writeFileSync(join(destination, MARKER_NAME), `${id}\n`);
-    console.log(`netcoredbg: verified ${digest} and unpacked to ${destination}`);
+    console.log(`netcoredbg: verified ${pin.sha256} and unpacked to ${destination}`);
 }
 
 export async function provide(platform) {

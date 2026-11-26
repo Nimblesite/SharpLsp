@@ -258,6 +258,7 @@ test('reinstall-vsix uninstalls, then cleans, then rebuilds, then installs', () 
   const uninstall = stepAt(recipe, '--uninstall-extension');
   const clean = stepAt(recipe, 'cargo clean');
   const buildRust = stepAt(recipe, 'cargo build --release');
+  const deps = stepAt(recipe, 'npm ci --prefix src/editors/vscode');
   const packaged = stepAt(recipe, 'vsce package');
   const install = stepAt(recipe, '--install-extension');
 
@@ -266,6 +267,9 @@ test('reinstall-vsix uninstalls, then cleans, then rebuilds, then installs', () 
   assert.ok(uninstall < clean, 'uninstall must precede the clean');
   assert.ok(clean < buildRust, 'clean must precede the rebuild');
   assert.ok(buildRust < packaged, 'the host binary must be built before packaging');
+  // A clean rebuild: the extension's packages are deleted, then reinstalled from the lockfile.
+  assert.match(recipe, /rm -rf [^\n]*src\/editors\/vscode\/node_modules/, 'the clean must delete node_modules');
+  assert.ok(clean < deps && deps < packaged, 'npm ci must follow the clean and precede packaging');
   assert.ok(packaged < install, 'the VSIX must be packaged before it is installed');
   assert.ok(install > uninstall, 'the install is the last step, not the first');
 });
