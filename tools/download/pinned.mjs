@@ -27,11 +27,11 @@ function tarCommand() {
     return process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 }
 
-/** Replaces `destination` with the verified archive `bytes`, streamed to tar. */
+/** Replaces `destination` with the verified .tar.gz `bytes`, streamed to tar: GNU tar cannot sniff gzip on stdin. */
 export function unpack(label, bytes, destination, tarArgs) {
     rmSync(destination, { recursive: true, force: true });
     mkdirSync(destination, { recursive: true });
-    const result = spawnSync(tarCommand(), ['-xf', '-', ...tarArgs], {
+    const result = spawnSync(tarCommand(), ['-xzf', '-', ...tarArgs], {
         input: bytes,
         stdio: ['pipe', 'inherit', 'inherit'],
         cwd: destination,
