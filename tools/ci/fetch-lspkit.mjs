@@ -6,7 +6,7 @@
 // Usage: node tools/ci/fetch-lspkit.mjs kit <dir>
 //        node tools/ci/fetch-lspkit.mjs engine <vsix-platform> <dir>
 // Env:   LSPKIT_VERSION, LSPKIT_SUMS_SHA256
-import { existsSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fetchPinned, unpack } from "../download/pinned.mjs";
 
 const VERSION = process.env.LSPKIT_VERSION;
@@ -36,15 +36,24 @@ function assetOf(kind, platform) {
     return `lsp-profiler-dotnet-engine-${VERSION}-${RIDS.get(platform)}.tar.gz`;
 }
 
-/** Fetches once per version and target; a marker beside the folder records it. */
+/** The asset a folder's marker records, or undefined before its first fetch. */
+function fetchedAsset(marker) {
+    try {
+        return readFileSync(marker, "utf8");
+    } catch {
+        return undefined;
+    }
+}
+
+/** Fetches once per asset; a marker beside the folder names the asset it holds. */
 async function main([kind, ...args]) {
     const dir = args.at(-1);
     const asset = assetOf(kind, args.length > 1 ? args[0] : undefined);
     // Beside the folder, not in it: the engine folder ships whole in the VSIX.
-    const marker = `${dir}.${asset}.fetched`;
-    if (existsSync(marker)) return;
+    const marker = `${dir}.fetched`;
+    if (fetchedAsset(marker) === asset) return;
     await unpackAsset(asset, dir);
-    writeFileSync(marker, "");
+    writeFileSync(marker, asset);
 }
 
 main(process.argv.slice(2)).catch((error) => {
