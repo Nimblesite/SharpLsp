@@ -97,6 +97,8 @@ LSPKIT_VERSION      := 0.10.1
 LSPKIT_SHA256       := 1ed4e9fbb02641891e1373849b392c3799e9fa7802422ff52ced972cd68948a4
 # Outside target/: CI caches restore target/ partially, which would skip the fetch.
 export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
+# A file, not the directory: an emptied or partial directory must refetch.
+LSPKIT_ENGINE_PROJ  := $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj
 PROFILER_ENGINE_OUT := target/profiler-engine
 
 VSCODE_DIR  = src/editors/vscode
@@ -268,17 +270,17 @@ _build-dotnet: _fetch-lspkit
 	@echo "==> Building sidecars ($(DOTNET_CFG))..."
 	$(DOTNET) publish $(SIDECAR_CS)/SharpLsp.Sidecar.CSharp.csproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_CS_OUT)
 	$(DOTNET) publish $(SIDECAR_FS)/SharpLsp.Sidecar.FSharp.fsproj --configuration $(DOTNET_CFG) $(if $(DOTNET_TESTS_PREBUILT),--no-build --no-restore,) --no-self-contained -p:DebugType=none -p:DebugSymbols=false $(if $(VERSION),-p:Version=$(VERSION) -p:PackageVersion=$(VERSION),) --output $(SIDECAR_FS_OUT)
-	$(DOTNET) publish $(LSPKIT_DIR)/dotnet/LspProfiler.DotNet.Engine/LspProfiler.DotNet.Engine.csproj --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
+	$(DOTNET) publish $(LSPKIT_ENGINE_PROJ) --configuration Release --no-self-contained -p:DebugType=none -p:DebugSymbols=false --output $(PROFILER_ENGINE_OUT)
 
-_fetch-lspkit: $(LSPKIT_DIR)
+_fetch-lspkit: $(LSPKIT_ENGINE_PROJ)
 
-$(LSPKIT_DIR):
+$(LSPKIT_ENGINE_PROJ):
 	@echo "==> Fetching lspkit $(LSPKIT_VERSION) source (profiler engine, fixtures)..."
 	mkdir -p .lspkit
 	curl -fsSL -o .lspkit/lspkit.tar.gz https://github.com/Nimblesite/lspkit/archive/refs/tags/v$(LSPKIT_VERSION).tar.gz
 	node -e "const h=require('crypto').createHash('sha256').update(require('fs').readFileSync('.lspkit/lspkit.tar.gz')).digest('hex');if(h!=='$(LSPKIT_SHA256)'){console.error('lspkit source sha256 '+h+' != pinned $(LSPKIT_SHA256)');process.exit(1)}"
 	rm -rf .lspkit/extract && mkdir -p .lspkit/extract && tar -xzf .lspkit/lspkit.tar.gz -C .lspkit/extract
-	mv .lspkit/extract/lspkit-$(LSPKIT_VERSION) $(LSPKIT_DIR) && rm -rf .lspkit/extract .lspkit/lspkit.tar.gz
+	rm -rf $(LSPKIT_DIR) && mv .lspkit/extract/lspkit-$(LSPKIT_VERSION) $(LSPKIT_DIR) && rm -rf .lspkit/extract .lspkit/lspkit.tar.gz
 
 # [DIST-CI-ARTIFACT-TESTS] Compile product and tests together, once. Publishing
 # afterwards copies these exact Release assemblies; coverage retains their PDBs.
