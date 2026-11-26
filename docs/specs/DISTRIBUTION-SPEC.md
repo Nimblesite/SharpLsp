@@ -1015,6 +1015,9 @@ no longer exists reads as "specified and reviewed" when nothing specifies it; 24
 5. **The only exemptions** are the agent instructions' ID-format examples
    (`[GROUP-TOPIC]`, `[GROUP-TOPIC-DETAIL]`, `[AUTH-TOKEN-VERIFY]`), the
    `spec-check` skill and the gate's own test, whose every ID is an example.
+6. **Upstream groups.** `[PROF-*]` and `[LSP-*]` IDs are lspkit's
+   (`LSP-PROFILER-SPEC`, `LSP-PULL-SPEC`); lspkit's own gate resolves them, so
+   SharpLsp never downloads lspkit's source to check them.
 
 The gate lexes markdown with a real parser, so a `#` line inside a fenced code
 block defines nothing. Renaming or deleting a section therefore fails CI until

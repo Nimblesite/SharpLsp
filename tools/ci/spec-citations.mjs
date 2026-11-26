@@ -16,10 +16,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// The Makefile exports LSPKIT_DIR: the lspkit release source `_fetch-lspkit` unpacks.
-const DEPENDENCY_SPECS = ["LSP-PROFILER-SPEC.md", "LSP-PULL-SPEC.md"].map(
-    (spec) => `${process.env.LSPKIT_DIR}/docs/specs/${spec}`,
-);
+// lspkit owns these groups' specs (LSP-PROFILER-SPEC, LSP-PULL-SPEC); its own gate
+// resolves them, so SharpLsp never fetches lspkit's source to check them.
+const UPSTREAM_GROUPS = new Set(["PROF", "LSP"]);
 // marked ships with the extension's toolchain. Lexing the markdown, rather than
 // matching lines that start with `#`, keeps a comment inside a fenced code
 // block from defining an ID.
@@ -98,7 +97,7 @@ function isDocument(path) {
 /** Every heading definition under `docs/`, with the document holding it. */
 export function headingDefinitions(texts) {
     return [...texts]
-        .filter(([path]) => (path.startsWith("docs/") && path.endsWith(".md")) || DEPENDENCY_SPECS.includes(path))
+        .filter(([path]) => path.startsWith("docs/") && path.endsWith(".md"))
         .flatMap(([path, text]) => headingIds(text).map((id) => ({ path, id })));
 }
 
@@ -115,7 +114,8 @@ export function danglingCitations(texts) {
     return [...texts]
         .filter(([path]) => !EXAMPLE_FILES.has(path))
         .flatMap(([path, text]) => citationsIn(path, text))
-        .filter((citation) => !defined.has(citation.id));
+        .filter((citation) => !defined.has(citation.id))
+        .filter((citation) => !UPSTREAM_GROUPS.has(citation.id.split("-")[0]));
 }
 
 /** IDs two headings define: a citation of one cannot say which it means. */
@@ -148,7 +148,7 @@ function readText(root, path) {
 /** Every tracked text file of `root`, keyed by its repo-relative path. */
 export function repositoryTexts(root) {
     return new Map(
-        [...new Set([...trackedFiles(root), ...DEPENDENCY_SPECS])]
+        trackedFiles(root)
             .map((path) => [path, readText(root, path)])
             .filter(([, text]) => text !== undefined),
     );
