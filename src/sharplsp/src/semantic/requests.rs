@@ -97,7 +97,7 @@ pub fn finished(request: &Request) {
 /// or a reload, which every request shares, never an edit of its own.
 pub fn asks_again(request: &Request, result: &HandlerResult) -> bool {
     let superseded = matches!(result, HandlerResult::Err(error) if error.code == SUPERSEDED);
-    if !superseded || !handles(&request.method) {
+    if !superseded || !user_request(&request.method) {
         return false;
     }
     let arrivals = ARRIVED.lock().unwrap_or_else(PoisonError::into_inner);
@@ -106,6 +106,12 @@ pub fn asks_again(request: &Request, result: &HandlerResult) -> bool {
     };
     let changes = CHANGED.lock().unwrap_or_else(PoisonError::into_inner);
     changes.get(key).is_none_or(|changed| changed < arrival)
+}
+
+/// Whether `method` is a user's own position request — one of [`METHODS`] or
+/// a rename — whose failure reaches the user, never a retriggered pull.
+pub fn user_request(method: &str) -> bool {
+    handles(method) || method == "textDocument/rename"
 }
 
 /// Whether `method` is answered here.
@@ -223,7 +229,7 @@ fn streamed(token: Option<&ProgressToken>, value: Value, partial: Partial<'_>) -
 /// every client drops silently; only diagnostics and code lenses retrigger.
 pub fn superseded(method: &str, result: HandlerResult) -> HandlerResult {
     match result {
-        HandlerResult::Err(error) if handles(method) && error.code == SUPERSEDED => {
+        HandlerResult::Err(error) if user_request(method) && error.code == SUPERSEDED => {
             HandlerResult::Err(JsonRpcError::new(CONTENT_MODIFIED, "Content modified"))
         }
         other => other,
@@ -304,6 +310,39 @@ mod tests {
         );
         finished(&hover);
         finished(&lens);
+    }
+
+    /// A rename a reload superseded is the user's gesture, not a retrigger:
+    /// it is asked again, and its own edit still ends it.
+    #[test]
+    fn a_rename_superseded_by_a_reload_is_asked_again() {
+        let rename = Request {
+            id: 880_004.into(),
+            method: "textDocument/rename".to_owned(),
+            params: Value::Null,
+        };
+        let superseded_error = || HandlerResult::Err(JsonRpcError::new(SUPERSEDED, "superseded"));
+        let key = "/retry/rename.fs";
+        arrived(&rename, key);
+        assert!(
+            asks_again(&rename, &superseded_error()),
+            "a reload superseded it"
+        );
+        let code = match superseded(&rename.method, superseded_error()) {
+            HandlerResult::Err(error) => Some(error.code),
+            _ => None,
+        };
+        assert_eq!(
+            code,
+            Some(CONTENT_MODIFIED),
+            "out of budget it drops silently"
+        );
+        document_changed(key);
+        assert!(
+            !asks_again(&rename, &superseded_error()),
+            "its own edit ends it"
+        );
+        finished(&rename);
     }
 
     #[test]

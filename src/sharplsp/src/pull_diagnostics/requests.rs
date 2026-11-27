@@ -305,8 +305,7 @@ async fn compute(
         Start::Now => std::time::Duration::ZERO,
     };
     // An editor request's own failure reaches the user as it is.
-    let rename = request.method == "textDocument/rename"
-        || crate::semantic::requests::handles(&request.method);
+    let user = crate::semantic::requests::user_request(&request.method);
     let cancel = snapshot.cancel.clone();
     let worker = async move {
         tokio::time::sleep(pause).await;
@@ -319,7 +318,7 @@ async fn compute(
     };
     match result {
         Ok(value) => HandlerResult::Ok(value),
-        Err(error) if rename && !error.is::<Interrupted>() => {
+        Err(error) if user && !error.is::<Interrupted>() => {
             HandlerResult::Err(JsonRpcError::new(-32603, format!("{error:#}")))
         }
         Err(error) => HandlerResult::Err(rpc_error(&error)),
