@@ -3,6 +3,8 @@
 //! Forwards requests to the .NET sidecar which uses Roslyn's
 //! `CodeFixProvider` and `CodeRefactoringProvider` pipelines.
 
+pub mod rules_generated;
+
 use std::sync::Arc;
 
 use anyhow::Result;

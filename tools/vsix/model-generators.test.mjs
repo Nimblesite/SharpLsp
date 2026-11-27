@@ -7,6 +7,7 @@ import test from "node:test";
 for (const generator of [
     "sync-profiler-contributions.mjs",
     "tutorial-model.mjs",
+    "code-action-rules-model.mjs",
 ]) {
     test(`${generator} checks the committed model on this platform`, () => {
         const run = spawnSync(

@@ -1,0 +1,379 @@
+[
+  {
+    "fixKey": "fsharp.removeUnusedOpen",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "SLSPF0102",
+        "language": "FSharp",
+        "title": "Remove unused open",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.SLSPF0102.severity", "value": "error" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "fsharp.simplifyName",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "SLSPF0103",
+        "language": "FSharp",
+        "title": "Simplify name",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.SLSPF0103.severity", "value": "error" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "fsharp.removeUnusedDeclaration",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "SLSPF0101",
+        "language": "FSharp",
+        "title": "Remove unused declaration",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.SLSPF0101.severity", "value": "error" },
+          { "sink": "SharpLspToml", "key": "diagnostics.dead_code", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "fsharp.prefixUnusedValue",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "FS1182",
+        "language": "FSharp",
+        "title": "Prefix unused value with '_'",
+        "settings": [
+          { "sink": "MsBuildProperty", "key": "OtherFlags", "value": "--warnon:1182" },
+          { "sink": "MsBuildProperty", "key": "WarningsAsErrors", "value": "FS1182" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "fsharp.addNewForDisposable",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "FS0760",
+        "language": "FSharp",
+        "title": "Add 'new' for IDisposable",
+        "settings": [
+          { "sink": "MsBuildProperty", "key": "WarningsAsErrors", "value": "FS0760" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "UseImplicitType",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0007",
+        "language": "CSharp",
+        "title": "Use implicit type (var)",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_var_for_built_in_types", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "csharp_style_var_when_type_is_apparent", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "csharp_style_var_elsewhere", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0007.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0008",
+        "language": "CSharp",
+        "title": "Disable opposing explicit type rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0008.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "UseExplicitType",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0008",
+        "language": "CSharp",
+        "title": "Use explicit type",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_var_for_built_in_types", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "csharp_style_var_when_type_is_apparent", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "csharp_style_var_elsewhere", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0008.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0007",
+        "language": "CSharp",
+        "title": "Disable opposing implicit type rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0007.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "ConvertToFileScopedNamespace",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0161",
+        "language": "CSharp",
+        "title": "Convert to file-scoped namespace",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_namespace_declarations", "value": "file_scoped:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0161.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0160",
+        "language": "CSharp",
+        "title": "Disable opposing block-scoped namespace rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0160.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "ConvertToBlockScopedNamespace",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0160",
+        "language": "CSharp",
+        "title": "Convert to block-scoped namespace",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_namespace_declarations", "value": "block_scoped:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0160.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0161",
+        "language": "CSharp",
+        "title": "Disable opposing file-scoped namespace rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0161.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "RemoveUnnecessaryImports",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0005",
+        "language": "CSharp",
+        "title": "Remove unnecessary usings",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0005.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" },
+          { "sink": "MsBuildProperty", "key": "GenerateDocumentationFile", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "AddBraces",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0011",
+        "language": "CSharp",
+        "title": "Add braces",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_prefer_braces", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0011.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "RemoveThisQualification",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0003",
+        "language": "CSharp",
+        "title": "Remove 'this.' qualification",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_field", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_property", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_method", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_event", "value": "false:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0003.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0009",
+        "language": "CSharp",
+        "title": "Disable opposing add 'this.' qualification rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0009.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "AddThisQualification",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0009",
+        "language": "CSharp",
+        "title": "Add 'this.' qualification",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_field", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_property", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_method", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_style_qualification_for_event", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0009.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      },
+      {
+        "diagnosticId": "IDE0003",
+        "language": "CSharp",
+        "title": "Disable opposing remove 'this.' qualification rule",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0003.severity", "value": "none" }
+        ],
+        "severity": "None"
+      }
+    ]
+  },
+  {
+    "fixKey": "MakeFieldReadonly",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0044",
+        "language": "CSharp",
+        "title": "Make field readonly",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_style_readonly_field", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0044.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "UseCollectionExpression",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0028",
+        "language": "CSharp",
+        "title": "Use collection expression",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_style_prefer_collection_expression", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0028.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "UsePrimaryConstructor",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0290",
+        "language": "CSharp",
+        "title": "Use primary constructor",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_prefer_primary_constructors", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0290.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "UseSwitchExpression",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0066",
+        "language": "CSharp",
+        "title": "Use switch expression",
+        "settings": [
+          { "sink": "EditorConfig", "key": "csharp_style_prefer_switch_expression", "value": "true:error" },
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0066.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "RemoveUnnecessaryCast",
+    "language": "CSharp",
+    "rules": [
+      {
+        "diagnosticId": "IDE0004",
+        "language": "CSharp",
+        "title": "Remove unnecessary cast",
+        "settings": [
+          { "sink": "EditorConfig", "key": "dotnet_diagnostic.IDE0004.severity", "value": "error" },
+          { "sink": "MsBuildProperty", "key": "EnforceCodeStyleInBuild", "value": "true" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  },
+  {
+    "fixKey": "nuget.updateVulnerable",
+    "language": "FSharp",
+    "rules": [
+      {
+        "diagnosticId": "NU1903",
+        "language": "FSharp",
+        "title": "Enforce high/critical NuGet vulnerabilities in build",
+        "settings": [
+          { "sink": "SharpLspToml", "key": "nuget.vulnerabilities.enforce_in_build", "value": "true" },
+          { "sink": "MsBuildProperty", "key": "WarningsAsErrors", "value": "NU1903;NU1904" }
+        ],
+        "severity": "Error"
+      }
+    ]
+  }
+]

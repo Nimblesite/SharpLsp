@@ -7,9 +7,9 @@ Bug: GitHub #577. F# lands before C# in every phase.
 
 Implements [FIXALL-MODEL], [FIXALL-RULES], [FIXALL-RULES-TABLE].
 
-- [ ] Generate C#, F# and Rust types from `docs/models/code-action-rules.td`; lint fails on stale output.
-- [ ] Encode [FIXALL-RULES-TABLE] as data conforming to `FixRuleAssociation`; generate into each tier.
-- [ ] Opposing-rule pairs (IDE0007↔IDE0008, IDE0160↔IDE0161, IDE0003↔IDE0009) in the table, not code.
+- [x] Generate C#, F# and Rust types from `docs/models/code-action-rules.td`; lint fails on stale output (`tools/vsix/code-action-rules-model.mjs`, `model-generators.test.mjs`).
+- [x] Encode [FIXALL-RULES-TABLE] as data conforming to `FixRuleAssociation`; generate into each tier (`docs/models/code-action-rules.json` → `rules_generated.rs`, `FixAllRules.g.cs`, `FixAllRules.g.fs`).
+- [x] Opposing-rule pairs (IDE0007↔IDE0008, IDE0160↔IDE0161, IDE0003↔IDE0009) in the table, not code.
 
 ## Phase 2: F# Batch Fixes (P0)
 
