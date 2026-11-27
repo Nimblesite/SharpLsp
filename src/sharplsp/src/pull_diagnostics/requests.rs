@@ -17,6 +17,7 @@ use crate::sidecar::manager::SidecarManager;
 use crate::vfs::Vfs;
 
 mod interest;
+mod queued;
 mod refusal;
 
 pub(super) use refusal::settled_refusal;
@@ -119,12 +120,12 @@ impl Requests {
             cancellation.supersede_all();
         }
         if handles(request) {
-            let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
+            let id = request_id(request)?;
             let interest = interest::request(request);
             if let Some(document) = interest.as_ref() {
                 crate::semantic::requests::arrived(request, &document.resource);
             }
-            cancellation.register(id, interest)?;
+            queued::hold(cancellation.queue(id, interest)?);
         }
         Ok(())
     }
@@ -172,7 +173,9 @@ impl Requests {
         let snapshot = (reply.clone(), store.clone(), revision);
         let (dispatcher, context) = (self.dispatcher.clone(), self.context.clone());
         let start = settled.map_or(Start::Now, Start::Settled);
-        let future = prepare(&dispatcher, &context, request.clone(), snapshot, start)?;
+        let future = prepare(&dispatcher, &context, request.clone(), snapshot, start);
+        queued::release(&request_id(request)?);
+        let future = future?;
         let (request, sender) = (request.clone(), self.context.sender.clone());
         let started = std::time::Instant::now();
         drop(runtime.spawn(async move {
@@ -245,7 +248,7 @@ fn prepare(
     start: Start,
 ) -> Result<Pin<Box<dyn Future<Output = HandlerResult> + Send>>> {
     let context = context.clone();
-    let id = serde_json::from_value(serde_json::to_value(&request.id)?)?;
+    let id = request_id(&request)?;
     let sender = context.sender.clone();
     Ok(Box::pin(dispatcher.prepare_call(id, move |cancel| {
         let snapshot = Snapshot {
@@ -257,6 +260,11 @@ fn prepare(
         };
         compute(request, context, snapshot, start)
     })?))
+}
+
+/// The dispatcher's form of an LSP request's ID.
+fn request_id(request: &Request) -> Result<lspkit_server::RequestId> {
+    Ok(serde_json::from_value(serde_json::to_value(&request.id)?)?)
 }
 
 /// The foreground and protocol reader agree on the requests owned by this dispatcher.

@@ -94,9 +94,9 @@ PLAYWRIGHT_DEPS_FLAG = $(if $(filter windows,$(DETECTED_OS)),,--with-deps)
 # .NET engine, consumer kit (fixtures) are release assets, never
 # its source: `_fetch-lspkit` unpacks the kit to LSPKIT_DIR and `_build-dotnet`
 # the engine for VSIX_PLAT to PROFILER_ENGINE_OUT (tools/ci/fetch-lspkit.mjs).
-export LSPKIT_VERSION := 0.10.1
+export LSPKIT_VERSION := 0.10.2
 # Pins the release's SHA256SUMS, which pins every asset fetched from it.
-export LSPKIT_SUMS_SHA256 := 4c6b7c5b451dbce8e6e3540fb5bd6eab61520455b7e3730be3214eddbcd0062f
+export LSPKIT_SUMS_SHA256 := d3ce098d092f124271cab91338e8d605dcecf317c187e702727dc6589925b77b
 # Outside target/: CI caches restore target/ partially, which would skip the fetch.
 export LSPKIT_DIR   := .lspkit/lspkit-$(LSPKIT_VERSION)
 PROFILER_ENGINE_OUT := target/profiler-engine
