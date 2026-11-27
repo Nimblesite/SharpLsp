@@ -25,7 +25,7 @@ import { belongsToUserCode, carriesUserCode } from './dap-statement';
 import { VariableExpander } from './dap-variables';
 import { DapHotReload } from './dap-hot-reload';
 import { rescuedThreads } from './dap-threads';
-import { error, traceInfo } from './log';
+import { error, info, traceInfo } from './log';
 import { getErrorMessage } from './utils';
 import { err, ok, type Result } from './result';
 
@@ -585,6 +585,11 @@ export class DapRouter
       this.breakpoints.record(this.pendingBreakpointArgs.get(requestSeq), message.body);
       this.pendingBreakpointArgs.delete(requestSeq);
       this.noteBreakpointBinds(message.body);
+    }
+    if (this.replayer.retriesColdStart(message)) {
+      info('netcoredbg missed the runtime startup wait; launching again with a fresh adapter');
+      this.onRestart();
+      return;
     }
     if (message.command === 'configurationDone') {
       this.configurationAnswered = true;

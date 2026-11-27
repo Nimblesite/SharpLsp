@@ -1,7 +1,7 @@
 //! Sidecar lifecycle manager — spawn, health monitoring, crash recovery.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -97,6 +97,9 @@ pub struct SidecarManager {
     workspace_open_requested: AtomicBool,
     /// A new process must receive its previous compiler inputs before serving requests.
     ever_connected: AtomicBool,
+    /// Bumped by every successful connect, so crash handling for one
+    /// connection never tears down the replacement that followed it.
+    connections: AtomicU64,
     /// Compiler-specific session metadata, with weak access to canonical VFS inputs.
     session: recovery::SessionInputs,
     /// Code lenses an interactive request may preempt ([SHARPLSP-FEATURES-CODE-LENS], #504).
@@ -146,6 +149,7 @@ impl SidecarManager {
             workspace_open_finished: AtomicBool::new(false),
             workspace_open_requested: AtomicBool::new(false),
             ever_connected: AtomicBool::new(false),
+            connections: AtomicU64::new(0),
             session: recovery::SessionInputs::default(),
             preemption: preemption::Preemption::default(),
             warm_up: warm_up::WarmUp::default(),
@@ -298,6 +302,7 @@ impl SidecarManager {
                 }
                 *self.child.lock().await = Some(child);
                 *connection = Some(transport);
+                let _previous = self.connections.fetch_add(1, Ordering::AcqRel);
                 *self.backoff.lock().await = INITIAL_BACKOFF;
                 *self.spawn_retry_after.lock().await = None;
                 info!(sidecar = %self.name, "Sidecar connected");
@@ -541,19 +546,25 @@ impl SidecarManager {
         }
     }
 
-    /// Handle a crash: clean up and prepare for restart with backoff.
-    pub async fn handle_crash(&self) {
-        error!(sidecar = %self.name, "Sidecar crashed, cleaning up");
+    /// The connection a health check is about to judge.
+    pub fn connection(&self) -> u64 {
+        self.connections.load(Ordering::Acquire)
+    }
 
-        // Clear transport.
-        *self.transport.lock().await = None;
-
-        // Kill child if still running.
-        if let Some(mut child) = self.child.lock().await.take() {
-            let _ = child.kill().await;
+    /// Handle a failed health check of `failed` ([`Self::connection`]): tear
+    /// that connection down and back off before the next spawn. A queued
+    /// request may already have connected a replacement since — a timed-out
+    /// ping drops its own connection — and that replacement is left serving.
+    /// `[SIDECAR-RECOVERY-BACKOFF]`
+    pub async fn handle_crash(&self, failed: u64) {
+        let mut transport = self.transport.lock().await;
+        if self.connection() != failed {
+            info!(sidecar = %self.name, "Sidecar already replaced after the failed health check");
+            return;
         }
-
-        // Apply backoff.
+        error!(sidecar = %self.name, "Sidecar crashed, cleaning up");
+        self.disconnect(&mut transport).await;
+        drop(transport);
         let delay = self.grow_backoff().await;
 
         warn!(
@@ -662,8 +673,9 @@ async fn health_loop(sidecar: Arc<SidecarManager>) -> ! {
         }
         drop(guard);
 
+        let checked = sidecar.connection();
         if sidecar.health_check().await.is_err() {
-            sidecar.handle_crash().await;
+            sidecar.handle_crash(checked).await;
         }
     }
 }

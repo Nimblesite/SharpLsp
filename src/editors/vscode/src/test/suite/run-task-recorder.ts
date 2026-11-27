@@ -2,6 +2,7 @@
 // exit, for the run/debug suites. [DEBUG-FEATURES-LAUNCH-SCRIPT]
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
+import { RUN_TASK_SOURCE } from '../../launch-run.js';
 import { binaryNameOf } from '../../platform.js';
 import { getErrorMessage } from '../../utils.js';
 import { pollUntilResult, sleep } from './test-helpers';
@@ -101,7 +102,10 @@ export class TaskRecorder {
         this.track(event.execution, { pid: event.processId, processStarted: this.now() });
       }),
       vscode.tasks.onDidEndTaskProcess((event) => {
-        if (event.exitCode !== undefined) this.exitCodes.push(event.exitCode);
+        // Only SharpLsp's own tasks: another task ending first must never stand
+        // in for the run's exit (#631).
+        const ours = event.execution.task.source === RUN_TASK_SOURCE;
+        if (ours && event.exitCode !== undefined) this.exitCodes.push(event.exitCode);
         this.track(event.execution, { exitCode: event.exitCode, processEnded: this.now() });
       }),
       vscode.tasks.onDidEndTask((event) => {
@@ -138,7 +142,7 @@ export class TaskRecorder {
     return this.startedTasks;
   }
 
-  /** Exit codes of task processes that have finished. */
+  /** Exit codes of SharpLsp task processes that have finished. */
   public get exits(): readonly number[] {
     return this.exitCodes;
   }

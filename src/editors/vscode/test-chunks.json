@@ -91,6 +91,7 @@
         "build-problem-matcher.test.js",
         "run-debug-target.test.js",
         "run-debug-build.test.js",
+        "run-task-recorder.test.js",
         "run-debug-commands.test.js",
         "run-debug-scripts.test.js",
         "configuration-e2e.test.js"
@@ -139,6 +140,7 @@
         "debug-protocol-capabilities-e2e.test.js",
         "debug-session-lifecycle-e2e.test.js",
         "dap-shutdown-wedge.test.js",
+        "dap-cold-start.test.js",
         "debug-router-dispose-e2e.test.js",
         "debug-output-routing-e2e.test.js",
         "debug-terminal-cancel-e2e.test.js",

@@ -360,3 +360,53 @@ async fn pre_ready_exit_reports_exit_status_and_log_hint() {
         "error must point at the sidecar log directory (GitHub #150), got: {message}"
     );
 }
+
+/// A missed health ping drops the wedged connection itself (the timeout
+/// poisons it), and a queued request may connect a replacement before the
+/// health loop's crash handling runs. That handling must leave the
+/// replacement alone: tearing it down killed the healthy, just-restored
+/// compiler and lost the live lint configuration it had been given (Windows
+/// `diagnostics-sdk`, PR #632). The connection whose ping failed is still torn
+/// down and backed off — a dead pipe drops nothing by itself.
+/// Implements [SIDECAR-RECOVERY-BACKOFF] and [SIDECAR-IPC-TIMEOUT].
+#[tokio::test]
+async fn crash_handling_after_a_missed_ping_spares_the_replacement_connection() {
+    let manager = SidecarManager::new("test", "unused-command", vec![], "unused-endpoint");
+    let (wedged, _silent_peer) = tokio::io::duplex(1024);
+    *manager.transport.lock().await = Some(FramedTransport::from_stream(wedged));
+    let checked = manager.connection();
+    let missed = manager.health_check().await;
+    assert!(
+        missed.is_err(),
+        "a sidecar that never answers fails its ping"
+    );
+    assert!(
+        manager.transport.lock().await.is_none(),
+        "the timed-out ping already dropped the wedged connection"
+    );
+
+    let (replacement, _live_peer) = tokio::io::duplex(1024);
+    *manager.transport.lock().await = Some(FramedTransport::from_stream(replacement));
+    let _previous = manager.connections.fetch_add(1, Ordering::AcqRel);
+    manager.handle_crash(checked).await;
+    assert!(
+        manager.transport.lock().await.is_some(),
+        "the replacement a request connected must survive the old ping's crash handling"
+    );
+    assert_eq!(
+        *manager.backoff.lock().await,
+        INITIAL_BACKOFF,
+        "a live replacement is no crash: the backoff does not grow"
+    );
+
+    manager.handle_crash(manager.connection()).await;
+    assert!(
+        manager.transport.lock().await.is_none(),
+        "the connection whose health check failed is torn down"
+    );
+    assert_eq!(
+        *manager.backoff.lock().await,
+        INITIAL_BACKOFF * 2,
+        "and backed off before the next spawn"
+    );
+}

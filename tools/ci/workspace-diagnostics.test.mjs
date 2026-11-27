@@ -1,7 +1,7 @@
 // Implements [DIAG-HYGIENE-GUARD]: the gate's own rules — framing, flattening,
 // the allow-list and the failing severity — over reports shaped like the host's.
 import assert from "node:assert/strict";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { takeMessages } from "./lsp-session.mjs";
 import { parseArguments, rowsOf, summary, violations } from "./workspace-diagnostics.mjs";
@@ -18,6 +18,9 @@ const diagnostic = (code, severity, line = 0) => ({
     message: `${code} happened`,
     range: { start: { line, character: 0 }, end: { line, character: 1 } },
 });
+
+/** `path` as the tools see it once it has been through a file URI: native on every OS. */
+const native = (path) => fileURLToPath(pathToFileURL(path));
 
 test("framed messages split off whole, a partial one waits for its bytes, multi-byte text counts in bytes", () => {
     const first = frame({ id: 1, result: "héllo" });
@@ -47,9 +50,9 @@ test("reports flatten to one row per diagnostic with a one-based line and a name
     assert.deepEqual(
         rows.map((row) => [row.file, row.line, row.severity, row.code]),
         [
-            ["/repo/src/App.fs", 5, "error", "FS0001"],
-            ["/repo/src/App.fs", 1, "warning", "FL0067"],
-            ["/repo/src/Tool.cs", 3, "error", ""],
+            [native("/repo/src/App.fs"), 5, "error", "FS0001"],
+            [native("/repo/src/App.fs"), 1, "warning", "FL0067"],
+            [native("/repo/src/Tool.cs"), 3, "error", ""],
         ],
     );
     assert.equal(rows[0].message, "FS0001 happened");
