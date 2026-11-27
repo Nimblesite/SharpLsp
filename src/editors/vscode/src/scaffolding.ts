@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { execFile } from 'child_process';
 import * as fs from 'fs';
 import { directoryOf, fileNameOf, joinPath } from './paths';
+import { runDotnet } from './dotnet-process.js';
 import { info } from './log';
 import { findSolutions } from './solution.js';
 import * as state from './state.js';
@@ -67,7 +67,7 @@ export function newProjectArgs(
  * instead of assuming an extension.
  */
 export async function createSolution(folder: string, name: string): Promise<string> {
-  await runDotnet(newSolutionArgs(name, folder), folder);
+  await dotnet(newSolutionArgs(name, folder), folder);
   for (const ext of ['slnx', 'sln']) {
     const candidate = joinPath(folder, `${name}.${ext}`);
     if (fs.existsSync(candidate)) {
@@ -84,7 +84,7 @@ export async function createProject(
   template: string,
   lang?: string,
 ): Promise<string> {
-  await runDotnet(newProjectArgs(template, name, folder, lang), folder);
+  await dotnet(newProjectArgs(template, name, folder, lang), folder);
   return joinPath(folder, name);
 }
 
@@ -93,7 +93,7 @@ export async function addProjectToSolutionFile(
   solutionPath: string,
   projectPath: string,
 ): Promise<void> {
-  await runDotnet(['sln', solutionPath, 'add', projectPath], directoryOf(solutionPath));
+  await dotnet(['sln', solutionPath, 'add', projectPath], directoryOf(solutionPath));
 }
 
 /** Locate the `.csproj`/`.fsproj` for a freshly created project. */
@@ -419,16 +419,17 @@ export function generateFileContent(type: string, name: string): string {
   }
 }
 
-async function runDotnet(args: string[], cwd: string): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    execFile('dotnet', args, { cwd, timeout: 30000 }, (error, stdout, stderr) => {
-      if (error !== null) {
-        reject(new Error(stderr !== '' ? stderr : error.message));
-      } else {
-        resolve(stdout);
-      }
-    });
-  });
+/**
+ * Run one scaffolding `dotnet` command through the shared runner: the resolved
+ * SDK, a pinned UI language and the cold-machine budget. A fixed 30s cap killed
+ * the first `dotnet new` on a cold machine (template scan plus restore) and
+ * reported a project that was still being created as failed.
+ */
+async function dotnet(args: string[], cwd: string): Promise<void> {
+  const run = await runDotnet(args, cwd);
+  if (run.failed) {
+    throw new Error(run.stderr !== '' ? run.stderr : (run.errorMessage ?? 'dotnet failed'));
+  }
 }
 
 /** Register scaffolding commands. */
