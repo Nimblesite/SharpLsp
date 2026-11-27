@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn enforces_slspf0102_in_fsharp_section() {
         let tmp = tempfile::tempdir().unwrap();
-        let assoc = find_association("fsharp.removeUnusedOpen").unwrap();
+        let assoc = find_association("SLSPF0102").unwrap();
         let edit = build_enforcement_edit(tmp.path(), &assoc, None).unwrap();
         let Some(DocumentChanges::Operations(ops)) = edit.document_changes else {
             panic!("expected document_changes operations");

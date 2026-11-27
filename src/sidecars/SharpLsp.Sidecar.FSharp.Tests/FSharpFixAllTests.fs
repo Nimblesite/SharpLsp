@@ -405,3 +405,44 @@ let ``the fix-all wire shape mirrors the C# sidecar positional layout`` () =
 
     Assert.Equal(FSharpCodeFixes.FixAllKeys.RemoveUnusedOpen, item.FixKey)
     Assert.Equal<string array>([| "document"; "project"; "solution" |], item.FixAllScopes |> Option.ofObj |> Option.defaultValue [||])
+
+/// Containing-binding and containing-type AST scopes restrict batch fixes to
+/// the enclosing `let` binding or `type` definition ([FIXALL-SCOPES]).
+[<Fact>]
+let ``fix all containingMember and containingType restrict edits to the enclosing AST node`` () =
+    task {
+        let src =
+            String.Join(
+                "\n",
+                [ "module Scoped"
+                  "open System"
+                  "let first () = System.String.IsNullOrEmpty(\"a\")"
+                  "let second () = System.String.IsNullOrEmpty(\"b\")"
+                  "type Box() ="
+                  "    member _.A() = System.String.IsNullOrEmpty(\"c\")"
+                  "    member _.B() = System.String.IsNullOrEmpty(\"d\")"
+                  "" ]
+            )
+
+        let! state, root, _, appPath = openSolution coreOpens src
+        try
+            // Containing member on `first` (line 2) touches only line 2, not line 3 or Box.
+            let! memberEdits =
+                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingMember" (Some 2) CancellationToken.None
+
+            let memberEdits = editsOf memberEdits |> editsFor "Program.fs"
+            Assert.Equal(1, memberEdits.Length)
+            Assert.Equal(2, memberEdits.[0].StartLine)
+
+            // Containing type on `Box` (line 5) touches both members of Box (lines 5 & 6), not top-level bindings.
+            let! typeEdits =
+                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingType" (Some 5) CancellationToken.None
+
+            let typeEdits = editsOf typeEdits |> editsFor "Program.fs"
+            Assert.Equal(2, typeEdits.Length)
+            Assert.Equal<int list>([ 5; 6 ], typeEdits |> List.map (fun e -> e.StartLine))
+        finally
+            try
+                Directory.Delete(root, true)
+            with :? IOException -> ()
+    }

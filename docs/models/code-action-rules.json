@@ -1,6 +1,6 @@
 [
   {
-    "fixKey": "fsharp.removeUnusedOpen",
+    "fixKey": "SLSPF0102",
     "language": "FSharp",
     "rules": [
       {
@@ -15,7 +15,7 @@
     ]
   },
   {
-    "fixKey": "fsharp.simplifyName",
+    "fixKey": "SLSPF0103",
     "language": "FSharp",
     "rules": [
       {
@@ -30,7 +30,7 @@
     ]
   },
   {
-    "fixKey": "fsharp.removeUnusedDeclaration",
+    "fixKey": "SLSPF0101",
     "language": "FSharp",
     "rules": [
       {
@@ -46,7 +46,7 @@
     ]
   },
   {
-    "fixKey": "fsharp.prefixUnusedValue",
+    "fixKey": "FS1182",
     "language": "FSharp",
     "rules": [
       {
@@ -62,7 +62,7 @@
     ]
   },
   {
-    "fixKey": "fsharp.addNewForDisposable",
+    "fixKey": "FS0760",
     "language": "FSharp",
     "rules": [
       {

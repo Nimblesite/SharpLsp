@@ -10,6 +10,8 @@ open System
 open System.Threading
 open System.Threading.Tasks
 open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Syntax
+open FSharp.Compiler.Text
 open Serilog
 open SharpLsp.Sidecar.Common
 open SharpLsp.Sidecar.FSharp.FSharpCodeActions
@@ -49,7 +51,9 @@ let private ownFiles (options: FSharpProjectOptions) =
 /// scope — never build output. Errors carry the plain-words refusal reason.
 let private scopeFiles (state: FSharpWorkspace.FSharpWorkspaceState) filePath (scope: string) : Result<string array, string> =
     match scope with
-    | "document" -> Ok [| filePath |]
+    | "document"
+    | "containingMember"
+    | "containingType" -> Ok [| filePath |]
     | "project" ->
         match FSharpWorkspace.queryScope state filePath |> List.tryHead with
         | Some own -> Ok(ownFiles own)
@@ -61,6 +65,65 @@ let private scopeFiles (state: FSharpWorkspace.FSharpWorkspaceState) filePath (s
         |> Array.ofSeq
         |> Ok
     | _ -> Error $"the scope '{scope}' is not one this fix supports"
+
+/// Find the innermost enclosing AST binding (`containingMember`) or type
+/// definition (`containingType`) containing 0-based `anchorLine`. [FIXALL-SCOPES]
+let internal enclosingRange (parse: FSharpParseFileResults) (scope: string) (anchorLine: int) : range option =
+    let line1 = anchorLine + 1
+    let contains (r: range) = r.StartLine <= line1 && line1 <= r.EndLine
+    let smaller (a: range) (b: range) = (a.EndLine - a.StartLine) < (b.EndLine - b.StartLine)
+    let pick current candidate =
+        if not (contains candidate) then current
+        else
+            match current with
+            | None -> Some candidate
+            | Some prev -> if smaller candidate prev then Some candidate else Some prev
+
+    let rec walkDecls wantType best decls =
+        (best, decls)
+        ||> List.fold (fun acc decl ->
+            match decl with
+            | SynModuleDecl.Let(_, bindings, _, _) when not wantType ->
+                (acc, bindings) ||> List.fold (fun b binding -> pick b binding.RangeOfBindingWithRhs)
+            | SynModuleDecl.Types(types, _) ->
+                (acc, types)
+                ||> List.fold (fun b (SynTypeDefn(_, repr, members, _, r, _)) ->
+                    let b = if wantType then pick b r else b
+                    if wantType then b
+                    else
+                        let fromMembers =
+                            (b, members)
+                            ||> List.fold (fun m mem ->
+                                match mem with
+                                | SynMemberDefn.Member(binding, _) -> pick m binding.RangeOfBindingWithRhs
+                                | SynMemberDefn.LetBindings(bindings, _, _, _, _) ->
+                                    (m, bindings) ||> List.fold (fun x bd -> pick x bd.RangeOfBindingWithRhs)
+                                | _ -> m)
+                        match repr with
+                        | SynTypeDefnRepr.ObjectModel(_, reprMembers, _) ->
+                            (fromMembers, reprMembers)
+                            ||> List.fold (fun m mem ->
+                                match mem with
+                                | SynMemberDefn.Member(binding, _) -> pick m binding.RangeOfBindingWithRhs
+                                | _ -> m)
+                        | _ -> fromMembers)
+            | SynModuleDecl.NestedModule(_, _, nested, _, _, _) -> walkDecls wantType acc nested
+            | _ -> acc)
+
+    match parse.ParseTree with
+    | ParsedInput.ImplFile(ParsedImplFileInput(contents = modules)) ->
+        let wantType = scope = "containingType"
+        (None, modules)
+        ||> List.fold (fun acc (SynModuleOrNamespace(decls = decls)) -> walkDecls wantType acc decls)
+    | _ -> None
+
+let private withinScope (limit: range option) (edit: TextEdit) =
+    match limit with
+    | None -> true
+    | Some r ->
+        let start1 = edit.StartLine + 1
+        let end1 = edit.EndLine + 1
+        start1 >= r.StartLine && end1 <= r.EndLine
 
 // ── Edit merging ─────────────────────────────────────────────────
 
@@ -133,13 +196,20 @@ let private findingsInFile
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (analyzers: FSharpAnalyzers.AnalyzerConfig option)
     (fixKey: string)
+    (scope: string)
+    (anchorLine: int option)
     (filePath: string)
     (ct: CancellationToken)
-    : Task<RawEdit list option> =
+    : Task<(RawEdit list * range option) option> =
     task {
         match! FSharpWorkspace.checkFileWithParseWithCancellation state filePath ct with
         | None -> return None
         | Some(parse, check, source) ->
+            let limit =
+                match scope, anchorLine with
+                | ("containingMember" | "containingType"), Some line -> enclosingRange parse scope line
+                | _ -> None
+
             let! raw =
                 match fixKey with
                 | FixAllKeys.RemoveUnusedOpen -> unusedOpens check source filePath
@@ -152,7 +222,7 @@ let private findingsInFile
                     deadDeclarations state analyzers parse check source filePath ct
                 | _ -> Task.FromResult []
 
-            return Some raw
+            return Some(raw, limit)
     }
 
 /// One file's merged findings of `fixKey`, in document order, and how many
@@ -162,12 +232,20 @@ let private mergedFindings
     (state: FSharpWorkspace.FSharpWorkspaceState)
     (analyzers: FSharpAnalyzers.AnalyzerConfig option)
     (fixKey: string)
+    (scope: string)
+    (anchorLine: int option)
     (file: string)
     (ct: CancellationToken)
     : Task<(TextEdit list * int) option> =
     task {
-        let! raw = findingsInFile state analyzers fixKey file ct
-        return raw |> Option.map (List.map ofRawEdit >> mergeFileEdits)
+        let! found = findingsInFile state analyzers fixKey scope anchorLine file ct
+        return
+            found
+            |> Option.map (fun (raw, limit) ->
+                raw
+                |> List.map ofRawEdit
+                |> List.filter (withinScope limit)
+                |> mergeFileEdits)
     }
 
 /// The reason a fix-all refuses before it starts: an unknown key, or the
@@ -205,16 +283,38 @@ let private outcomeOf fixKey scope (documents: DocumentEdit list, droppedOverlap
     | _ -> Applied(documents |> List.sortWith (fun a b -> NativePaths.Comparer.Compare(a.FilePath, b.FilePath)), droppedOverlaps)
 
 /// Every file's merged findings of `fixKey`, folded in file order.
-let private fixFiles state analyzers fixKey (files: string array) (ct: CancellationToken) =
+let private fixFiles state analyzers fixKey scope anchorLine (files: string array) (ct: CancellationToken) =
     task {
         let mutable folded = [], 0
 
         for file in files do
             ct.ThrowIfCancellationRequested()
-            let! merged = mergedFindings state analyzers fixKey file ct
+            let! merged = mergedFindings state analyzers fixKey scope anchorLine file ct
             folded <- collect fixKey file folded merged
 
         return folded
+    }
+
+/// Run one fix at every occurrence of its `scope`, anchored on `filePath` and
+/// optional 0-based `anchorLine` (used for `containingMember` / `containingType`).
+/// [FIXALL-SCOPES]
+let fixAllAt
+    (state: FSharpWorkspace.FSharpWorkspaceState)
+    (analyzers: FSharpAnalyzers.AnalyzerConfig option)
+    (filePath: string)
+    (fixKey: string)
+    (scope: string)
+    (anchorLine: int option)
+    (ct: CancellationToken)
+    : Task<FixAllOutcome> =
+    task {
+        match refusalOf analyzers fixKey, scopeFiles state filePath scope with
+        | Some reason, _
+        | None, Error reason -> return Refused reason
+        | None, Ok files when files.Length = 0 -> return Refused "no F# projects are loaded"
+        | None, Ok files ->
+            let! folded = fixFiles state analyzers fixKey scope anchorLine files ct
+            return outcomeOf fixKey scope folded
     }
 
 /// Run one fix at every occurrence of its `scope`, anchored on `filePath`.
@@ -228,12 +328,4 @@ let fixAll
     (scope: string)
     (ct: CancellationToken)
     : Task<FixAllOutcome> =
-    task {
-        match refusalOf analyzers fixKey, scopeFiles state filePath scope with
-        | Some reason, _
-        | None, Error reason -> return Refused reason
-        | None, Ok files when files.Length = 0 -> return Refused "no F# projects are loaded"
-        | None, Ok files ->
-            let! folded = fixFiles state analyzers fixKey files ct
-            return outcomeOf fixKey scope folded
-    }
+    fixAllAt state analyzers filePath fixKey scope None ct

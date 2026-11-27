@@ -16,8 +16,7 @@ Implements [FIXALL-MODEL], [FIXALL-RULES], [FIXALL-RULES-TABLE].
 Implements [FIXALL-SCOPES] for F#.
 
 - [x] Batch form for remove unused open, simplify name, remove unused declaration, `_` prefix, add `new`.
-- [ ] Scope resolution: containing binding/type (AST), document, project (`FSharpProjectOptions`), solution.
-  - Done: document, project, solution in `SharpLsp.Sidecar.FSharp/FSharpFixAll.fs` (`scopeFiles`). Remaining: containing binding/type.
+- [x] Scope resolution: containing binding/type (AST), document, project (`FSharpProjectOptions`), solution (`FSharpFixAll.fs` `scopeFiles` + `enclosingRange`, tested in `FSharpFixAllTests`).
 - [x] Merge per-file edits from AST ranges; drop and report overlaps (`FSharpFixAll.mergeFileEdits`, Serilog report).
 - [x] Failing E2E first: two-project F# fixture, fix-all unused opens per scope (bug #577) — `FSharpFixAllTests`.
 
