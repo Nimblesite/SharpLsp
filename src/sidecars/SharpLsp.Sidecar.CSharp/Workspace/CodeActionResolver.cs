@@ -242,7 +242,8 @@ internal sealed partial class CodeActionResolver
 
     private static string FixKind(Diagnostic diagnostic)
     {
-        return diagnostic.Severity == DiagnosticSeverity.Hidden
+        return
+            diagnostic.Severity == DiagnosticSeverity.Hidden
             && AnalyzerDiagnosticResolver.RewriteDiagnosticIds.Contains(diagnostic.Id)
             ? "refactor.rewrite"
             : "quickfix";

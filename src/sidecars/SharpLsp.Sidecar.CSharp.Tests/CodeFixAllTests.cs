@@ -348,7 +348,10 @@ public sealed class CodeFixAllTests : IDisposable
                 await manager.GetCodeActionsAsync(headersPath, line, start, line, end)
             );
             var offered = listed.FirstOrDefault(action =>
-                action.Title.Contains("var' instead of explicit type", StringComparison.OrdinalIgnoreCase)
+                action.Title.Contains(
+                    "var' instead of explicit type",
+                    StringComparison.OrdinalIgnoreCase
+                )
             );
             Assert.NotNull(offered);
             Assert.Equal("quickfix", offered!.Kind);
