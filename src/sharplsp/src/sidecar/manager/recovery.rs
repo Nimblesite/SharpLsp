@@ -140,6 +140,10 @@ impl SidecarManager {
             return Err(error).context("restore compiler workspace inputs");
         }
         info!(sidecar = %self.name, "Compiler session restored");
+        // A pull that failed while the compiler was down is never asked again
+        // by the client on its own: the restored compiler is a changed engine,
+        // so the editor is told to pull again. [DIAG-TRUTH-GUARANTEES]
+        crate::pull_diagnostics::state::engine_changed();
         Ok(())
     }
 

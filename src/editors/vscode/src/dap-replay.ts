@@ -61,6 +61,12 @@ export class SessionReplayer {
   /** The terminal-hosted program to announce once its runtime is up. */
   private terminalDebuggee: number | undefined;
 
+  /** Set once a launch that missed its startup wait was made again. */
+  private coldStartRetried = false;
+
+  /** Set once the adapter announced the debuggee's process. */
+  private processStarted = false;
+
   constructor(private readonly host: ReplayHost) {}
 
   /** The launch/attach request, for terminal routing decisions. */
@@ -190,6 +196,7 @@ export class SessionReplayer {
    */
   public observeChild(message: DapMessage): void {
     if (message.type === 'response') this.pendingConfiguration.delete(Number(message.request_seq));
+    if (message.type === 'event' && message.event === 'process') this.processStarted = true;
     const pid = this.terminalDebuggee;
     if (pid === undefined || message.type !== 'event' || message.event !== 'module') return;
     this.terminalDebuggee = undefined;
@@ -206,6 +213,24 @@ export class SessionReplayer {
       event: 'process',
       body: { name, systemProcessId: pid, isLocalProcess: true, startMethod: 'launch' },
     });
+  }
+
+  /**
+   * Whether a refused `configurationDone` is netcoredbg giving up on a launched
+   * runtime that missed its five-second startup wait: a plain launch whose
+   * debuggee never announced a process. A cold machine (the first `dotnet`
+   * start on a runner) misses that window and the refusal ends the session
+   * before any breakpoint binds. The answer stays owed to the client, so the
+   * respawn's replayed `configurationDone` delivers it. Once only: a second
+   * refusal is the truth. [DEBUG-FEATURES-LAUNCH]
+   */
+  public retriesColdStart(message: DapMessage): boolean {
+    const plainLaunch = this.launchMessage?.command === 'launch' && !this.wantsTerminal();
+    const refused = message.command === 'configurationDone' && message.success === false;
+    if (!refused || !plainLaunch || this.processStarted || this.coldStartRetried) return false;
+    this.coldStartRetried = true;
+    this.pendingConfiguration.add(Number(message.request_seq));
+    return true;
   }
 
   /** Kill and respawn the adapter for `restart`, then replay the handshake. */
