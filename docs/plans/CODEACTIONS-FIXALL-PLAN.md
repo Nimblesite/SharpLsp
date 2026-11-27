@@ -43,11 +43,11 @@ Implements [FIXALL-LSP].
 
 Implements [FIXALL-ENFORCE].
 
-- [ ] Lossless `.editorconfig` CST module in the host (parse/write, comments preserved).
-- [ ] Target-file and section resolution; create root `.editorconfig` when absent.
-- [ ] Detect overriding nested `.editorconfig`/sections and include them in the edit.
-- [ ] `Directory.Build.props` XML DOM writer with list-property merge.
-- [ ] TOML writer via existing serializer.
+- [x] Lossless `.editorconfig` CST module in the host (parse/write, comments preserved) — `code_actions/editorconfig.rs`.
+- [x] Target-file and section resolution; create root `.editorconfig` when absent — `editorconfig::resolve_target` / `ensure_root`.
+- [x] Detect overriding nested `.editorconfig`/sections and include them in the edit — `editorconfig::find_overriding_files`.
+- [x] `Directory.Build.props` XML DOM writer with list-property merge — `code_actions/msbuild_props.rs` (`quick_xml`).
+- [x] TOML writer via existing serializer — `code_actions/enforce.rs` (`toml::Table`).
 - [ ] Sidecar analyzer-config reload + `workspace/diagnostic/refresh` after apply.
 - [ ] E2E: enforce IDE0007 → new explicit type is an editor error **and** a `dotnet build` error.
 - [ ] E2E: enforce SLSPF0102 → new unused `open` is an error.
