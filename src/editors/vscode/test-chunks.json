@@ -91,6 +91,7 @@
         "build-problem-matcher.test.js",
         "run-debug-target.test.js",
         "run-debug-build.test.js",
+        "run-task-recorder.test.js",
         "run-debug-commands.test.js",
         "run-debug-scripts.test.js",
         "configuration-e2e.test.js"

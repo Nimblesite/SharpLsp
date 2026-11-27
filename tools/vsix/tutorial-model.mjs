@@ -33,8 +33,7 @@ function captureStdout(command, args) {
     const file = path.join(dir, "stdout");
     const fd = fs.openSync(file, "w+");
     try {
-        // On Windows the npm shim is a `.cmd`, which only resolves through a shell.
-        execFileSync(command, args, { stdio: ["ignore", fd, "inherit"], shell: process.platform === "win32" });
+        execFileSync(command, args, { stdio: ["ignore", fd, "inherit"] });
         const buffer = Buffer.alloc(fs.fstatSync(fd).size);
         const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
         return buffer.toString("utf8", 0, bytesRead);
@@ -44,7 +43,25 @@ function captureStdout(command, args) {
     }
 }
 
-const emitted = captureStdout("typediagram", ["--to", "typescript", source]);
+/**
+ * The typediagram CLI as `[command, args]`. On Windows npm installs it as a
+ * `.cmd` shim, which Node runs only through a shell, and a shell given
+ * arguments is deprecated (DEP0190) and re-opens quoting. The shim sits beside
+ * the package it runs, so its JS entry goes to this Node instead, the pattern
+ * verify-vsix-payload.mjs uses for vsce.
+ */
+function typediagram(args) {
+    if (process.platform !== "win32") return ["typediagram", args];
+    const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+    const prefix = dirs.find((dir) => fs.existsSync(path.join(dir, "typediagram.cmd")));
+    if (prefix === undefined) throw new Error("typediagram is not on PATH: npm install -g typediagram");
+    const manifest = path.join(prefix, "node_modules", "typediagram", "package.json");
+    const { bin } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+    const entry = typeof bin === "string" ? bin : bin.typediagram;
+    return [process.execPath, [path.join(path.dirname(manifest), entry), ...args]];
+}
+
+const emitted = captureStdout(...typediagram(["--to", "typescript", source]));
 const options = (await prettier.resolveConfig(target)) ?? {};
 // The extension's own lint fixes (e.g. `T[]` for `Array<T>`), then its formatting.
 const [linted] = await new ESLint({ cwd: extensionDir, fix: true }).lintText(`${HEADER}\n${emitted}`, { filePath: target });

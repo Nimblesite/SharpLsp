@@ -2,7 +2,7 @@
 // offsets by line and UTF-16 column, and several fixes in one file never shift
 // each other. [DIAG-HYGIENE-GUARD]
 import assert from "node:assert/strict";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import {
     applyFixes,
@@ -24,6 +24,9 @@ const range = (line, start, end, endLine = line) => ({
     end: { line: endLine, character: end },
 });
 const wrap = (text) => `(${text})`;
+
+/** `path` as the tools see it once it has been through a file URI: native on every OS. */
+const native = (path) => fileURLToPath(pathToFileURL(path));
 
 test("a position maps to its offset by line and column, on any line", () => {
     const text = "let a = 1\nlet bb = [ 1, 2 ]\n\nlast";
@@ -55,9 +58,9 @@ test("ranges are grouped by file for one code, under one path part", () => {
         { uri: pathToFileURL("/repo/tests/Unchanged.fs").href, kind: "unchanged" },
     ];
     const all = rangesByFile(reports, "FS3886", "/");
-    assert.deepEqual([...all.keys()], ["/repo/tests/A.fs", "/repo/src/B.fs"]);
-    assert.deepEqual(all.get("/repo/tests/A.fs").map((found) => found.start.line), [1, 3]);
-    assert.deepEqual([...rangesByFile(reports, "FS3886", "/tests/").keys()], ["/repo/tests/A.fs"]);
+    assert.deepEqual([...all.keys()], [native("/repo/tests/A.fs"), native("/repo/src/B.fs")]);
+    assert.deepEqual(all.get(native("/repo/tests/A.fs")).map((found) => found.start.line), [1, 3]);
+    assert.deepEqual([...rangesByFile(reports, "FS3886", "/tests/").keys()], [native("/repo/tests/A.fs")]);
     assert.equal(rangesByFile(reports, "CS0001", "/").size, 0);
 });
 
@@ -90,12 +93,12 @@ test("a workspace edit applies in either wire shape, deletions and insertions al
     const uri = pathToFileURL("/repo/A.fs").href;
     const other = pathToFileURL("/repo/B.cs").href;
     const byChanges = editsByFile({ changes: { [uri]: edits } });
-    assert.deepEqual([...byChanges.keys()], ["/repo/A.fs"]);
-    assert.equal(byChanges.get("/repo/A.fs").length, 3);
+    assert.deepEqual([...byChanges.keys()], [native("/repo/A.fs")]);
+    assert.equal(byChanges.get(native("/repo/A.fs")).length, 3);
     const byDocuments = editsByFile({
         documentChanges: [{ textDocument: { uri: other, version: null }, edits: [edits[0]] }, { kind: "rename", oldUri: uri, newUri: other }],
     });
-    assert.deepEqual([...byDocuments.keys()], ["/repo/B.cs"]);
+    assert.deepEqual([...byDocuments.keys()], [native("/repo/B.cs")]);
     assert.equal(editsByFile({}).size, 0);
 });
 
