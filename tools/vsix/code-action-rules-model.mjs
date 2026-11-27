@@ -97,7 +97,8 @@ ${entries}
 
 function buildFSharp() {
     const emitted = emitTypeDiagram("fsharp", modelPath)
-        .replace(/^type (FixScope|RuleLanguage|RuleSink|RuleSeverity) =/gm, "[<RequireQualifiedAccess>]\ntype $1 =")
+        .replace(/^type (FixScope|RuleLanguage|RuleSink|RuleSeverity) =/gm, "[<RequireQualifiedAccess; NoComparison; NoEquality>]\ntype $1 =")
+        .replace(/^type (RuleSetting|AssociatedRule|FixRuleAssociation|FixAllRequest) =/gm, "[<NoComparison; NoEquality>]\ntype $1 =")
         .trim();
     const entries = rules.map((assoc) => {
         const ruleExprs = assoc.rules.map((rule) => {

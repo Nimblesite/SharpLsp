@@ -4,7 +4,7 @@
 // fsharplint:disable RecordFieldNames
 module SharpLsp.Sidecar.FSharp.FixAllRules
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type FixScope =
     | Occurrence
     | ContainingMember
@@ -13,18 +13,18 @@ type FixScope =
     | Project
     | Solution
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type RuleLanguage =
     | FSharp
     | CSharp
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type RuleSink =
     | EditorConfig
     | SharpLspToml
     | MsBuildProperty
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; NoComparison; NoEquality>]
 type RuleSeverity =
     | Error
     | Warning
@@ -32,12 +32,14 @@ type RuleSeverity =
     | Silent
     | None
 
+[<NoComparison; NoEquality>]
 type RuleSetting = {
     sink: RuleSink
     key: string
     value: string
 }
 
+[<NoComparison; NoEquality>]
 type AssociatedRule = {
     diagnosticId: string
     language: RuleLanguage
@@ -46,12 +48,14 @@ type AssociatedRule = {
     severity: RuleSeverity
 }
 
+[<NoComparison; NoEquality>]
 type FixRuleAssociation = {
     fixKey: string
     language: RuleLanguage
     rules: AssociatedRule list
 }
 
+[<NoComparison; NoEquality>]
 type FixAllRequest = {
     fixKey: string
     scope: FixScope

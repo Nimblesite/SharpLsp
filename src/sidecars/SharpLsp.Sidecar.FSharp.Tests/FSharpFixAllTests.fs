@@ -419,8 +419,11 @@ let ``fix all containingMember and containingType restrict edits to the enclosin
                   "let first () = System.String.IsNullOrEmpty(\"a\")"
                   "let second () = System.String.IsNullOrEmpty(\"b\")"
                   "type Box() ="
+                  "    let helper () = System.String.IsNullOrEmpty(\"h\")"
                   "    member _.A() = System.String.IsNullOrEmpty(\"c\")"
                   "    member _.B() = System.String.IsNullOrEmpty(\"d\")"
+                  "module Nested ="
+                  "    let inside () = System.String.IsNullOrEmpty(\"n\")"
                   "" ]
             )
 
@@ -434,15 +437,44 @@ let ``fix all containingMember and containingType restrict edits to the enclosin
             Assert.Equal(1, memberEdits.Length)
             Assert.Equal(2, memberEdits.[0].StartLine)
 
-            // Containing type on `Box` (line 5) touches both members of Box (lines 5 & 6), not top-level bindings.
+            // Containing member on class `let helper` (line 5) touches only line 5.
+            let! helperEdits =
+                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingMember" (Some 5) CancellationToken.None
+
+            let helperEdits = editsOf helperEdits |> editsFor "Program.fs"
+            Assert.Equal(1, helperEdits.Length)
+            Assert.Equal(5, helperEdits.[0].StartLine)
+
+            // Containing type on `Box` (line 6) touches all three lines inside Box (5, 6, 7).
             let! typeEdits =
-                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingType" (Some 5) CancellationToken.None
+                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingType" (Some 6) CancellationToken.None
 
             let typeEdits = editsOf typeEdits |> editsFor "Program.fs"
-            Assert.Equal(2, typeEdits.Length)
-            Assert.Equal<int list>([ 5; 6 ], typeEdits |> List.map (fun e -> e.StartLine))
+            Assert.Equal(3, typeEdits.Length)
+            Assert.Equal<int list>([ 5; 6; 7 ], typeEdits |> List.map (fun e -> e.StartLine))
+
+            // Containing member inside a nested module (line 9) touches only line 9.
+            let! nestedEdits =
+                FSharpFixAll.fixAllAt state None appPath FSharpCodeFixes.FixAllKeys.SimplifyName "containingMember" (Some 9) CancellationToken.None
+
+            let nestedEdits = editsOf nestedEdits |> editsFor "Program.fs"
+            Assert.Equal(1, nestedEdits.Length)
+            Assert.Equal(9, nestedEdits.[0].StartLine)
         finally
             try
                 Directory.Delete(root, true)
             with :? IOException -> ()
     }
+
+/// Generated FixAllRules table carries every batch-capable F# fix key. [FIXALL-RULES-TABLE]
+[<Fact>]
+let ``generated FixAllRules table includes every F# fix key`` () =
+    let keys = FixAllRules.associations |> List.map (fun a -> a.fixKey) |> Set.ofList
+
+    for expected in
+        [ FSharpCodeFixes.FixAllKeys.RemoveUnusedOpen
+          FSharpCodeFixes.FixAllKeys.SimplifyName
+          FSharpCodeFixes.FixAllKeys.RemoveUnusedDeclaration
+          FSharpCodeFixes.FixAllKeys.PrefixUnusedValue
+          FSharpCodeFixes.FixAllKeys.AddNewForDisposable ] do
+        Assert.Contains(expected, keys)

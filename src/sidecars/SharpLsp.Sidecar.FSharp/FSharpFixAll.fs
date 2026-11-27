@@ -79,6 +79,15 @@ let internal enclosingRange (parse: FSharpParseFileResults) (scope: string) (anc
             | None -> Some candidate
             | Some prev -> if smaller candidate prev then Some candidate else Some prev
 
+    let walkMembers acc mems =
+        (acc, mems)
+        ||> List.fold (fun m mem ->
+            match mem with
+            | SynMemberDefn.Member(binding, _) -> pick m binding.RangeOfBindingWithRhs
+            | SynMemberDefn.LetBindings(bindings, _, _, _, _) ->
+                (m, bindings) ||> List.fold (fun x bd -> pick x bd.RangeOfBindingWithRhs)
+            | _ -> m)
+
     let rec walkDecls wantType best decls =
         (best, decls)
         ||> List.fold (fun acc decl ->
@@ -88,24 +97,11 @@ let internal enclosingRange (parse: FSharpParseFileResults) (scope: string) (anc
             | SynModuleDecl.Types(types, _) ->
                 (acc, types)
                 ||> List.fold (fun b (SynTypeDefn(_, repr, members, _, r, _)) ->
-                    let b = if wantType then pick b r else b
-                    if wantType then b
+                    if wantType then pick b r
                     else
-                        let fromMembers =
-                            (b, members)
-                            ||> List.fold (fun m mem ->
-                                match mem with
-                                | SynMemberDefn.Member(binding, _) -> pick m binding.RangeOfBindingWithRhs
-                                | SynMemberDefn.LetBindings(bindings, _, _, _, _) ->
-                                    (m, bindings) ||> List.fold (fun x bd -> pick x bd.RangeOfBindingWithRhs)
-                                | _ -> m)
+                        let fromMembers = walkMembers b members
                         match repr with
-                        | SynTypeDefnRepr.ObjectModel(_, reprMembers, _) ->
-                            (fromMembers, reprMembers)
-                            ||> List.fold (fun m mem ->
-                                match mem with
-                                | SynMemberDefn.Member(binding, _) -> pick m binding.RangeOfBindingWithRhs
-                                | _ -> m)
+                        | SynTypeDefnRepr.ObjectModel(_, reprMembers, _) -> walkMembers fromMembers reprMembers
                         | _ -> fromMembers)
             | SynModuleDecl.NestedModule(_, _, nested, _, _, _) -> walkDecls wantType acc nested
             | _ -> acc)
