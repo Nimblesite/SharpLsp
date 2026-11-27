@@ -229,7 +229,7 @@ fn streamed(token: Option<&ProgressToken>, value: Value, partial: Partial<'_>) -
 /// every client drops silently; only diagnostics and code lenses retrigger.
 pub fn superseded(method: &str, result: HandlerResult) -> HandlerResult {
     match result {
-        HandlerResult::Err(error) if user_request(method) && error.code == SUPERSEDED => {
+        HandlerResult::Err(error) if handles(method) && error.code == SUPERSEDED => {
             HandlerResult::Err(JsonRpcError::new(CONTENT_MODIFIED, "Content modified"))
         }
         other => other,
@@ -334,8 +334,8 @@ mod tests {
         };
         assert_eq!(
             code,
-            Some(CONTENT_MODIFIED),
-            "out of budget it drops silently"
+            Some(SUPERSEDED),
+            "out of budget it stays retryable, never dropped as content modified"
         );
         document_changed(key);
         assert!(

@@ -109,7 +109,7 @@ fn descendants(root: u32) -> Vec<u32> {
 #[cfg(windows)]
 fn parent_links() -> Vec<(u32, u32)> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
-    let mut system = System::new();
+    let mut system = System::new().expect("read the process table");
     let _ = system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,

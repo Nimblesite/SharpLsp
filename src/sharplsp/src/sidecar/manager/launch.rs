@@ -220,10 +220,6 @@ pub(super) async fn connect_transport(path: &str) -> Result<FramedTransport> {
 
 /// Connect to the sidecar IPC endpoint and return a `FramedTransport`.
 #[cfg(windows)]
-#[expect(
-    clippy::unused_async,
-    reason = "API parity with the unix variant which awaits the connect"
-)]
 pub(super) async fn connect_transport(path: &str) -> Result<FramedTransport> {
     use tokio::net::windows::named_pipe::ClientOptions;
     let pipe = ClientOptions::new()
