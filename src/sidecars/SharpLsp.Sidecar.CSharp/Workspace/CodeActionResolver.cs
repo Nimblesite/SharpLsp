@@ -215,7 +215,7 @@ internal sealed partial class CodeActionResolver
             (action, _) =>
                 CacheAndAdd(
                     action,
-                    FixKind(diagnostic.Id),
+                    FixKind(diagnostic),
                     items,
                     null,
                     FixAllCapabilityOf(provider, action)
@@ -240,9 +240,10 @@ internal sealed partial class CodeActionResolver
         }
     }
 
-    private static string FixKind(string diagnosticId)
+    private static string FixKind(Diagnostic diagnostic)
     {
-        return AnalyzerDiagnosticResolver.RewriteDiagnosticIds.Contains(diagnosticId)
+        return diagnostic.Severity == DiagnosticSeverity.Hidden
+            && AnalyzerDiagnosticResolver.RewriteDiagnosticIds.Contains(diagnostic.Id)
             ? "refactor.rewrite"
             : "quickfix";
     }

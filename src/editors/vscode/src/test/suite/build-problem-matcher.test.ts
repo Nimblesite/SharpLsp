@@ -70,6 +70,7 @@ suite('Build problem matcher — SharpLsp-owned vulnerability codes', () => {
 
     await printThroughMatcher([
       `${source}(3,9): warning FS1182: The value 'unused' is unused [${project}]`,
+      `${source}(4,5): error IDE0007: use 'var' instead of explicit type [${project}]`,
       advisory('NU1901', 'low'),
       advisory('NU1902', 'moderate'),
       advisory('NU1903', 'high'),
@@ -109,12 +110,21 @@ suite('Build problem matcher — SharpLsp-owned vulnerability codes', () => {
     assert.strictEqual(missing?.severity, vscode.DiagnosticSeverity.Error);
     assert.ok(missing.message.startsWith('Unable to find package Nope.'), missing.message);
 
-    // Interaction 3 — no advisory code leaked through under any severity.
-    const owned = problems.filter(([, diagnostic]) => /^NU190[1-4]$/.test(codeOf(diagnostic)));
-    assert.deepStrictEqual(owned, [], 'SharpLsp reports these on the declaring element');
+    // Interaction 3 — no advisory or IDE style code leaked through, and no
+    // diagnostic claims to come from `cpp` (GitHub #585).
+    const owned = problems.filter(([, diagnostic]) =>
+      /^(?:NU190[1-4]|IDE\d+)$/.test(codeOf(diagnostic)),
+    );
+    assert.deepStrictEqual(owned, [], 'SharpLsp reports NU190x and IDE rules live');
     assert.ok(
       problems.every(([, diagnostic]) => !diagnostic.message.includes('vulnerability')),
       'and no advisory text reached the panel under another code',
+    );
+    assert.ok(
+      problems.every(([, diagnostic]) => diagnostic.source === 'sharplsp-build'),
+      `build diagnostics must come from sharplsp-build, never cpp: ${problems
+        .map(([, d]) => `${codeOf(d)}=${String(d.source)}`)
+        .join(', ')}`,
     );
   });
 });

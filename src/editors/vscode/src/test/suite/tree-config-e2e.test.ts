@@ -947,6 +947,35 @@ suite('Solution / Result / Platform / Channel E2E', () => {
     }
   });
 
+  test('openSolution command opens a file dialog when invoked without a path (#621)', async function () {
+    this.timeout(COMMAND_MS * 4);
+    await sharpLspExtension().activate();
+    const provider = getProvider();
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    assert.ok(root, 'fixture workspace folder exists');
+    const slnxPath = path.join(root, 'TestFixtures.slnx');
+
+    stubs = installUiStubs();
+    // Interaction 1 — Command Palette invocation with no argument + cancelled dialog must not throw.
+    stubs.queueOpenDialog(undefined);
+    await assert.doesNotReject(async () => {
+      await vscode.commands.executeCommand('sharplsp.openSolution');
+    }, 'openSolution with no args and dismissed dialog must not throw');
+
+    // Interaction 2 — Command Palette invocation + picked .slnx loads that solution.
+    stubs.queueOpenDialog([vscode.Uri.file(slnxPath)]);
+    await vscode.commands.executeCommand('sharplsp.openSolution');
+    await pollUntilResult(
+      async () => findByContext(provider.getChildren(), 'solution') !== undefined,
+      (found) => found,
+      LSP_RESPONSE_MS,
+      500,
+    );
+    const loaded = findByContext(provider.getChildren(), 'solution');
+    assert.ok(loaded, 'solution root must appear after picking a solution in openSolution');
+    assert.strictEqual(nodeLabel(loaded), 'TestFixtures.slnx');
+  });
+
   test('a findSolutions-backed flow produces and consumes a Result<T,E> via ok()/err()', async function () {
     this.timeout(COMMAND_MS);
 

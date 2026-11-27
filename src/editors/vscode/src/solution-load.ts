@@ -4,7 +4,7 @@
  * file changes. Implements [SE-SOLUTION] and [SE-LOADING-FEEDBACK].
  */
 import * as fs from 'node:fs';
-import { type ExtensionContext, type Memento, window, workspace } from 'vscode';
+import { type ExtensionContext, type Memento, Uri, window, workspace } from 'vscode';
 import { type LanguageClient } from 'vscode-languageclient/node';
 import { VIEW_SOLUTION_EXPLORER } from './constants.js';
 import * as log from './log.js';
@@ -29,6 +29,8 @@ export interface SolutionLoader {
   readonly pickAndLoad: () => Promise<void>;
   /** Load a solution into the explorer tree AND the LSP sidecar. */
   readonly load: (selected: solution.SolutionSelection) => Promise<void>;
+  /** Open a solution from a path, Uri, or file picker when invoked with no argument (#621). */
+  readonly open: (target?: unknown) => Promise<void>;
   /** Re-fetch workspace symbols when source or solution files change. */
   readonly wireRefresh: (context: ExtensionContext) => void;
 }
@@ -153,7 +155,39 @@ export function solutionLoader(deps: SolutionLoaderDeps): SolutionLoader {
     log.traceInfo(`Solution file watcher active: ${SOLUTION_FILE_GLOB}`);
   };
 
-  return { selectAndLoad, pickAndLoad, load, wireRefresh };
+  const open = async (target?: unknown): Promise<void> => {
+    const resolved = (await resolveSolutionTarget(target)) ?? undefined;
+    if (resolved === undefined) return;
+    await load(resolved);
+  };
+
+  return { selectAndLoad, pickAndLoad, load, open, wireRefresh };
+}
+
+/** Resolve a command argument (path, Uri) or ask the user for a .sln/.slnx file (#621). */
+async function resolveSolutionTarget(
+  target: unknown,
+): Promise<solution.SolutionSelection | undefined> {
+  const direct = extractSolutionPath(target);
+  if (direct !== undefined) return solution.toSolutionSelections([direct])[0];
+  const picked = await window.showOpenDialog({
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: { 'Solution Files': ['sln', 'slnx'] },
+    openLabel: 'Open Solution',
+  });
+  const file = picked?.[0]?.fsPath;
+  return file !== undefined && file.length > 0
+    ? solution.toSolutionSelections([file])[0]
+    : undefined;
+}
+
+/** Extract a non-empty solution path from a string or Uri command argument. */
+function extractSolutionPath(target: unknown): string | undefined {
+  if (typeof target === 'string' && target.trim().length > 0) return target;
+  if (target instanceof Uri && target.fsPath.trim().length > 0) return target.fsPath;
+  return undefined;
 }
 
 /** Scan the workspace; a failed scan must still clear the discovery phase. */
