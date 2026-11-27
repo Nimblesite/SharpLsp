@@ -40,6 +40,7 @@ function buildRust() {
     non_snake_case,
     dead_code,
     clippy::too_many_lines,
+    clippy::missing_docs_in_private_items,
     reason = "generated from docs/models/code-action-rules.td by typediagram"
 )]
 

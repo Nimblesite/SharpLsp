@@ -72,42 +72,7 @@ pub fn build_enforcement_edit(
     })
 }
 
-/// Build `Directory.Build.props` `WarningsAsErrors` edits for `enforce_in_build`.
-/// Implements [PKG-VULN-SEVERITY].
-pub fn build_nuget_enforce_edit(
-    solution_dir: &Path,
-    config: &VulnerabilityConfig,
-) -> Result<Option<WorkspaceEdit>> {
-    let codes = msbuild_props::error_mapped_nuget_codes(config);
-    if !config.enforce_in_build || codes.is_empty() {
-        return Ok(None);
-    }
-    let props_path = solution_dir.join("Directory.Build.props");
-    let current = std::fs::read_to_string(&props_path).unwrap_or_default();
-    let updated =
-        msbuild_props::set_property(&current, "WarningsAsErrors", &codes.join(";"), Some(';'))?;
-    if updated == current {
-        return Ok(None);
-    }
-    let annotation_id: ChangeAnnotationIdentifier = ENFORCE_ANNOTATION_ID.to_string();
-    let mut ops = Vec::new();
-    push_file_replace(&props_path, &current, updated, &annotation_id, &mut ops)?;
-    let mut annotations = HashMap::new();
-    let _ = annotations.insert(
-        annotation_id,
-        ChangeAnnotation {
-            label: format!("Enforce {} in build", codes.join(", ")),
-            needs_confirmation: Some(false),
-            description: None,
-        },
-    );
-    Ok(Some(WorkspaceEdit {
-        document_changes: Some(DocumentChanges::Operations(ops)),
-        change_annotations: Some(annotations),
-        ..WorkspaceEdit::default()
-    }))
-}
-
+/// Emit `.editorconfig` edits for all `EditorConfig` settings in `settings`.
 fn append_editorconfig_ops(
     solution_dir: &Path,
     lang: &RuleLanguage,
@@ -149,6 +114,7 @@ fn append_editorconfig_ops(
     Ok(())
 }
 
+/// Emit `Directory.Build.props` XML DOM edits for `MsBuildProperty` settings.
 fn append_msbuild_ops(
     solution_dir: &Path,
     settings: &[&RuleSetting],
@@ -189,6 +155,7 @@ fn append_msbuild_ops(
     Ok(())
 }
 
+/// Emit `sharplsp.toml` edits for `SharpLspToml` settings.
 fn append_toml_ops(
     solution_dir: &Path,
     settings: &[&RuleSetting],
@@ -220,6 +187,7 @@ fn append_toml_ops(
     Ok(())
 }
 
+/// Convert a string setting value into a TOML boolean or string scalar.
 fn parse_toml_scalar(raw: &str) -> toml::Value {
     match raw {
         "true" => toml::Value::Boolean(true),
@@ -228,6 +196,7 @@ fn parse_toml_scalar(raw: &str) -> toml::Value {
     }
 }
 
+/// Set a dotted key path (`a.b.c`) inside a TOML table, creating subtables.
 fn set_dotted_toml(root: &mut toml::Table, dotted_key: &str, value: toml::Value) {
     let parts: Vec<&str> = dotted_key.split('.').collect();
     let Some((last, parents)) = parts.split_last() else {
@@ -283,6 +252,7 @@ pub fn merge_into_workspace_edit(base: WorkspaceEdit, enforcement: WorkspaceEdit
     }
 }
 
+/// Flatten `changes` and `document_changes` into an ordered operation list.
 fn workspace_edit_ops(
     changes: Option<HashMap<lsp_types::Uri, Vec<lsp_types::TextEdit>>>,
     doc_changes: Option<DocumentChanges>,
@@ -306,6 +276,7 @@ fn workspace_edit_ops(
     ops
 }
 
+/// Push a `CreateFile` (when absent) and whole-file annotated `TextDocumentEdit`.
 fn push_file_replace(
     path: &Path,
     current: &str,
@@ -406,7 +377,8 @@ mod tests {
             enforce_in_build: true,
             ..VulnerabilityConfig::default()
         };
-        let edit = build_nuget_enforce_edit(tmp.path(), &cfg).unwrap().unwrap();
+        let assoc = find_association("nuget.updateVulnerable").unwrap();
+        let edit = build_enforcement_edit(tmp.path(), &assoc, Some(&cfg)).unwrap();
         let Some(DocumentChanges::Operations(ops)) = edit.document_changes else {
             panic!("expected operations");
         };

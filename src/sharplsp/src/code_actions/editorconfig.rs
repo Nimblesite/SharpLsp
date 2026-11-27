@@ -7,20 +7,30 @@ use std::path::{Path, PathBuf};
 /// One physical line of an `.editorconfig` file, kept losslessly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Line {
+    /// Blank or whitespace-only line.
     Blank(String),
+    /// Comment or unrecognized line preserved verbatim.
     Comment(String),
+    /// Section header line (`[pattern]`).
     Section {
+        /// Original line text.
         raw: String,
+        /// Trimmed section pattern inside brackets.
         header: String,
     },
+    /// Key-value assignment (`key = value`).
     Entry {
+        /// Original line text.
         raw: String,
+        /// Trimmed key name.
         key: String,
+        /// Trimmed value text.
         value: String,
     },
 }
 
 impl Line {
+    /// Return the verbatim source text of this line.
     fn as_str(&self) -> &str {
         match self {
             Self::Blank(raw)
@@ -34,7 +44,9 @@ impl Line {
 /// Lossless `.editorconfig` syntax tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorConfigDoc {
+    /// Ordered lines of the document.
     lines: Vec<Line>,
+    /// Whether the original text ended with a trailing newline.
     trailing_newline: bool,
 }
 
@@ -131,6 +143,7 @@ impl EditorConfigDoc {
         Some((body_start, body_end))
     }
 
+    /// Update `key` inside `start..end` or insert it before trailing blanks.
     fn upsert_in_range(&mut self, start: usize, end: usize, key: &str, value: &str) -> bool {
         let rendered = format!("{key} = {value}");
         if let Some(slice) = self.lines.get_mut(start..end) {
@@ -165,6 +178,7 @@ impl EditorConfigDoc {
         true
     }
 
+    /// Index immediately after the last non-blank line in `start..end`.
     fn last_non_blank(&self, start: usize, end: usize) -> usize {
         (start..end)
             .rev()
@@ -176,6 +190,7 @@ impl EditorConfigDoc {
             .map_or(start, |idx| idx + 1)
     }
 
+    /// Append a new `[section]` containing `key = value`.
     fn append_section(&mut self, section: &str, key: &str, value: &str) {
         if !self.lines.is_empty() && !matches!(self.lines.last(), Some(Line::Blank(_))) {
             self.lines.push(Line::Blank(String::new()));
@@ -193,6 +208,7 @@ impl EditorConfigDoc {
     }
 }
 
+/// Parse one physical line into its CST variant.
 fn parse_line(raw: &str) -> Line {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -242,6 +258,7 @@ pub fn find_overriding_files(solution_dir: &Path, keys: &[&str]) -> Vec<PathBuf>
     found
 }
 
+/// Recursively collect nested `.editorconfig` files that set any of `keys`.
 fn collect_overrides(root: &Path, dir: &Path, keys: &[&str], out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

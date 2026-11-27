@@ -36,6 +36,7 @@ pub fn set_property(xml: &str, name: &str, value: &str, list_sep: Option<char>) 
     rewrite_xml(xml, name, value, list_sep)
 }
 
+/// Merge `addition` into `existing` when `list_sep` is set, or replace it.
 fn merge_or_replace(existing: &str, name: &str, addition: &str, list_sep: Option<char>) -> String {
     let Some(sep) = list_sep else {
         return addition.to_string();
@@ -57,21 +58,32 @@ fn merge_or_replace(existing: &str, name: &str, addition: &str, list_sep: Option
     tokens.join(&sep.to_string())
 }
 
+/// Position of the XML event stream relative to the target property.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanPhase {
+    /// Outside any unconditional `<PropertyGroup>`.
     Outside,
+    /// Inside an unconditional `<PropertyGroup>`.
     InUncondPg,
+    /// Inside the target property element.
     InTargetProp,
 }
 
+/// Mutable cursor carried across XML events during rewriting.
 struct RewriteState {
+    /// Current nesting phase.
     phase: ScanPhase,
+    /// Whether the target property has already been written.
     updated: bool,
+    /// Whether an unconditional `<PropertyGroup>` was seen.
     saw_uncond_pg: bool,
+    /// Accumulated text content of the existing target property.
     prop_text: String,
+    /// Current element depth (`<Project>` is 1).
     depth: usize,
 }
 
+/// Stream `xml` through `quick_xml` events, updating or inserting `name`.
 fn rewrite_xml(xml: &str, name: &str, value: &str, list_sep: Option<char>) -> Result<String> {
     let mut reader = Reader::from_str(xml);
     let mut writer = Writer::new(Vec::new());
@@ -102,6 +114,7 @@ fn rewrite_xml(xml: &str, name: &str, value: &str, list_sep: Option<char>) -> Re
     String::from_utf8(writer.into_inner()).context("non-UTF8 XML output")
 }
 
+/// Handle an opening XML element event.
 fn handle_start(
     writer: &mut Writer<Vec<u8>>,
     e: BytesStart<'_>,
@@ -128,6 +141,7 @@ fn handle_start(
     Ok(())
 }
 
+/// Handle a closing XML element event, flushing merged or inserted properties.
 fn handle_end(
     writer: &mut Writer<Vec<u8>>,
     e: BytesEnd<'_>,
@@ -158,6 +172,7 @@ fn handle_end(
     Ok(())
 }
 
+/// Emit `<name>value</name>` inside an existing `<PropertyGroup>`.
 fn write_prop_element(writer: &mut Writer<Vec<u8>>, name: &str, value: &str) -> Result<()> {
     writer.write_event(Event::Text(BytesText::new("  ")))?;
     writer.write_event(Event::Start(BytesStart::new(name)))?;
@@ -167,6 +182,7 @@ fn write_prop_element(writer: &mut Writer<Vec<u8>>, name: &str, value: &str) -> 
     Ok(())
 }
 
+/// Emit a new `<PropertyGroup>` containing `<name>value</name>`.
 fn write_new_property_group(writer: &mut Writer<Vec<u8>>, name: &str, value: &str) -> Result<()> {
     writer.write_event(Event::Text(BytesText::new("  ")))?;
     writer.write_event(Event::Start(BytesStart::new("PropertyGroup")))?;
