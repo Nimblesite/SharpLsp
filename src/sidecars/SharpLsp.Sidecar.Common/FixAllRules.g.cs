@@ -4,7 +4,6 @@
 // Implements [FIXALL-MODEL], [FIXALL-RULES], [FIXALL-RULES-TABLE].
 #nullable enable
 #pragma warning disable CS1591 // Generated from docs/models/code-action-rules.td by typediagram
-using System.Collections.Generic;
 
 namespace SharpLsp.Sidecar.Common.FixAll;
 

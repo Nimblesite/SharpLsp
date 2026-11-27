@@ -80,7 +80,6 @@ function buildCSharp() {
 ${HEADER}
 #nullable enable
 #pragma warning disable CS1591 // Generated from docs/models/code-action-rules.td by typediagram
-using System.Collections.Generic;
 
 namespace SharpLsp.Sidecar.Common.FixAll;
 
@@ -97,7 +96,9 @@ ${entries}
 }
 
 function buildFSharp() {
-    const emitted = emitTypeDiagram("fsharp", modelPath).trim();
+    const emitted = emitTypeDiagram("fsharp", modelPath)
+        .replace(/^type (FixScope|RuleLanguage|RuleSink|RuleSeverity) =/gm, "[<RequireQualifiedAccess>]\ntype $1 =")
+        .trim();
     const entries = rules.map((assoc) => {
         const ruleExprs = assoc.rules.map((rule) => {
             const settingExprs = rule.settings.map((s) =>
@@ -109,6 +110,7 @@ function buildFSharp() {
     }).join("\n");
 
     return `${HEADER}
+// fsharplint:disable RecordFieldNames
 module SharpLsp.Sidecar.FSharp.FixAllRules
 
 ${emitted}
