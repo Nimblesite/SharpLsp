@@ -7,6 +7,10 @@ pub mod editorconfig;
 pub mod enforce;
 pub mod msbuild_props;
 pub mod rules_generated;
+mod wire;
+
+use wire::{SidecarCodeActionItem, SidecarCodeActionResolveReq, SidecarFixAllReq};
+pub(crate) use wire::{SidecarDocumentEdit, SidecarWorkspaceEdit};
 
 use std::sync::Arc;
 
@@ -23,7 +27,6 @@ use tracing::debug;
 use crate::sidecar::manager::SidecarManager;
 use crate::utils::{
     map_text_edit, request_sidecar, request_sidecar_strict, with_sidecar, SidecarRangeReq,
-    SidecarTextEdit,
 };
 
 /// The plain-words reason a C# resolve answers with when no C# sidecar runs.
@@ -56,17 +59,24 @@ pub fn handle_code_action(
         };
         debug!("Got {} code actions from sidecar", items.len());
         let doc_uri = params.text_document.uri;
-        let actions: Vec<CodeActionOrCommand> = items
-            .iter()
-            .flat_map(|item| {
-                // The single-site fix first, then one `Fix all: <title>` action per
-                // scope its provider supports. [FIXALL-LSP]
-                std::iter::once(CodeActionOrCommand::CodeAction(map_code_action(
-                    item, &doc_uri,
-                )))
-                .chain(fix_all_actions(item, &doc_uri))
-            })
-            .collect();
+        let on_save = params.context.only.as_deref().is_some_and(|kinds| {
+            kinds
+                .iter()
+                .any(|k| matches!(k.as_str(), "source.fixAll" | "source.fixAll.sharplsp"))
+        });
+        let actions: Vec<CodeActionOrCommand> = if on_save {
+            source_fix_all_actions(&items, &doc_uri)
+        } else {
+            items
+                .iter()
+                .flat_map(|item| {
+                    std::iter::once(CodeActionOrCommand::CodeAction(map_code_action(
+                        item, &doc_uri,
+                    )))
+                    .chain(fix_all_actions(item, &doc_uri))
+                })
+                .collect()
+        };
         Ok(serde_json::to_value(actions)?)
     })
 }
@@ -174,8 +184,14 @@ fn resolve_fix_all(
     let base =
         map_workspace_edit(&edit).map_err(|error| refused(request_id, None, error.to_string()))?;
     let final_edit = if fix_all.enforce {
-        enforce::apply_enforcement_for_file(&path, &fix_all.fix_key, base)
-            .map_err(|error| refused(request_id, None, error.to_string()))?
+        enforce::apply_enforcement_for_file(
+            &path,
+            &fix_all.fix_key,
+            &fix_all.scope,
+            &action.title,
+            base,
+        )
+        .map_err(|error| refused(request_id, None, error.to_string()))?
     } else {
         base
     };
@@ -369,31 +385,27 @@ fn map_text_changes(edit: &SidecarWorkspaceEdit) -> anyhow::Result<WorkspaceEdit
     })
 }
 
-// ── Sidecar wire types (MessagePack) ──────────────────────────────
-
-/// A single code action returned by the sidecar.
-#[derive(serde::Deserialize)]
-struct SidecarCodeActionItem {
-    /// Unique identifier for resolving this action later.
-    id: i32,
-    /// Human-readable title shown in the editor.
-    title: String,
-    /// Action kind string (e.g. "quickfix", "refactor.extract").
-    kind: String,
-    /// Whether this action is the preferred fix for the diagnostic.
-    is_preferred: bool,
-    /// The reference a command action adds before its import; `None` for an
-    /// edit action. [REFACTOR-IMPORT-REFERENCE]
-    #[serde(default)]
-    reference: Option<crate::import_command::SidecarReferenceImport>,
-    /// The fix's stable identity (Roslyn `EquivalenceKey`), when the fix can run
-    /// beyond its one occurrence. [FIXALL-SCOPES]
-    #[serde(default)]
-    fix_key: Option<String>,
-    /// The scopes ("document", "project", "solution") the fix's provider
-    /// supports fixing every occurrence at. [FIXALL-SCOPES]
-    #[serde(default)]
-    fix_all_scopes: Option<Vec<String>>,
+/// `source.fixAll.sharplsp` actions for `codeActionsOnSave`: document scope,
+/// never writes rules (`enforce: false`). [FIXALL-LSP]
+fn source_fix_all_actions(
+    items: &[SidecarCodeActionItem],
+    doc_uri: &Uri,
+) -> Vec<CodeActionOrCommand> {
+    items
+        .iter()
+        .filter(|item| {
+            item.fix_key.is_some()
+                && item
+                    .fix_all_scopes
+                    .as_deref()
+                    .is_some_and(|s| s.iter().any(|scope| scope == "document"))
+        })
+        .map(|item| {
+            let mut action = fix_all_action(item, "document", doc_uri);
+            action.kind = Some(CodeActionKind::new("source.fixAll.sharplsp"));
+            CodeActionOrCommand::CodeAction(action)
+        })
+        .collect()
 }
 
 /// The `Fix all: <title>` actions for one fix-all-capable item — one per scope
@@ -432,49 +444,6 @@ fn fix_all_action(item: &SidecarCodeActionItem, scope: &str, doc_uri: &Uri) -> C
         })),
         ..CodeAction::default()
     }
-}
-
-/// Request sent to the sidecar to resolve a code action by ID.
-#[derive(serde::Serialize)]
-struct SidecarCodeActionResolveReq {
-    /// Identifier of the code action to resolve.
-    id: i32,
-}
-
-/// Request sent to the sidecar to run a fix at every occurrence of its scope:
-/// a `(file_path, fix_key, scope)` positional `MessagePack` array matching the
-/// sidecar's `FixAllRequest` Key layout. [FIXALL-SCOPES]
-#[derive(serde::Serialize)]
-struct SidecarFixAllReq {
-    /// Absolute path of the anchor document the fix was offered on.
-    file_path: String,
-    /// The fix's equivalence key — never a title.
-    fix_key: String,
-    /// The scope to fix at: document, project or solution.
-    scope: String,
-}
-
-/// Edits for a single document returned by the sidecar.
-#[derive(serde::Deserialize, Clone)]
-pub(crate) struct SidecarDocumentEdit<T = SidecarTextEdit> {
-    /// Absolute path of the file being edited.
-    pub(crate) file_path: String,
-    /// Text edits to apply to this document.
-    pub(crate) edits: Vec<T>,
-    /// Whether the edit creates the file, whose whole text it then holds.
-    #[serde(default)]
-    pub(crate) create: bool,
-    /// The new absolute path when this edit renames the file.
-    /// [REFACTOR-MOVE-TYPE-RENAME-FILE]
-    #[serde(default)]
-    pub(crate) rename_to: Option<String>,
-}
-
-/// A workspace-wide set of edits returned by the sidecar.
-#[derive(serde::Deserialize, Clone)]
-pub(crate) struct SidecarWorkspaceEdit<T = SidecarTextEdit> {
-    /// Per-document edits that compose this workspace edit.
-    pub(crate) document_changes: Vec<SidecarDocumentEdit<T>>,
 }
 
 #[cfg(test)]

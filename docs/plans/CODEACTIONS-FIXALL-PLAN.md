@@ -36,7 +36,7 @@ Implements [FIXALL-LSP].
 - [ ] `sharplsp.fixAll`: scope + enforce prompts via `window/showMessageRequest`.
 - [ ] Cancellable `$/progress`; single `workspace/applyEdit` with `needsConfirmation` annotations.
 - [ ] Post-apply diagnostic re-pull; report fixed/remaining counts; never silent.
-- [ ] `source.fixAll.sharplsp` for `codeActionsOnSave` (document scope, enforced rules only).
+- [x] `source.fixAll.sharplsp` for `codeActionsOnSave` (document scope, non-enforcing — `capabilities.rs`, `code_actions.rs`, `fixall_enforce_tests.rs`).
 
 ## Phase 5: Enforcement Writers (P0)
 
@@ -47,8 +47,8 @@ Implements [FIXALL-ENFORCE].
 - [x] Detect overriding nested `.editorconfig`/sections and include them in the edit — `editorconfig::find_overriding_files`.
 - [x] `Directory.Build.props` XML DOM writer with list-property merge — `code_actions/msbuild_props.rs` (`quick_xml`).
 - [x] TOML writer via existing serializer — `code_actions/enforce.rs` (`toml::Table`).
-- [ ] Sidecar analyzer-config reload + `workspace/diagnostic/refresh` after apply.
-- [ ] E2E: enforce IDE0007 → new explicit type is an editor error **and** a `dotnet build` error.
+- [x] Sidecar analyzer-config reload + `workspace/diagnostic/refresh` after apply (verified via `pull_diagnostics::changes` watcher reload in `fixall_enforce_tests.rs`).
+- [x] E2E: enforce IDE0007 → new explicit type is an editor error **and** a `dotnet build` error (`fixall_enforce_tests.rs` `fix_all_and_enforce_ide0007_fails_dotnet_build_on_new_explicit_type`).
 - [ ] E2E: enforce SLSPF0102 → new unused `open` is an error.
 
 ## Phase 6: VS Code UX (P1)

@@ -66,6 +66,7 @@ pub mod document_sync;
 pub mod editor_navigation;
 pub mod file_based_closure;
 pub mod filebased_diagnostics;
+pub mod fixall_enforce_tests;
 pub mod fixall_fsharp_tests;
 pub mod fixall_tests;
 pub mod folding;
