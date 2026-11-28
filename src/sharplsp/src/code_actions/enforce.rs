@@ -23,6 +23,83 @@ use crate::config_nuget::VulnerabilityConfig;
 /// Annotation id used for rule-enforcement edits in a combined `WorkspaceEdit`.
 pub const ENFORCE_ANNOTATION_ID: &str = "sharplsp.enforce";
 
+/// Annotation id used for multi-file (`project`/`solution`) fix-all code edits.
+pub const SCOPE_ANNOTATION_ID: &str = "sharplsp.fixAll.scope";
+
+/// Locate the solution directory for `anchor_path`: nearest ancestor holding a
+/// `.sln`, `.slnx`, or `Directory.Build.props`, else `anchor_path`'s parent.
+/// [FIXALL-ENFORCE]
+pub fn resolve_solution_dir(anchor_path: &str) -> std::path::PathBuf {
+    let start = Path::new(anchor_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let mut cursor = Some(start);
+    while let Some(dir) = cursor {
+        if has_solution_marker(dir) {
+            return dir.to_path_buf();
+        }
+        cursor = dir.parent();
+    }
+    start.to_path_buf()
+}
+
+/// Whether `dir` holds a `.sln`, `.slnx`, or `Directory.Build.props`.
+fn has_solution_marker(dir: &Path) -> bool {
+    if dir.join("Directory.Build.props").is_file() {
+        return true;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .any(|entry| crate::paths::has_extension(entry.path(), &["sln", "slnx"]))
+}
+
+/// Wrap `project`/`solution` fix-all code edits with a `needsConfirmation: true`
+/// `ChangeAnnotation` so clients show a preview before applying multi-file edits.
+/// [FIXALL-LSP]
+pub fn annotate_scope_edit(edit: WorkspaceEdit, scope: &str, title: &str) -> WorkspaceEdit {
+    if !matches!(scope, "project" | "solution") {
+        return edit;
+    }
+    let id: ChangeAnnotationIdentifier = SCOPE_ANNOTATION_ID.to_string();
+    let ops = workspace_edit_ops(edit.changes, edit.document_changes)
+        .into_iter()
+        .map(|op| match op {
+            DocumentChangeOperation::Edit(mut doc) => {
+                doc.edits = doc
+                    .edits
+                    .into_iter()
+                    .map(|e| match e {
+                        OneOf::Left(text_edit) => OneOf::Right(AnnotatedTextEdit {
+                            text_edit,
+                            annotation_id: id.clone(),
+                        }),
+                        OneOf::Right(annotated) => OneOf::Right(annotated),
+                    })
+                    .collect();
+                DocumentChangeOperation::Edit(doc)
+            }
+            other @ DocumentChangeOperation::Op(_) => other,
+        })
+        .collect();
+    let mut annotations = edit.change_annotations.unwrap_or_default();
+    let _ = annotations.insert(
+        id,
+        ChangeAnnotation {
+            label: title.to_string(),
+            needs_confirmation: Some(true),
+            description: Some(format!("Apply fix across {scope}")),
+        },
+    );
+    WorkspaceEdit {
+        changes: None,
+        document_changes: Some(DocumentChanges::Operations(ops)),
+        change_annotations: Some(annotations),
+    }
+}
+
 /// Build enforcement edits for `assoc` anchored at `solution_dir`. [FIXALL-ENFORCE]
 pub fn build_enforcement_edit(
     solution_dir: &Path,
@@ -221,15 +298,16 @@ fn set_dotted_toml(root: &mut toml::Table, dotted_key: &str, value: toml::Value)
 pub fn apply_enforcement_for_file(
     anchor_path: &str,
     fix_key: &str,
+    scope: &str,
+    title: &str,
     base: WorkspaceEdit,
 ) -> Result<WorkspaceEdit> {
     let assoc = super::rules_generated::find_association(fix_key)
         .ok_or_else(|| anyhow::anyhow!("this fix has no associated rule to enforce"))?;
-    let dir = Path::new(anchor_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
-    let extra = build_enforcement_edit(dir, &assoc, None)?;
-    Ok(merge_into_workspace_edit(base, extra))
+    let dir = resolve_solution_dir(anchor_path);
+    let annotated = annotate_scope_edit(base, scope, title);
+    let extra = build_enforcement_edit(&dir, &assoc, None)?;
+    Ok(merge_into_workspace_edit(annotated, extra))
 }
 
 /// Merge `enforcement` into a resolved code-fix `WorkspaceEdit`, converting

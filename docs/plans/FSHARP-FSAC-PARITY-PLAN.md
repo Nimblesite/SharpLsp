@@ -169,6 +169,6 @@ real `sharplsp` host + F# sidecar against `create_fsharp_test_workspace`.
 - [x] Backlog item 2 (workspace/symbol), 4 (remove unused open), 5 (simplify name)
 - [x] Backlog items 1 (references/typeDefinition), 3 (FSharpLint), 6 (interface stub), 8 (typo fix + add `new`)
 - [x] Backlog item 11 (completion auto-`open`, `[SHARPLSP-FEATURES-INTELLIGENCE-COMPLETION-OPEN]`)
-- [ ] Backlog items 7, 9 and 10 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`)
+- [ ] Backlog items 7 and 10 above (F# sidecar lane; 7 = formatting, sequestered by `[SHARPLSP-FEATURES-FORMATTING]`)
 - [x] Public F# parity page at `src/website/src/docs/fsharp.md`; feature status, gaps, and F# tree-sitter/multi-project support match this matrix and the host
 - [ ] Keep this matrix in lockstep as gaps close (flip 🟡/❌ → ✅, add e2e rows)

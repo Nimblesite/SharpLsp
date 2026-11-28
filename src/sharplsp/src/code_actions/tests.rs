@@ -1,6 +1,7 @@
 //! Unit tests for the code-action mapping and resolve paths.
 
 use super::*;
+use crate::utils::SidecarTextEdit;
 
 #[test]
 fn map_action_kind_known_kinds() {

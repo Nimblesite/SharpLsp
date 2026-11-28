@@ -97,9 +97,13 @@ pub fn associated_rules() -> Vec<FixRuleAssociation> {
     ]
 }
 
-/// Look up the rule association for a fix key (exact match or trailing '/<key>' suffix).
+/// Look up the rule association for a fix key (exact match, trailing suffix,
+/// or Roslyn provider-qualified key).
 pub fn find_association(fix_key: &str) -> Option<FixRuleAssociation> {
+    let provider = fix_key.split('/').next().unwrap_or("");
     associated_rules().into_iter().find(|entry| {
-        entry.fixKey == fix_key || fix_key.ends_with(&format!("/{}", entry.fixKey))
+        entry.fixKey == fix_key
+            || fix_key.ends_with(&format!("/{}", entry.fixKey))
+            || (!provider.is_empty() && provider.contains(&entry.fixKey))
     })
 }

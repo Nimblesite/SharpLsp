@@ -100,6 +100,7 @@ fn code_action_options() -> lsp_types::CodeActionProviderCapability {
             lsp_types::CodeActionKind::REFACTOR_INLINE,
             lsp_types::CodeActionKind::REFACTOR_REWRITE,
             lsp_types::CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+            lsp_types::CodeActionKind::new("source.fixAll.sharplsp"),
         ]),
         resolve_provider: Some(true),
         ..lsp_types::CodeActionOptions::default()
