@@ -173,8 +173,10 @@ public sealed class CodeFixAllTests : IDisposable
         );
         Assert.NotNull(offered);
 
-        // Interaction 1 — the listing reports the key and every scope.
+        // Interaction 1 — the listing reports the key, quickfix kind (since
+        // IDE0007 is promoted to warning in .editorconfig, GitHub #586), and every scope.
         // [FIXALL-SCOPES]: occurrences are found by the key, never the title.
+        Assert.Equal("quickfix", offered!.Kind);
         Assert.Equal(["document", "project", "solution"], offered!.FixAllScopes);
         Assert.False(string.IsNullOrEmpty(offered.FixKey));
         var fixKey = offered.FixKey!;
@@ -233,6 +235,7 @@ public sealed class CodeFixAllTests : IDisposable
             offered is not null,
             string.Join(" | ", actions.Select(action => $"{action.Title}#{action.FixKey}"))
         );
+        Assert.Equal("refactor.rewrite", offered!.Kind);
         Assert.Contains("document", offered!.FixAllScopes!);
 
         var document = Unwrap(await manager.FixAllAsync(legacyPath, offered.FixKey!, "document"));
@@ -291,6 +294,80 @@ public sealed class CodeFixAllTests : IDisposable
 
         Assert.True(result.IsError);
         Assert.Contains("galaxy", result.Match(_ => "", error => error));
+    }
+
+    /// <summary>
+    /// GitHub #586 &amp; #585: IDE0007 promoted to error offers a <c>quickfix</c>
+    /// (plus all three Fix All scopes) on local declarations, <c>foreach</c>
+    /// iteration variables, and <c>out</c> variables, and clears once edited to <c>var</c>.
+    /// [FIXALL-SCOPES] [FIXALL-LSP]
+    /// </summary>
+    [Fact]
+    public async Task Promoted_IDE0007_error_offers_quickfix_for_local_foreach_and_out_and_clears_after_edit()
+    {
+        const string code = """
+            namespace FixAll.Core;
+
+            public sealed class Headers
+            {
+                public int Count(string[] items)
+                {
+                    int total = 0;
+                    foreach (string name in items)
+                    {
+                        if (int.TryParse(name, out int parsed))
+                        {
+                            total += parsed;
+                        }
+                    }
+                    return total;
+                }
+            }
+            """;
+        await File.WriteAllTextAsync(
+            NativePaths.Join(_root, ".editorconfig"),
+            """
+            root = true
+
+            [*.cs]
+            csharp_style_var_for_built_in_types = true:error
+            csharp_style_var_when_type_is_apparent = true:error
+            csharp_style_var_elsewhere = true:error
+            """
+        );
+        var headersPath = NativePaths.Join(_root, "Core", "Headers.cs");
+        await File.WriteAllTextAsync(headersPath, code);
+        using var manager = await OpenAsync();
+
+        // Local declaration (`int`), foreach (`string`), and out variable (`int`).
+        var sites = new[] { (6, 8, 11), (7, 17, 23), (9, 39, 42) };
+        string? fixKey = null;
+        foreach (var (line, start, end) in sites)
+        {
+            var listed = Unwrap(
+                await manager.GetCodeActionsAsync(headersPath, line, start, line, end)
+            );
+            var offered = listed.FirstOrDefault(action =>
+                action.Title.Contains(
+                    "var' instead of explicit type",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+            Assert.NotNull(offered);
+            Assert.Equal("quickfix", offered!.Kind);
+            Assert.Equal(["document", "project", "solution"], offered.FixAllScopes);
+            fixKey ??= offered.FixKey;
+        }
+
+        // Apply Fix All (document) and verify IDE0007 clears immediately on the next pull (#585).
+        var edit = Unwrap(await manager.FixAllAsync(headersPath, fixKey!, "document"));
+        Assert.Equal(3, EditsIn(edit, headersPath));
+        var updated = code.Replace("int total = 0;", "var total = 0;")
+            .Replace("foreach (string name in items)", "foreach (var name in items)")
+            .Replace("out int parsed", "out var parsed");
+        Unwrap(await manager.UpdateDocumentTextAsync(headersPath, updated));
+        var diagnostics = Unwrap(await manager.GetDiagnosticsAsync(headersPath));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "IDE0007");
     }
 
     [Fact]

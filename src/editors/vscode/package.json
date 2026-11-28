@@ -1602,9 +1602,11 @@
     "problemMatchers": [
       {
         "name": "sharplsp-msCompile",
+        "owner": "sharplsp-build",
+        "source": "sharplsp-build",
         "base": "$msCompile",
         "pattern": {
-          "regexp": "^\\s*(?:\\s*\\d+>)?(\\S.*?)(?:\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\))?\\s*:\\s+(?:(\\S+)\\s+)?((?:fatal +)?error|warning|info)\\s+(?!NU190[1-4]\\s*:)(\\w+\\d+)?\\s*:\\s*(.*)$",
+          "regexp": "^\\s*(?:\\s*\\d+>)?(\\S.*?)(?:\\((\\d+|\\d+,\\d+|\\d+,\\d+,\\d+,\\d+)\\))?\\s*:\\s+(?:(\\S+)\\s+)?((?:fatal +)?error|warning|info)\\s+(?!(?:NU190[1-4]|IDE\\d+)\\s*:)(\\w+\\d+)?\\s*:\\s*(.*)$",
           "file": 1,
           "location": 2,
           "severity": 4,

@@ -7,17 +7,16 @@ Bug: GitHub #577. F# lands before C# in every phase.
 
 Implements [FIXALL-MODEL], [FIXALL-RULES], [FIXALL-RULES-TABLE].
 
-- [ ] Generate C#, F# and Rust types from `docs/models/code-action-rules.td`; lint fails on stale output.
-- [ ] Encode [FIXALL-RULES-TABLE] as data conforming to `FixRuleAssociation`; generate into each tier.
-- [ ] Opposing-rule pairs (IDE0007↔IDE0008, IDE0160↔IDE0161, IDE0003↔IDE0009) in the table, not code.
+- [x] Generate C#, F# and Rust types from `docs/models/code-action-rules.td`; lint fails on stale output (`tools/vsix/code-action-rules-model.mjs`, `model-generators.test.mjs`).
+- [x] Encode [FIXALL-RULES-TABLE] as data conforming to `FixRuleAssociation`; generate into each tier (`docs/models/code-action-rules.json` → `rules_generated.rs`, `FixAllRules.g.cs`, `FixAllRules.g.fs`).
+- [x] Opposing-rule pairs (IDE0007↔IDE0008, IDE0160↔IDE0161, IDE0003↔IDE0009) in the table, not code.
 
 ## Phase 2: F# Batch Fixes (P0)
 
 Implements [FIXALL-SCOPES] for F#.
 
 - [x] Batch form for remove unused open, simplify name, remove unused declaration, `_` prefix, add `new`.
-- [ ] Scope resolution: containing binding/type (AST), document, project (`FSharpProjectOptions`), solution.
-  - Done: document, project, solution in `SharpLsp.Sidecar.FSharp/FSharpFixAll.fs` (`scopeFiles`). Remaining: containing binding/type.
+- [x] Scope resolution: containing binding/type (AST), document, project (`FSharpProjectOptions`), solution (`FSharpFixAll.fs` `scopeFiles` + `enclosingRange`, tested in `FSharpFixAllTests`).
 - [x] Merge per-file edits from AST ranges; drop and report overlaps (`FSharpFixAll.mergeFileEdits`, Serilog report).
 - [x] Failing E2E first: two-project F# fixture, fix-all unused opens per scope (bug #577) — `FSharpFixAllTests`.
 
@@ -43,11 +42,11 @@ Implements [FIXALL-LSP].
 
 Implements [FIXALL-ENFORCE].
 
-- [ ] Lossless `.editorconfig` CST module in the host (parse/write, comments preserved).
-- [ ] Target-file and section resolution; create root `.editorconfig` when absent.
-- [ ] Detect overriding nested `.editorconfig`/sections and include them in the edit.
-- [ ] `Directory.Build.props` XML DOM writer with list-property merge.
-- [ ] TOML writer via existing serializer.
+- [x] Lossless `.editorconfig` CST module in the host (parse/write, comments preserved) — `code_actions/editorconfig.rs`.
+- [x] Target-file and section resolution; create root `.editorconfig` when absent — `editorconfig::resolve_target` / `ensure_root`.
+- [x] Detect overriding nested `.editorconfig`/sections and include them in the edit — `editorconfig::find_overriding_files`.
+- [x] `Directory.Build.props` XML DOM writer with list-property merge — `code_actions/msbuild_props.rs` (`quick_xml`).
+- [x] TOML writer via existing serializer — `code_actions/enforce.rs` (`toml::Table`).
 - [ ] Sidecar analyzer-config reload + `workspace/diagnostic/refresh` after apply.
 - [ ] E2E: enforce IDE0007 → new explicit type is an editor error **and** a `dotnet build` error.
 - [ ] E2E: enforce SLSPF0102 → new unused `open` is an error.

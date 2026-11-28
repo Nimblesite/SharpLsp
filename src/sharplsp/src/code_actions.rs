@@ -3,6 +3,11 @@
 //! Forwards requests to the .NET sidecar which uses Roslyn's
 //! `CodeFixProvider` and `CodeRefactoringProvider` pipelines.
 
+pub mod editorconfig;
+pub mod enforce;
+pub mod msbuild_props;
+pub mod rules_generated;
+
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -31,14 +36,6 @@ const FSHARP_NOT_RUNNING: &str = "the F# language service is not running";
 
 /// The reason an action with no resolvable id cannot resolve.
 const MISSING_ID: &str = "the quick fix carries no id this server can resolve; invoke it again";
-
-/// The plain-words reason a fix-all resolve answers with while the enforcement
-/// writers ([FIXALL-ENFORCE]) do not exist yet: asking to enforce must fail
-/// loudly rather than silently fix without writing the rule.
-const ENFORCE_UNAVAILABLE: &str = concat!(
-    "enforcing the rule is not available yet; run the fix without enforce and ",
-    "configure the rule by hand"
-);
 
 /// Handle `textDocument/codeAction` — returns available code fixes and refactorings.
 pub fn handle_code_action(
@@ -156,9 +153,6 @@ fn resolve_fix_all(
     action: &CodeAction,
     fix_all: &FixAllData,
 ) -> Result<serde_json::Value> {
-    if fix_all.enforce {
-        return Err(refused(request_id, None, ENFORCE_UNAVAILABLE.to_string()));
-    }
     let path = action
         .data
         .as_ref()
@@ -171,16 +165,22 @@ fn resolve_fix_all(
         sidecar,
         "codeAction/fixAll",
         &SidecarFixAllReq {
-            file_path: path,
+            file_path: path.clone(),
             fix_key: fix_all.fix_key.clone(),
             scope: fix_all.scope.clone(),
         },
     )
     .map_err(|error| refused(request_id, None, error.to_string()))?;
+    let base =
+        map_workspace_edit(&edit).map_err(|error| refused(request_id, None, error.to_string()))?;
+    let final_edit = if fix_all.enforce {
+        enforce::apply_enforcement_for_file(&path, &fix_all.fix_key, base)
+            .map_err(|error| refused(request_id, None, error.to_string()))?
+    } else {
+        base
+    };
     let mut resolved = action.clone();
-    resolved.edit = Some(
-        map_workspace_edit(&edit).map_err(|error| refused(request_id, None, error.to_string()))?,
-    );
+    resolved.edit = Some(final_edit);
     Ok(serde_json::to_value(resolved)?)
 }
 

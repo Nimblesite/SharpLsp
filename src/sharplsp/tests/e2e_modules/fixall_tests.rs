@@ -57,15 +57,15 @@ fn fix_all_use_implicit_type_document_project_solution_scope() {
         });
     let base_title = title_of(base).to_string();
     assert_eq!(
-        base["kind"], "refactor.rewrite",
-        "IDE0007's fix is offered as a rewrite: {base}"
+        base["kind"], "quickfix",
+        "promoted IDE0007's fix is offered as a quickfix (#586): {base}"
     );
     assert_eq!(base["data"]["uri"], json!(inventory_uri));
 
     for scope in ["document", "project", "solution"] {
         let fix_all = fix_all_for(&actions, scope, &base_title);
         assert_eq!(
-            fix_all["kind"], "refactor.rewrite",
+            fix_all["kind"], "quickfix",
             "the fix-all action keeps the fix's kind: {fix_all}"
         );
         assert_ne!(

@@ -419,8 +419,8 @@ function registerCommands(context: ExtensionContext): void {
       log.trace().show();
     },
     [CMD_SELECT_SOLUTION]: solutions.pickAndLoad,
-    [CMD_OPEN_SOLUTION]: async (solutionPath: string) => {
-      await solutions.load({ path: solutionPath, name: '' });
+    [CMD_OPEN_SOLUTION]: async (target?: unknown) => {
+      await solutions.open(target);
     },
     [CMD_REFRESH_EXPLORER]: async () => await explorerProvider?.refresh(),
     [CMD_SORT_NATURAL]: cycleSort,
